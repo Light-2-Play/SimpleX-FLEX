@@ -2896,12 +2896,18 @@ private fun TopEndFloatingButton(
   onLongClick: () -> Unit
 ) {
   if (remember { derivedStateOf { unreadCount.value > 0 && !animatedScrollingInProgress.value } }.value) {
+    val fabBgColor = if (MaterialTheme.colors.isLight) {
+      androidx.compose.ui.graphics.lerp(MaterialTheme.colors.surface, MaterialTheme.colors.primary, 0.07f)
+    } else {
+      androidx.compose.ui.graphics.lerp(MaterialTheme.colors.surface, MaterialTheme.colors.primary, 0.11f)
+    }
     val interactionSource = interactionSourceWithDetection(onClick, onLongClick)
     FloatingActionButton(
       {}, // no action here
       modifier.size(48.dp).onRightClick(onLongClick),
-      backgroundColor = MaterialTheme.colors.secondaryVariant,
-      elevation = FloatingActionButtonDefaults.elevation(0.dp, 0.dp),
+      backgroundColor = fabBgColor,
+      shape = RoundedCornerShape(percent = 50),
+      elevation = FloatingActionButtonDefaults.elevation(1.dp, 2.dp),
       interactionSource = interactionSource,
     ) {
       if (requestedTopScroll.value) {
@@ -2911,6 +2917,7 @@ private fun TopEndFloatingButton(
           unreadCountStr(unreadCount.value),
           color = MaterialTheme.colors.primary,
           fontSize = 14.sp,
+          fontWeight = FontWeight.SemiBold
         )
       }
     }
@@ -2978,7 +2985,7 @@ private fun FloatingDate(
           for (it in visibleItemsInfo) {
             if (elapsedOffset >= listState.value.layoutInfo.viewportSize.height / 2.5) {
               nearBottomIndex.value = it.index
-              break;
+              break
             }
             elapsedOffset += it.size
           }
@@ -3020,20 +3027,26 @@ private fun FloatingDate(
     exit = fadeOut(tween(durationMillis = 350))
   ) {
     val date = lastVisibleItemDate.value
+    val dateBgColor = if (MaterialTheme.colors.isLight) {
+      androidx.compose.ui.graphics.lerp(MaterialTheme.colors.surface, MaterialTheme.colors.primary, 0.07f)
+    } else {
+      androidx.compose.ui.graphics.lerp(MaterialTheme.colors.surface, MaterialTheme.colors.primary, 0.11f)
+    }
+
     Column {
       Text(
         text = if (date != null) getTimestampDateText(date) else "",
         Modifier
           .background(
-            color = MaterialTheme.colors.secondaryVariant,
-            RoundedCornerShape(25.dp)
+            color = dateBgColor,
+            RoundedCornerShape(percent = 50)
           )
-          .padding(vertical = 4.dp, horizontal = 8.dp)
-          .clip(RoundedCornerShape(25.dp)),
-        fontSize = 14.sp,
+          .padding(vertical = 4.dp, horizontal = 12.dp)
+          .clip(RoundedCornerShape(percent = 50)),
+        fontSize = 13.sp,
         fontWeight = FontWeight.Medium,
         textAlign = TextAlign.Center,
-        color = MaterialTheme.colors.secondary
+        color = MaterialTheme.colors.onSurface.copy(alpha = 0.85f)
       )
     }
   }
@@ -3311,13 +3324,20 @@ private fun BoxScope.BottomEndFloatingButton(
   composeViewHeight: State<Dp>,
   onClick: () -> Unit
 ) {
+  val fabBgColor = if (MaterialTheme.colors.isLight) {
+    androidx.compose.ui.graphics.lerp(MaterialTheme.colors.surface, MaterialTheme.colors.primary, 0.07f)
+  } else {
+    androidx.compose.ui.graphics.lerp(MaterialTheme.colors.surface, MaterialTheme.colors.primary, 0.11f)
+  }
+
   when {
     showButtonWithCounter.value && !animatedScrollingInProgress.value -> {
       FloatingActionButton(
         onClick = onClick,
-        elevation = FloatingActionButtonDefaults.elevation(0.dp, 0.dp, 0.dp, 0.dp),
+        elevation = FloatingActionButtonDefaults.elevation(1.dp, 2.dp, 0.dp, 0.dp),
         modifier = Modifier.padding(end = DEFAULT_PADDING, bottom = DEFAULT_PADDING + composeViewHeight.value).align(Alignment.BottomEnd).size(48.dp),
-        backgroundColor = MaterialTheme.colors.secondaryVariant,
+        backgroundColor = fabBgColor,
+        shape = RoundedCornerShape(percent = 50)
       ) {
         if (requestedBottomScroll.value) {
           LoadingProgressIndicator()
@@ -3326,6 +3346,7 @@ private fun BoxScope.BottomEndFloatingButton(
             unreadCountStr(unreadCount.value),
             color = MaterialTheme.colors.primary,
             fontSize = 14.sp,
+            fontWeight = FontWeight.SemiBold
           )
         }
       }
@@ -3333,9 +3354,10 @@ private fun BoxScope.BottomEndFloatingButton(
     showButtonWithArrow.value && !animatedScrollingInProgress.value -> {
       FloatingActionButton(
         onClick = onClick,
-        elevation = FloatingActionButtonDefaults.elevation(0.dp, 0.dp, 0.dp, 0.dp),
+        elevation = FloatingActionButtonDefaults.elevation(1.dp, 2.dp, 0.dp, 0.dp),
         modifier = Modifier.padding(end = DEFAULT_PADDING, bottom = DEFAULT_PADDING + composeViewHeight.value).align(Alignment.BottomEnd).size(48.dp),
-        backgroundColor = MaterialTheme.colors.secondaryVariant,
+        backgroundColor = fabBgColor,
+        shape = RoundedCornerShape(percent = 50)
       ) {
         if (requestedBottomScroll.value) {
           LoadingProgressIndicator()
