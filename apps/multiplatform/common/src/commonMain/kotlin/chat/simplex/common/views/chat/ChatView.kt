@@ -1425,12 +1425,17 @@ fun BoxScope.ChatInfoToolbar(
 
  // СТАЛО:
  if (oneHandUI.value && chatBottomBar.value && !showSearch.value) {
-    val tonalColor = MaterialTheme.colors.surface.mixWith(MaterialTheme.colors.primary, 0.12f)
+    // Мягкий M3 Tonal Container: 7% акцента в светлой теме и 11% в темной
+    val islandContainerColor = if (MaterialTheme.colors.isLight) {
+      androidx.compose.ui.graphics.lerp(MaterialTheme.colors.surface, MaterialTheme.colors.primary, 0.07f)
+    } else {
+      androidx.compose.ui.graphics.lerp(MaterialTheme.colors.surface, MaterialTheme.colors.primary, 0.11f)
+    }
 
     Row(
       modifier = Modifier
         .fillMaxWidth()
-        .padding(horizontal = 8.dp, vertical = 4.dp)
+        .padding(horizontal = 8.dp, vertical = 6.dp)
         .navigationBarsPadding(),
       horizontalArrangement = Arrangement.spacedBy(8.dp),
       verticalAlignment = Alignment.CenterVertically
@@ -1440,7 +1445,7 @@ fun BoxScope.ChatInfoToolbar(
         Surface(
           modifier = Modifier.size(48.dp),
           shape = RoundedCornerShape(percent = 50),
-          color = tonalColor,
+          color = islandContainerColor,
           elevation = 0.dp
         ) {
           Box(contentAlignment = Alignment.Center) {
@@ -1449,13 +1454,13 @@ fun BoxScope.ChatInfoToolbar(
         }
       }
 
-      // 2. Остров «Название чата»
+      // 2. Остров «Информация о чате»
       Surface(
         modifier = Modifier
           .weight(1f)
           .height(48.dp),
         shape = RoundedCornerShape(24.dp),
-        color = tonalColor,
+        color = islandContainerColor,
         elevation = 0.dp
       ) {
         Box(
@@ -1473,7 +1478,7 @@ fun BoxScope.ChatInfoToolbar(
         Surface(
           modifier = Modifier.size(48.dp),
           shape = RoundedCornerShape(percent = 50),
-          color = tonalColor,
+          color = islandContainerColor,
           elevation = 0.dp
         ) {
           Box(contentAlignment = Alignment.Center) {
