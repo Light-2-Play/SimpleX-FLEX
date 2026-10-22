@@ -1743,8 +1743,15 @@ fun ComposeView(
       }
     }
 
-    Surface(color = MaterialTheme.colors.background, contentColor = MaterialTheme.colors.onBackground) {
-      Divider()
+   // СТАЛО:
+    Surface(
+      modifier = Modifier
+        .padding(horizontal = 8.dp, vertical = 4.dp)
+        .clip(androidx.compose.foundation.shape.RoundedCornerShape(32.dp)),
+      color = MaterialTheme.colors.surface,
+      contentColor = MaterialTheme.colors.onSurface,
+      elevation = 2.dp
+    ) {
       if (chat.chatInfo is ChatInfo.Group && chat.chatInfo.groupInfo.nextConnectPrepared) {
         if (chat.chatInfo.groupInfo.businessChat == null) {
           val isChannel = chat.chatInfo.groupInfo.useRelays
