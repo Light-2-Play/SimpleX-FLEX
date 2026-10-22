@@ -1502,117 +1502,135 @@ fun BoxScope.ChatInfoToolbar(
       buttons = { barButtons.forEach { it() } }
     )
   }
-  Box(Modifier.fillMaxWidth().wrapContentSize(Alignment.TopEnd)) {
-    val density = LocalDensity.current
-    val width = remember { mutableStateOf(250.dp) }
-    val height = remember { mutableStateOf(0.dp) }
-    DefaultDropdownMenu(
-      showMenu,
-      modifier = Modifier.onSizeChanged { with(density) {
-        width.value = it.width.toDp().coerceAtLeast(250.dp)
-        if (oneHandUI.value && chatBottomBar.value && (appPlatform.isDesktop || (platform.androidApiLevel ?: 0) >= 30)) height.value = it.height.toDp()
-      } },
-      offset = DpOffset(-width.value, if (oneHandUI.value && chatBottomBar.value) -height.value else AppBarHeight)
-    ) {
-      if (oneHandUI.value && chatBottomBar.value) {
-        menuItems.asReversed().forEach { it() }
-      } else {
-        menuItems.forEach { it() }
-      }
-    }
-    val contentFilterWidth = remember { mutableStateOf(250.dp) }
-    val contentFilterHeight = remember { mutableStateOf(0.dp) }
-    DefaultDropdownMenu(
-      showContentFilterMenu,
-      modifier = Modifier.onSizeChanged { with(density) {
-        contentFilterWidth.value = it.width.toDp().coerceAtLeast(250.dp)
-        if (oneHandUI.value && chatBottomBar.value && (appPlatform.isDesktop || (platform.androidApiLevel ?: 0) >= 30)) contentFilterHeight.value = it.height.toDp()
-      } },
-      offset = DpOffset(-contentFilterWidth.value, if (oneHandUI.value && chatBottomBar.value) -contentFilterHeight.value else AppBarHeight)
-    ) {
-      val contentFilterMenuItems: List<@Composable () -> Unit> = buildList {
-        availableContent.value.forEach { filter ->
-          val isSelected = contentFilter.value == filter
-          add {
-            ItemAction(
-              stringResource(filter.label),
-              painterResource(if (isSelected) filter.iconFilled else filter.icon),
-              color = if (isSelected) MaterialTheme.colors.primary else Color.Unspecified,
-              onClick = {
-                showContentFilterMenu.value = false
-                if (contentFilter.value == filter) return@ItemAction
-                contentFilter.value = filter
-                showSearch.value = true
-                scope.launch {
-                  val c = chatModel.getChat(chatInfo.id)
-                  if (c != null) {
-                    apiFindMessages(chatsCtx, c, filter.contentTag, "")
-                  }
-                }
-              }
-            )
-          }
-        }
-        if (showSearch.value) {
-          add {
-            ItemAction(
-              stringResource(MR.strings.content_filter_all_messages),
-              painterResource(MR.images.ic_forum),
-              onClick = {
-                showContentFilterMenu.value = false
-                contentFilter.value = null
-                showSearch.value = false
-                scope.launch {
-                  val c = chatModel.getChat(chatInfo.id)
-                  if (c != null) {
-                    apiFindMessages(chatsCtx, c, null, "")
-                  }
-                }
-              }
-            )
-          }
+  // Динамический тональный контейнер для выпадающих меню (M3 Menu)
+  val menuContainerColor = if (MaterialTheme.colors.isLight) {
+    androidx.compose.ui.graphics.lerp(MaterialTheme.colors.surface, MaterialTheme.colors.primary, 0.08f)
+  } else {
+    androidx.compose.ui.graphics.lerp(MaterialTheme.colors.surface, MaterialTheme.colors.primary, 0.12f)
+  }
+
+  MaterialTheme(
+    colors = MaterialTheme.colors.copy(surface = menuContainerColor),
+    shapes = MaterialTheme.shapes.copy(medium = RoundedCornerShape(20.dp))
+  ) {
+    Box(Modifier.fillMaxWidth().wrapContentSize(Alignment.TopEnd)) {
+      val density = LocalDensity.current
+      val width = remember { mutableStateOf(250.dp) }
+      val height = remember { mutableStateOf(0.dp) }
+      DefaultDropdownMenu(
+        showMenu,
+        modifier = Modifier.onSizeChanged { with(density) {
+          width.value = it.width.toDp().coerceAtLeast(250.dp)
+          if (oneHandUI.value && chatBottomBar.value && (appPlatform.isDesktop || (platform.androidApiLevel ?: 0) >= 30)) height.value = it.height.toDp()
+        } },
+        offset = DpOffset(-width.value, if (oneHandUI.value && chatBottomBar.value) -height.value else AppBarHeight)
+      ) {
+        if (oneHandUI.value && chatBottomBar.value) {
+          menuItems.asReversed().forEach { it() }
+        } else {
+          menuItems.forEach { it() }
         }
       }
-      if (oneHandUI.value && chatBottomBar.value) {
-        contentFilterMenuItems.asReversed().forEach { it() }
-      } else {
-        contentFilterMenuItems.forEach { it() }
-      }
-    }
-    val callMenuWidth = remember { mutableStateOf(250.dp) }
-    val callMenuHeight = remember { mutableStateOf(0.dp) }
-    DefaultDropdownMenu(
-      showCallMenu,
-      modifier = Modifier.onSizeChanged { with(density) {
-        callMenuWidth.value = it.width.toDp().coerceAtLeast(250.dp)
-        if (oneHandUI.value && chatBottomBar.value && (appPlatform.isDesktop || (platform.androidApiLevel ?: 0) >= 30)) callMenuHeight.value = it.height.toDp()
-      } },
-      offset = DpOffset(-callMenuWidth.value, if (oneHandUI.value && chatBottomBar.value) -callMenuHeight.value else AppBarHeight)
-    ) {
-      if (chatInfo is ChatInfo.Direct) {
-        val callMenuItems: List<@Composable () -> Unit> = buildList {
-          add {
-            ItemAction(stringResource(MR.strings.icon_descr_audio_call).capitalize(Locale.current), painterResource(MR.images.ic_call_500), onClick = {
-              showCallMenu.value = false
-              startCall(CallMediaType.Audio)
-            })
+      val contentFilterWidth = remember { mutableStateOf(250.dp) }
+      val contentFilterHeight = remember { mutableStateOf(0.dp) }
+      DefaultDropdownMenu(
+        showContentFilterMenu,
+        modifier = Modifier.onSizeChanged { with(density) {
+          contentFilterWidth.value = it.width.toDp().coerceAtLeast(250.dp)
+          if (oneHandUI.value && chatBottomBar.value && (appPlatform.isDesktop || (platform.androidApiLevel ?: 0) >= 30)) contentFilterHeight.value = it.height.toDp()
+        } },
+        offset = DpOffset(-contentFilterWidth.value, if (oneHandUI.value && chatBottomBar.value) -contentFilterHeight.value else AppBarHeight)
+      ) {
+        val contentFilterMenuItems: List<@Composable () -> Unit> = buildList {
+          availableContent.value.forEach { filter ->
+            val isSelected = contentFilter.value == filter
+            // Динамический цвет: primary для выбранного пункта, мягкий onSurface для остальных
+            val itemColor = if (isSelected) {
+              MaterialTheme.colors.primary 
+            } else {
+              MaterialTheme.colors.onSurface.copy(alpha = 0.85f)
+            }
+            add {
+              ItemAction(
+                stringResource(filter.label),
+                painterResource(if (isSelected) filter.iconFilled else filter.icon),
+                color = itemColor,
+                onClick = {
+                  showContentFilterMenu.value = false
+                  if (contentFilter.value == filter) return@ItemAction
+                  contentFilter.value = filter
+                  showSearch.value = true
+                  scope.launch {
+                    val c = chatModel.getChat(chatInfo.id)
+                    if (c != null) {
+                      apiFindMessages(chatsCtx, c, filter.contentTag, "")
+                    }
+                  }
+                }
+              )
+            }
           }
-          add {
-            ItemAction(stringResource(MR.strings.icon_descr_video_call).capitalize(Locale.current), painterResource(MR.images.ic_videocam), onClick = {
-              showCallMenu.value = false
-              startCall(CallMediaType.Video)
-            })
+          if (showSearch.value) {
+            add {
+              ItemAction(
+                stringResource(MR.strings.content_filter_all_messages),
+                painterResource(MR.images.ic_forum),
+                color = MaterialTheme.colors.onSurface.copy(alpha = 0.85f),
+                onClick = {
+                  showContentFilterMenu.value = false
+                  contentFilter.value = null
+                  showSearch.value = false
+                  scope.launch {
+                    val c = chatModel.getChat(chatInfo.id)
+                    if (c != null) {
+                      apiFindMessages(chatsCtx, c, null, "")
+                    }
+                  }
+                }
+              )
+            }
           }
         }
         if (oneHandUI.value && chatBottomBar.value) {
-          callMenuItems.asReversed().forEach { it() }
+          contentFilterMenuItems.asReversed().forEach { it() }
         } else {
-          callMenuItems.forEach { it() }
+          contentFilterMenuItems.forEach { it() }
+        }
+      }
+      val callMenuWidth = remember { mutableStateOf(250.dp) }
+      val callMenuHeight = remember { mutableStateOf(0.dp) }
+      DefaultDropdownMenu(
+        showCallMenu,
+        modifier = Modifier.onSizeChanged { with(density) {
+          callMenuWidth.value = it.width.toDp().coerceAtLeast(250.dp)
+          if (oneHandUI.value && chatBottomBar.value && (appPlatform.isDesktop || (platform.androidApiLevel ?: 0) >= 30)) callMenuHeight.value = it.height.toDp()
+        } },
+        offset = DpOffset(-callMenuWidth.value, if (oneHandUI.value && chatBottomBar.value) -callMenuHeight.value else AppBarHeight)
+      ) {
+        if (chatInfo is ChatInfo.Direct) {
+          val callMenuItems: List<@Composable () -> Unit> = buildList {
+            add {
+              ItemAction(stringResource(MR.strings.icon_descr_audio_call).capitalize(Locale.current), painterResource(MR.images.ic_call_500), onClick = {
+                showCallMenu.value = false
+                startCall(CallMediaType.Audio)
+              })
+            }
+            add {
+              ItemAction(stringResource(MR.strings.icon_descr_video_call).capitalize(Locale.current), painterResource(MR.images.ic_videocam), onClick = {
+                showCallMenu.value = false
+                startCall(CallMediaType.Video)
+              })
+            }
+          }
+          if (oneHandUI.value && chatBottomBar.value) {
+            callMenuItems.asReversed().forEach { it() }
+          } else {
+            callMenuItems.forEach { it() }
+          }
         }
       }
     }
   }
-}
 
 fun subscriberCountStr(count: Long): String =
   if (count == 1L) String.format(generalGetString(MR.strings.channel_subscriber_count_singular), count)
