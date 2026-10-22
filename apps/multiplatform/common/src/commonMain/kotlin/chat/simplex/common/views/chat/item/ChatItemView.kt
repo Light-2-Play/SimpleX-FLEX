@@ -45,11 +45,12 @@ val LocalVoiceTranscriptionWidget = staticCompositionLocalOf<@Composable (ChatIt
 }
 // TODO refactor so that FramedItemView can show all CIContent items if they're deleted (see Swift code)
 
-private val msgRectMaxRadius = 18.dp
-private val msgBubbleMaxRadius = msgRectMaxRadius * 1.2f
-val msgTailWidthDp = 9.dp
-private val msgTailMinHeightDp = msgTailWidthDp * 1.254f // ~56deg
-private val msgTailMaxHeightDp = msgTailWidthDp * 1.732f // 60deg
+// СТАЛО (M3 Expressive: крупные радиусы 26dp и органичный хвостик):
+private val msgRectMaxRadius = 26.dp
+private val msgBubbleMaxRadius = 28.dp
+val msgTailWidthDp = 10.dp
+private val msgTailMinHeightDp = 12.dp
+private val msgTailMaxHeightDp = 16.dp
 
 val chatEventStyle = SpanStyle(fontSize = 12.sp, fontWeight = FontWeight.Light, color = CurrentColors.value.colors.secondary)
 
@@ -1373,7 +1374,7 @@ fun shapeStyleWithTail(chatItem: ChatItem? = null, tailEnabled: Boolean, tailVis
 
     is CIContent.RcvGroupInvitation,
     is CIContent.SndGroupInvitation -> return ShapeStyle.RoundRect(msgRectMaxRadius)
-    else -> return ShapeStyle.RoundRect(8.dp)
+    else -> return ShapeStyle.RoundRect(16.dp)
   }
 }
 
