@@ -1622,16 +1622,17 @@ fun BoxScope.ChatInfoToolbar(
               })
             }
           }
-          if (oneHandUI.value && chatBottomBar.value) {
+         if (oneHandUI.value && chatBottomBar.value) {
             callMenuItems.asReversed().forEach { it() }
           } else {
             callMenuItems.forEach { it() }
           }
         }
-      }
-    }
-  }
-
+      } // 1. закрывает DefaultDropdownMenu(showCallMenu)
+    }   // 2. закрывает Box(Modifier.fillMaxWidth().wrapContentSize(Alignment.TopEnd))
+  }     // 3. закрывает MaterialTheme { ... }
+}       // 4. закрывает саму функцию fun BoxScope.ChatInfoToolbar(...)
+  
 fun subscriberCountStr(count: Long): String =
   if (count == 1L) String.format(generalGetString(MR.strings.channel_subscriber_count_singular), count)
   else String.format(generalGetString(MR.strings.channel_subscriber_count_plural), count)
