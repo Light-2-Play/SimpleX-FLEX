@@ -1425,23 +1425,22 @@ fun BoxScope.ChatInfoToolbar(
 
  // СТАЛО:
  if (oneHandUI.value && chatBottomBar.value && !showSearch.value) {
-    // Приглушенный динамический цвет контейнеров в стиле M3 Tonal Palette
-    val islandContainerColor = MaterialTheme.colors.primary.copy(alpha = 0.14f).compositeOver(MaterialTheme.colors.surface)
+    val tonalColor = MaterialTheme.colors.surface.mixWith(MaterialTheme.colors.primary, 0.12f)
 
     Row(
       modifier = Modifier
         .fillMaxWidth()
-        .padding(horizontal = 8.dp, vertical = 6.dp)
+        .padding(horizontal = 8.dp, vertical = 4.dp)
         .navigationBarsPadding(),
       horizontalArrangement = Arrangement.spacedBy(8.dp),
       verticalAlignment = Alignment.CenterVertically
     ) {
-      // 1. Остров: Кнопка «Назад»
+      // 1. Остров «Назад»
       if (appPlatform.isAndroid) {
         Surface(
           modifier = Modifier.size(48.dp),
           shape = RoundedCornerShape(percent = 50),
-          color = islandContainerColor,
+          color = tonalColor,
           elevation = 0.dp
         ) {
           Box(contentAlignment = Alignment.Center) {
@@ -1450,13 +1449,13 @@ fun BoxScope.ChatInfoToolbar(
         }
       }
 
-      // 2. Остров: Информация о чате (Центральная пилюля)
+      // 2. Остров «Название чата»
       Surface(
         modifier = Modifier
           .weight(1f)
           .height(48.dp),
         shape = RoundedCornerShape(24.dp),
-        color = islandContainerColor,
+        color = tonalColor,
         elevation = 0.dp
       ) {
         Box(
@@ -1469,12 +1468,12 @@ fun BoxScope.ChatInfoToolbar(
         }
       }
 
-      // 3. Острова: Кнопка «Поиск» и Меню «Троеточие»
+      // 3. Острова «Поиск» и «Меню»
       barButtons.forEach { actionButton ->
         Surface(
           modifier = Modifier.size(48.dp),
           shape = RoundedCornerShape(percent = 50),
-          color = islandContainerColor,
+          color = tonalColor,
           elevation = 0.dp
         ) {
           Box(contentAlignment = Alignment.Center) {
