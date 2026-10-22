@@ -1018,7 +1018,7 @@ private fun ChatListSearchBar(
                       listState.scrollToItem(0)
                     }
                   }
-                  searchShowingSimplexLink.value = false
+                 searchShowingSimplexLink.value = false
                   searchChatFilteredBySimplexLink.value = emptySet()
                 }
               }
@@ -1026,10 +1026,6 @@ private fun ChatListSearchBar(
         }
       }
     }
-  }
-}
-    val oneHandUI = remember { appPrefs.oneHandUI.state }
-    Divider(Modifier.align(if (oneHandUI.value) Alignment.TopStart else Alignment.BottomStart))
   }
 }
 
