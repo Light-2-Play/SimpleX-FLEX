@@ -1359,14 +1359,20 @@ fun BoxScope.ChatInfoToolbar(
   // Android only: for direct/local chats where the filter bar button is NOT shown, filter options go in the three-dots menu separated by a divider
   if (appPlatform.isAndroid && chatInfo !is ChatInfo.Group && showContentFilterButton &&
       !(chatInfo is ChatInfo.Direct && !canStartCall && activeCall == null)) {
-    menuItems.add { Divider() }
+    val dynamicFilterColor = androidx.compose.ui.graphics.lerp(
+      MaterialTheme.colors.onSurface,
+      MaterialTheme.colors.primary,
+      0.15f
+    ).copy(alpha = 0.85f)
+
     availableContent.value.forEach { filter ->
       menuItems.add {
         val isSelected = contentFilter.value == filter
+        val itemColor = if (isSelected) MaterialTheme.colors.primary else dynamicFilterColor
         ItemAction(
           stringResource(filter.label),
           painterResource(if (isSelected) filter.iconFilled else filter.icon),
-          color = if (isSelected) MaterialTheme.colors.primary else Color.Unspecified,
+          color = itemColor,
           onClick = {
             showMenu.value = false
             if (contentFilter.value == filter) return@ItemAction
@@ -1387,6 +1393,7 @@ fun BoxScope.ChatInfoToolbar(
         ItemAction(
           stringResource(MR.strings.content_filter_all_messages),
           painterResource(MR.images.ic_forum),
+          color = dynamicFilterColor,
           onClick = {
             showMenu.value = false
             contentFilter.value = null
@@ -1401,7 +1408,7 @@ fun BoxScope.ChatInfoToolbar(
         )
       }
     }
-  }
+  } 
 
   if (menuItems.isNotEmpty()) {
     barButtons.add {
@@ -1487,20 +1494,35 @@ fun BoxScope.ChatInfoToolbar(
         }
       }
     }
-  } else {
-    // Штатный вид (если открыт поиск или панель находится сверху экрана)
-    DefaultAppBar(
-      navigationButton = { if (appPlatform.isAndroid || showSearch.value) { NavigationButtonBack(onBackClicked) }  },
-      title = { ChatInfoToolbarTitle(chatInfo) },
-      onTitleClick = if (chatInfo is ChatInfo.Local) null else info,
-      showSearch = showSearch.value,
-      searchAlwaysVisible = contentFilter.value != null,
-      onTop = !oneHandUI.value || !chatBottomBar.value,
-      searchPlaceholder = searchPlaceholder,
-      onSearchValueChanged = onSearchValueChanged,
-      searchTrailingContent = searchTrailingContent,
-      buttons = { barButtons.forEach { it() } }
+ } else {
+    // Мягкий динамический цвет вводимого текста и подсказки в строке поиска
+    val searchTextColor = androidx.compose.ui.graphics.lerp(
+      MaterialTheme.colors.onSurface,
+      MaterialTheme.colors.primary,
+      0.15f
     )
+    val searchPlaceholderColor = searchTextColor.copy(alpha = 0.55f)
+
+    MaterialTheme(
+      colors = MaterialTheme.colors.copy(
+        onSurface = searchTextColor,
+        onBackground = searchTextColor,
+        secondary = searchPlaceholderColor
+      )
+    ) {
+      DefaultAppBar(
+        navigationButton = { if (appPlatform.isAndroid || showSearch.value) { NavigationButtonBack(onBackClicked) }  },
+        title = { ChatInfoToolbarTitle(chatInfo) },
+        onTitleClick = if (chatInfo is ChatInfo.Local) null else info,
+        showSearch = showSearch.value,
+        searchAlwaysVisible = contentFilter.value != null,
+        onTop = !oneHandUI.value || !chatBottomBar.value,
+        searchPlaceholder = searchPlaceholder,
+        onSearchValueChanged = onSearchValueChanged,
+        searchTrailingContent = searchTrailingContent,
+        buttons = { barButtons.forEach { it() } }
+      )
+    }
   }
   // Динамический тональный контейнер для выпадающих меню (M3 Menu)
   val menuContainerColor = if (MaterialTheme.colors.isLight) {
@@ -1541,15 +1563,18 @@ fun BoxScope.ChatInfoToolbar(
         } },
         offset = DpOffset(-contentFilterWidth.value, if (oneHandUI.value && chatBottomBar.value) -contentFilterHeight.value else AppBarHeight)
       ) {
-        val contentFilterMenuItems: List<@Composable () -> Unit> = buildList {
+       val contentFilterMenuItems: List<@Composable () -> Unit> = buildList {
+          // Мягкий динамический цвет для неактивных пунктов меню
+          val dynamicLabelColor = androidx.compose.ui.graphics.lerp(
+            MaterialTheme.colors.onSurface,
+            MaterialTheme.colors.primary,
+            0.15f
+          ).copy(alpha = 0.85f)
+
           availableContent.value.forEach { filter ->
             val isSelected = contentFilter.value == filter
-            // Динамический цвет: primary для выбранного пункта, мягкий onSurface для остальных
-            val itemColor = if (isSelected) {
-              MaterialTheme.colors.primary 
-            } else {
-              MaterialTheme.colors.onSurface.copy(alpha = 0.85f)
-            }
+            val itemColor = if (isSelected) MaterialTheme.colors.primary else dynamicLabelColor
+
             add {
               ItemAction(
                 stringResource(filter.label),
@@ -1575,7 +1600,7 @@ fun BoxScope.ChatInfoToolbar(
               ItemAction(
                 stringResource(MR.strings.content_filter_all_messages),
                 painterResource(MR.images.ic_forum),
-                color = MaterialTheme.colors.onSurface.copy(alpha = 0.85f),
+                color = dynamicLabelColor,
                 onClick = {
                   showContentFilterMenu.value = false
                   contentFilter.value = null
