@@ -554,7 +554,12 @@ private fun ConnectButton(text: String, onClick: () -> Unit) {
 }
 
 @Composable
-private fun ChatListToolbar(userPickerState: MutableStateFlow<AnimatedViewState>, listState: LazyListState, stopped: Boolean, setPerformLA: (Boolean) -> Unit) {
+private fun ChatListToolbar(
+  userPickerState: MutableStateFlow<AnimatedViewState>,
+  listState: LazyListState,
+  stopped: Boolean,
+  setPerformLA: (Boolean) -> Unit
+) {
   val serversSummary: MutableState<PresentedServersSummary?> = remember { mutableStateOf(null) }
   val barButtons = arrayListOf<@Composable RowScope.() -> Unit>()
   val updatingProgress = remember { chatModel.updatingProgress }.value
@@ -627,7 +632,7 @@ private fun ChatListToolbar(userPickerState: MutableStateFlow<AnimatedViewState>
           Box(
             contentAlignment = Alignment.Center,
             modifier = Modifier
-              .background(MaterialTheme.colors.primary, shape = CircleShape)
+              .background(MaterialTheme.colors.primary, shape = RoundedCornerShape(percent = 50))
               .size(33.dp * fontSizeSqrtMultiplier)
           ) {
             Icon(
@@ -645,83 +650,135 @@ private fun ChatListToolbar(userPickerState: MutableStateFlow<AnimatedViewState>
   val clipboard = LocalClipboardManager.current
   val scope = rememberCoroutineScope()
   val canScrollToZero = remember { derivedStateOf { listState.firstVisibleItemIndex != 0 || listState.firstVisibleItemScrollOffset != 0 } }
-  
-  DefaultAppBar(
-    navigationButton = {
-      if (chatModel.users.isEmpty() && !chatModel.desktopNoUserNoRemote) {
-        NavigationButtonMenu {
-          ModalManager.start.showModalCloseable(cardScreen = true) { close ->
-            SettingsView(chatModel, setPerformLA, close)
+
+  val islandContainerColor = if (MaterialTheme.colors.isLight) {
+    lerp(MaterialTheme.colors.surface, MaterialTheme.colors.primary, 0.07f)
+  } else {
+    lerp(MaterialTheme.colors.surface, MaterialTheme.colors.primary, 0.11f)
+  }
+
+  Row(
+    modifier = Modifier
+      .fillMaxWidth()
+      .then(if (!oneHandUI.value) Modifier.statusBarsPadding() else Modifier.navigationBarsPadding())
+      .padding(horizontal = 10.dp, vertical = 6.dp),
+    horizontalArrangement = Arrangement.spacedBy(8.dp),
+    verticalAlignment = Alignment.CenterVertically
+  ) {
+    // 1. Остров: Профиль / Меню настроек
+    Surface(
+      modifier = Modifier.height(48.dp),
+      shape = RoundedCornerShape(percent = 50),
+      color = islandContainerColor,
+      elevation = 0.dp
+    ) {
+      Box(
+        modifier = Modifier.padding(horizontal = 2.dp),
+        contentAlignment = Alignment.Center
+      ) {
+        if (chatModel.users.isEmpty() && !chatModel.desktopNoUserNoRemote) {
+          NavigationButtonMenu {
+            ModalManager.start.showModalCloseable(cardScreen = true) { close ->
+              SettingsView(chatModel, setPerformLA, close)
+            }
+          }
+        } else {
+          val users by remember { derivedStateOf { chatModel.users.filter { u -> u.user.activeUser || !u.user.hidden } } }
+          val allRead = users
+            .filter { u -> !u.user.activeUser && !u.user.hidden }
+            .all { u -> u.unreadCount == 0 }
+          UserProfileButton(chatModel.currentUser.value?.profile?.image, allRead) {
+            userPickerState.value = AnimatedViewState.VISIBLE
           }
         }
-      } else {
-        val users by remember { derivedStateOf { chatModel.users.filter { u -> u.user.activeUser || !u.user.hidden } } }
-        val allRead = users
-          .filter { u -> !u.user.activeUser && !u.user.hidden }
-          .all { u -> u.unreadCount == 0 }
-        UserProfileButton(chatModel.currentUser.value?.profile?.image, allRead) {
-            userPickerState.value = AnimatedViewState.VISIBLE
-        }
       }
-    },
-    title = {
-      if (!shouldShowOnboarding()) {
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(DEFAULT_SPACE_AFTER_ICON)) {
-          Text(
-            stringResource(MR.strings.your_chats),
-            color = MaterialTheme.colors.onBackground,
-            fontWeight = FontWeight.SemiBold,
-          )
-          SubscriptionStatusIndicator(
-            click = {
-              ModalManager.start.closeModals()
-              val summary = serversSummary.value
-              ModalManager.start.showModalCloseable(
-                endButtons = {
-                  if (summary != null) {
-                    ShareButton {
-                      val json = Json {
-                        prettyPrint = true
+    }
+
+    // 2. Остров: Заголовок «Your chats» и индикатор серверов
+    Surface(
+      modifier = Modifier
+        .weight(1f)
+        .height(48.dp),
+      shape = RoundedCornerShape(24.dp),
+      color = islandContainerColor,
+      elevation = 0.dp
+    ) {
+      Box(
+        modifier = Modifier
+          .fillMaxSize()
+          .then(if (canScrollToZero.value) Modifier.clickable { scrollToBottom(scope, listState) } else Modifier),
+        contentAlignment = Alignment.Center
+      ) {
+        if (!shouldShowOnboarding()) {
+          Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(DEFAULT_SPACE_AFTER_ICON)
+          ) {
+            Text(
+              stringResource(MR.strings.your_chats),
+              color = MaterialTheme.colors.onSurface,
+              fontWeight = FontWeight.SemiBold,
+            )
+            SubscriptionStatusIndicator(
+              click = {
+                ModalManager.start.closeModals()
+                val summary = serversSummary.value
+                ModalManager.start.showModalCloseable(
+                  endButtons = {
+                    if (summary != null) {
+                      ShareButton {
+                        val json = Json {
+                          prettyPrint = true
+                        }
+                        val text = json.encodeToString(PresentedServersSummary.serializer(), summary)
+                        clipboard.shareText(text)
                       }
-                      val text = json.encodeToString(PresentedServersSummary.serializer(), summary)
-                      clipboard.shareText(text)
                     }
                   }
-                }
-              ) { ServersSummaryView(chatModel.currentRemoteHost.value, serversSummary) }
-            }
+                ) { ServersSummaryView(chatModel.currentRemoteHost.value, serversSummary) }
+              }
+            )
+          }
+        }
+      }
+    }
+
+    // 3. Остров: Иконка щита (ByeDPI/VLESS) и кнопки действий
+    Surface(
+      modifier = Modifier.height(48.dp),
+      shape = RoundedCornerShape(percent = 50),
+      color = islandContainerColor,
+      elevation = 0.dp
+    ) {
+      Row(
+        modifier = Modifier.padding(horizontal = 4.dp),
+        verticalAlignment = Alignment.CenterVertically
+      ) {
+        val isVpnActive = ByeDpiBridge.isRunning.value
+        val vpnTint by animateColorAsState(
+          targetValue = if (isVpnActive) {
+            MaterialTheme.colors.primary
+          } else {
+            MaterialTheme.colors.onSurface.copy(alpha = 0.65f)
+          },
+          animationSpec = tween(durationMillis = 250)
+        )
+
+        IconButton(
+          onClick = {
+            ByeDpiBridge.showDialog?.invoke()
+          }
+        ) {
+          Icon(
+            imageVector = ShieldIcon,
+            contentDescription = "VLESS Proxy Settings",
+            tint = vpnTint
           )
         }
+        barButtons.forEach { it() }
       }
-    },
-    onTitleClick = if (canScrollToZero.value) { { scrollToBottom(scope, listState) } } else null,
-    onTop = !oneHandUI.value,
-    onSearchValueChanged = {},
-    buttons = {
-      val isVpnActive = ByeDpiBridge.isRunning.value
-      val vpnTint by animateColorAsState(
-        targetValue = if (isVpnActive) {
-          MaterialTheme.colors.primary // Monet акцент при активном VPN
-        } else {
-          MaterialTheme.colors.onBackground.copy(alpha = 0.65f)
-        },
-        animationSpec = tween(durationMillis = 250)
-      )
-
-      IconButton(
-        onClick = {
-          ByeDpiBridge.showDialog?.invoke()
-        }
-      ) {
-        Icon(
-          imageVector = ShieldIcon,
-          contentDescription = "VLESS Proxy Settings",
-          tint = vpnTint
-        )
-      }
-      barButtons.forEach { it() }
     }
-  )
+  }
 }
     
 @Composable
@@ -845,100 +902,132 @@ fun connectIfOpenedViaUri(rhId: Long?, uri: String, chatModel: ChatModel) {
 }
 
 @Composable
-private fun ChatListSearchBar(listState: LazyListState, searchText: MutableState<TextFieldValue>, searchShowingSimplexLink: MutableState<Boolean>, searchChatFilteredBySimplexLink: MutableState<Set<String>>, connectNameCandidate: MutableState<String?>) {
-  Box {
-    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-      val focusRequester = remember { FocusRequester() }
-      var focused by remember { mutableStateOf(false) }
-      Icon(
-        painterResource(MR.images.ic_search),
-        contentDescription = null,
-        Modifier.padding(start = DEFAULT_PADDING, end = DEFAULT_PADDING_HALF).size(22.dp * fontSizeSqrtMultiplier),
-        tint = MaterialTheme.colors.secondary
+private fun ChatListSearchBar(
+  listState: LazyListState,
+  searchText: MutableState<TextFieldValue>,
+  searchShowingSimplexLink: MutableState<Boolean>,
+  searchChatFilteredBySimplexLink: MutableState<Set<String>>,
+  connectNameCandidate: MutableState<String?>
+) {
+  val isLight = MaterialTheme.colors.isLight
+  val searchContainerColor = lerp(
+    MaterialTheme.colors.surface,
+    MaterialTheme.colors.primary,
+    if (isLight) 0.07f else 0.11f
+  )
+  val dynamicTextColor = lerp(
+    MaterialTheme.colors.onSurface,
+    MaterialTheme.colors.primary,
+    0.15f
+  )
+
+  Surface(
+    modifier = Modifier
+      .fillMaxWidth()
+      .padding(horizontal = 10.dp, vertical = 4.dp),
+    shape = RoundedCornerShape(28.dp),
+    color = searchContainerColor,
+    elevation = 0.dp
+  ) {
+    MaterialTheme(
+      colors = MaterialTheme.colors.copy(
+        onSurface = dynamicTextColor,
+        onBackground = dynamicTextColor,
+        secondary = dynamicTextColor.copy(alpha = 0.6f)
       )
-      SearchTextField(
-        Modifier.weight(1f).onFocusChanged { focused = it.hasFocus }.focusRequester(focusRequester),
-        placeholder = stringResource(MR.strings.search_or_paste_simplex_link),
-        alwaysVisible = true,
-        searchText = searchText,
-        enabled = !remember { searchShowingSimplexLink }.value,
-        trailingContent = null,
-        // the clear button must line up with the filter icon it replaces, so no reduction here
-        reducedCloseButtonPadding = 0.dp,
+    ) {
+      Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp)
       ) {
-        searchText.value = searchText.value.copy(it)
-      }
-      val hasText = remember { derivedStateOf { searchText.value.text.isNotEmpty() } }
-      if (hasText.value) {
-        val hideSearchOnBack: () -> Unit = { searchText.value = TextFieldValue() }
-        BackHandler(onBack = hideSearchOnBack)
-        KeyChangeEffect(chatModel.currentRemoteHost.value) {
-          hideSearchOnBack()
+        val focusRequester = remember { FocusRequester() }
+        var focused by remember { mutableStateOf(false) }
+        Icon(
+          painterResource(MR.images.ic_search),
+          contentDescription = null,
+          Modifier.padding(start = DEFAULT_PADDING, end = DEFAULT_PADDING_HALF).size(22.dp * fontSizeSqrtMultiplier),
+          tint = MaterialTheme.colors.primary.copy(alpha = 0.8f)
+        )
+        SearchTextField(
+          Modifier.weight(1f).onFocusChanged { focused = it.hasFocus }.focusRequester(focusRequester),
+          placeholder = stringResource(MR.strings.search_or_paste_simplex_link),
+          alwaysVisible = true,
+          searchText = searchText,
+          enabled = !remember { searchShowingSimplexLink }.value,
+          trailingContent = null,
+          reducedCloseButtonPadding = 0.dp,
+        ) {
+          searchText.value = searchText.value.copy(it)
         }
-      } else {
-        val padding = if (appPlatform.isDesktop) 0.dp else 7.dp
-        if (chatModel.chats.value.isNotEmpty()) {
-          ToggleFilterEnabledButton()
+        val hasText = remember { derivedStateOf { searchText.value.text.isNotEmpty() } }
+        if (hasText.value) {
+          val hideSearchOnBack: () -> Unit = { searchText.value = TextFieldValue() }
+          BackHandler(onBack = hideSearchOnBack)
+          KeyChangeEffect(chatModel.currentRemoteHost.value) {
+            hideSearchOnBack()
+          }
+        } else {
+          val padding = if (appPlatform.isDesktop) 0.dp else 7.dp
+          if (chatModel.chats.value.isNotEmpty()) {
+            ToggleFilterEnabledButton()
+          }
+          Spacer(Modifier.width(padding))
         }
-        Spacer(Modifier.width(padding))
-      }
-      val focusManager = LocalFocusManager.current
-      val keyboardState = getKeyboardState()
-      LaunchedEffect(keyboardState.value) {
-        if (keyboardState.value == KeyboardState.Closed && focused) {
-          focusManager.clearFocus()
+        val focusManager = LocalFocusManager.current
+        val keyboardState = getKeyboardState()
+        LaunchedEffect(keyboardState.value) {
+          if (keyboardState.value == KeyboardState.Closed && focused) {
+            focusManager.clearFocus()
+          }
         }
-      }
-      val view = LocalMultiplatformView()
-      LaunchedEffect(Unit) {
-        snapshotFlow { searchText.value.text }
-          .distinctUntilChanged()
-          .collectLatest {
-            val target = strConnectTarget(it.trim())
-            if (target is ConnectTarget.Link) {
-              hideKeyboard(view)
-              searchText.value = searchText.value.copy(target.linkText, selection = TextRange.Zero)
-              searchShowingSimplexLink.value = true
-              searchChatFilteredBySimplexLink.value = emptySet()
-              connectNameCandidate.value = null
-              connect(target.text, searchChatFilteredBySimplexLink) { searchText.value = TextFieldValue() }
-            } else {
-              val candidate = nameSearchCandidate(it.trim())
-              connectNameCandidate.value = candidate
-              // clear the previous match immediately so the list falls back to text search during the debounce,
-              // instead of showing a stale filtered chat while the new search runs
-              searchChatFilteredBySimplexLink.value = emptySet()
-              if (candidate != null) {
-                // resolve the name locally on each keystroke, debounced; collectLatest cancels the in-flight
-                // search when the next keystroke arrives. A bare name can be a contact or a channel, so search
-                // both and filter every known chat found; drop the row only when both types are already known.
-                delay(NAME_SEARCH_DEBOUNCE_MS)
-                val rhId = chatModel.remoteHostId()
-                val inProgress = mutableStateOf(false) // background search: no spinner, no error alerts
-                val targets = if (candidate.startsWith("@") || candidate.startsWith("#")) listOf(candidate) else listOf("@$candidate", "#$candidate")
-                val ids = targets.mapNotNull { name ->
-                  knownChatId(rhId, chatModel.controller.apiConnectPlan(rhId, name, PlanResolveMode.PRMNever, inProgress = inProgress))
-                }
-                searchChatFilteredBySimplexLink.value = ids.toSet()
-                if (ids.size == targets.size) connectNameCandidate.value = null
-              } else if (!searchShowingSimplexLink.value || it.isEmpty()) {
-                if (it.isNotEmpty()) {
-                  focusRequester.requestFocus()
-                } else {
-                  if (!chatModel.appOpenUrlConnecting.value) {
-                    connectProgressManager.cancelConnectProgress()
-                  }
-                  if (listState.layoutInfo.totalItemsCount > 0) {
-                    listState.scrollToItem(0)
-                  }
-                }
-                searchShowingSimplexLink.value = false
+        val view = LocalMultiplatformView()
+        LaunchedEffect(Unit) {
+          snapshotFlow { searchText.value.text }
+            .distinctUntilChanged()
+            .collectLatest {
+              val target = strConnectTarget(it.trim())
+              if (target is ConnectTarget.Link) {
+                hideKeyboard(view)
+                searchText.value = searchText.value.copy(target.linkText, selection = TextRange.Zero)
+                searchShowingSimplexLink.value = true
                 searchChatFilteredBySimplexLink.value = emptySet()
+                connectNameCandidate.value = null
+                connect(target.text, searchChatFilteredBySimplexLink) { searchText.value = TextFieldValue() }
+              } else {
+                val candidate = nameSearchCandidate(it.trim())
+                connectNameCandidate.value = candidate
+                searchChatFilteredBySimplexLink.value = emptySet()
+                if (candidate != null) {
+                  delay(NAME_SEARCH_DEBOUNCE_MS)
+                  val rhId = chatModel.remoteHostId()
+                  val inProgress = mutableStateOf(false)
+                  val targets = if (candidate.startsWith("@") || candidate.startsWith("#")) listOf(candidate) else listOf("@$candidate", "#$candidate")
+                  val ids = targets.mapNotNull { name ->
+                    knownChatId(rhId, chatModel.controller.apiConnectPlan(rhId, name, PlanResolveMode.PRMNever, inProgress = inProgress))
+                  }
+                  searchChatFilteredBySimplexLink.value = ids.toSet()
+                  if (ids.size == targets.size) connectNameCandidate.value = null
+                } else if (!searchShowingSimplexLink.value || it.isEmpty()) {
+                  if (it.isNotEmpty()) {
+                    focusRequester.requestFocus()
+                  } else {
+                    if (!chatModel.appOpenUrlConnecting.value) {
+                      connectProgressManager.cancelConnectProgress()
+                    }
+                    if (listState.layoutInfo.totalItemsCount > 0) {
+                      listState.scrollToItem(0)
+                    }
+                  }
+                  searchShowingSimplexLink.value = false
+                  searchChatFilteredBySimplexLink.value = emptySet()
+                }
               }
             }
-          }
+        }
       }
     }
+  }
+}
     val oneHandUI = remember { appPrefs.oneHandUI.state }
     Divider(Modifier.align(if (oneHandUI.value) Alignment.TopStart else Alignment.BottomStart))
   }
@@ -1011,7 +1100,6 @@ private fun BoxScope.ChatList(searchText: MutableState<TextFieldValue>, listStat
   val addressCreationCardShown = remember { appPrefs.addressCreationCardShown.state }
   val getStakeBannerTapped = remember { appPrefs.getStakeBannerTapped.state }
   val getStakeBannerDismissed = remember { appPrefs.getStakeBannerDismissed.state }
-  // read here rather than in the LazyColumn: it launches an effect, so it needs a composable scope
   val crowdfunding = crowdfundingAvailable()
   val activeFilter = remember { chatModel.activeChatTagFilter }
 
@@ -1037,15 +1125,20 @@ private fun BoxScope.ChatList(searchText: MutableState<TextFieldValue>, listStat
     onDispose { lazyListState = listState.firstVisibleItemIndex to listState.firstVisibleItemScrollOffset }
   }
   val allChats = remember { chatModel.chats }
-  // In some not always reproducible situations this code produce IndexOutOfBoundsException on Compose's side
-  // which is related to [derivedStateOf]. Using safe alternative instead
-  // val chats by remember(search, showUnreadAndFavorites) { derivedStateOf { filteredChats(showUnreadAndFavorites, search, allChats.toList()) } }
   val searchShowingSimplexLink = remember { mutableStateOf(false) }
   val searchChatFilteredBySimplexLink = remember { mutableStateOf<Set<String>>(emptySet()) }
   val connectNameCandidate = remember { mutableStateOf<String?>(null) }
   val chats = filteredChats(searchShowingSimplexLink, searchChatFilteredBySimplexLink, searchText.value.text, allChats.value.toList(), activeFilter.value)
   val topPaddingToContent = topPaddingToContent(false)
   val blankSpaceSize = if (oneHandUI.value) WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() + AppBarHeight * fontSizeSqrtMultiplier else topPaddingToContent
+
+  val isLight = MaterialTheme.colors.isLight
+  val chatCardColor = lerp(
+    MaterialTheme.colors.surface,
+    MaterialTheme.colors.primary,
+    if (isLight) 0.06f else 0.09f
+  )
+
   LazyColumnWithScrollBar(
     if (!oneHandUI.value) Modifier.imePadding() else Modifier,
     listState,
@@ -1071,14 +1164,11 @@ private fun BoxScope.ChatList(searchText: MutableState<TextFieldValue>, listStat
             IntOffset(0, y)
           }
           .background(MaterialTheme.colors.background)
-        ) {
+      ) {
         if (oneHandUI.value) {
           Column(Modifier.consumeWindowInsets(WindowInsets.navigationBars).consumeWindowInsets(PaddingValues(bottom = AppBarHeight))) {
-            Divider()
-            // bottom toolbar: search bar below, so on desktop the connect row goes below the tags
             TagsOrConnectByName(searchText, connectNameCandidate) { candidate ->
               TagsView(searchText)
-              Divider()
               ConnectByNameRow(candidate, searchText, connectNameCandidate, close = null)
             }
             ChatListSearchBar(listState, searchText, searchShowingSimplexLink, searchChatFilteredBySimplexLink, connectNameCandidate)
@@ -1086,13 +1176,10 @@ private fun BoxScope.ChatList(searchText: MutableState<TextFieldValue>, listStat
           }
         } else {
           ChatListSearchBar(listState, searchText, searchShowingSimplexLink, searchChatFilteredBySimplexLink, connectNameCandidate)
-          // top toolbar: search bar above, so on desktop the connect row goes above the tags
           TagsOrConnectByName(searchText, connectNameCandidate) { candidate ->
             ConnectByNameRow(candidate, searchText, connectNameCandidate, close = null)
-            Divider()
             TagsView(searchText)
           }
-          Divider()
         }
       }
     }
@@ -1116,7 +1203,22 @@ private fun BoxScope.ChatList(searchText: MutableState<TextFieldValue>, listStat
       val nextChatSelected = remember(chat.id, chats) { derivedStateOf {
         chatModel.chatId.value != null && chats.getOrNull(index + 1)?.id == chatModel.chatId.value
       } }
-      ChatListNavLinkView(chat, nextChatSelected)
+      Box(
+        modifier = Modifier
+          .fillMaxWidth()
+          .padding(horizontal = 10.dp, vertical = 3.dp)
+          .clip(RoundedCornerShape(24.dp))
+          .background(chatCardColor)
+      ) {
+        MaterialTheme(
+          colors = MaterialTheme.colors.copy(
+            background = chatCardColor,
+            surface = chatCardColor
+          )
+        ) {
+          ChatListNavLinkView(chat, nextChatSelected)
+        }
+      }
     }
     if (!addressCreationCardShown.value) {
       item {
@@ -1430,12 +1532,23 @@ private fun ExpandedTagFilterView(tag: PresetTagKind) {
     else -> false
   }
   val (icon, menuIcon, text) = presetTagLabel(tag, active)
-  val color = if (active) MaterialTheme.colors.primary else MaterialTheme.colors.secondary
+  val isLight = MaterialTheme.colors.isLight
+  val chipBg = if (active) {
+    lerp(MaterialTheme.colors.surface, MaterialTheme.colors.primary, if (isLight) 0.18f else 0.25f)
+  } else {
+    lerp(MaterialTheme.colors.surface, MaterialTheme.colors.primary, if (isLight) 0.06f else 0.10f)
+  }
+  val contentColor = if (active) {
+    MaterialTheme.colors.primary
+  } else {
+    lerp(MaterialTheme.colors.onSurface, MaterialTheme.colors.primary, 0.15f).copy(alpha = 0.8f)
+  }
 
   Row(
     modifier = Modifier
       .sizeIn(minHeight = TAG_MIN_HEIGHT * fontSizeSqrtMultiplier)
-      .clip(shape = CircleShape)
+      .clip(shape = RoundedCornerShape(percent = 50))
+      .background(chipBg)
       .clickable {
         if (activeFilter.value == ActiveFilter.PresetTag(tag)) {
           chatModel.activeChatTagFilter.value = null
@@ -1443,8 +1556,7 @@ private fun ExpandedTagFilterView(tag: PresetTagKind) {
           chatModel.activeChatTagFilter.value = ActiveFilter.PresetTag(tag)
         }
       }
-      .padding(horizontal = 5.dp, vertical = 4.dp)
-    ,
+      .padding(horizontal = 12.dp, vertical = 4.dp),
     verticalAlignment = Alignment.CenterVertically,
     horizontalArrangement = Arrangement.Center
   ) {
@@ -1452,13 +1564,13 @@ private fun ExpandedTagFilterView(tag: PresetTagKind) {
       painterResource(menuIcon ?: icon),
       stringResource(text),
       Modifier.size(18.sp.toDp()),
-      tint = color
+      tint = contentColor
     )
     Spacer(Modifier.width(4.dp))
     Box {
       Text(
         stringResource(text),
-        color = if (active) MaterialTheme.colors.primary else MaterialTheme.colors.secondary,
+        color = contentColor,
         fontWeight = if (active) FontWeight.Medium else FontWeight.Normal,
         fontSize = 15.sp
       )
@@ -1472,7 +1584,6 @@ private fun ExpandedTagFilterView(tag: PresetTagKind) {
   }
 }
 
-
 @Composable
 private fun CollapsedTagsFilterView(searchText: MutableState<TextFieldValue>) {
   val activeFilter = remember { chatModel.activeChatTagFilter }
@@ -1484,10 +1595,24 @@ private fun CollapsedTagsFilterView(searchText: MutableState<TextFieldValue>) {
     else -> null
   }
 
-  Box(Modifier
-    .clip(shape = CircleShape)
-    .size(TAG_MIN_HEIGHT * fontSizeSqrtMultiplier)
-    .clickable { showMenu.value = true },
+  val isLight = MaterialTheme.colors.isLight
+  val chipBg = if (selectedPresetTag != null) {
+    lerp(MaterialTheme.colors.surface, MaterialTheme.colors.primary, if (isLight) 0.18f else 0.25f)
+  } else {
+    lerp(MaterialTheme.colors.surface, MaterialTheme.colors.primary, if (isLight) 0.06f else 0.10f)
+  }
+  val menuContainerColor = lerp(
+    MaterialTheme.colors.surface,
+    MaterialTheme.colors.primary,
+    if (isLight) 0.08f else 0.12f
+  )
+
+  Box(
+    Modifier
+      .clip(shape = RoundedCornerShape(percent = 50))
+      .background(chipBg)
+      .size(TAG_MIN_HEIGHT * fontSizeSqrtMultiplier)
+      .clickable { showMenu.value = true },
     contentAlignment = Alignment.Center
   ) {
     if (selectedPresetTag != null) {
@@ -1502,30 +1627,35 @@ private fun CollapsedTagsFilterView(searchText: MutableState<TextFieldValue>) {
       Icon(
         painterResource(MR.images.ic_menu),
         stringResource(MR.strings.chat_list_all),
-        tint = MaterialTheme.colors.secondary
+        tint = lerp(MaterialTheme.colors.onSurface, MaterialTheme.colors.primary, 0.15f).copy(alpha = 0.8f)
       )
     }
 
     val onCloseMenuAction = remember { mutableStateOf<(() -> Unit)>({}) }
 
-    DefaultDropdownMenu(showMenu = showMenu, onClosed = onCloseMenuAction) {
-      if (activeFilter.value != null || searchText.value.text.isNotBlank()) {
-        ItemAction(
-          stringResource(MR.strings.chat_list_all),
-          painterResource(MR.images.ic_menu),
-          onClick = {
-            onCloseMenuAction.value = {
-              searchText.value = TextFieldValue()
-              chatModel.activeChatTagFilter.value = null
-              onCloseMenuAction.value = {}
+    MaterialTheme(
+      colors = MaterialTheme.colors.copy(surface = menuContainerColor),
+      shapes = MaterialTheme.shapes.copy(medium = RoundedCornerShape(20.dp))
+    ) {
+      DefaultDropdownMenu(showMenu = showMenu, onClosed = onCloseMenuAction) {
+        if (activeFilter.value != null || searchText.value.text.isNotBlank()) {
+          ItemAction(
+            stringResource(MR.strings.chat_list_all),
+            painterResource(MR.images.ic_menu),
+            onClick = {
+              onCloseMenuAction.value = {
+                searchText.value = TextFieldValue()
+                chatModel.activeChatTagFilter.value = null
+                onCloseMenuAction.value = {}
+              }
+              showMenu.value = false
             }
-            showMenu.value = false
+          )
+        }
+        PresetTagKind.entries.forEach { tag ->
+          if ((presetTags[tag] ?: 0) > 0 && presetCanBeCollapsed(tag)) {
+            ItemPresetFilterAction(tag, tag == selectedPresetTag, showMenu, onCloseMenuAction)
           }
-        )
-      }
-      PresetTagKind.entries.forEach { tag ->
-        if ((presetTags[tag] ?: 0) > 0 && presetCanBeCollapsed(tag)) {
-          ItemPresetFilterAction(tag, tag == selectedPresetTag, showMenu, onCloseMenuAction)
         }
       }
     }
