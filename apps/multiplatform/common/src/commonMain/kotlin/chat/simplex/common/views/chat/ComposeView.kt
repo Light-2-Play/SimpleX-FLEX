@@ -1718,26 +1718,27 @@ fun ComposeView(
     val fileProhibited = chatsCtx.secondaryContextFilter == null && composeState.value.attachmentPreview && !chat.groupFeatureEnabled(GroupFeature.Files)
     val voiceProhibited = composeState.value.preview is ComposePreview.VoicePreview && !chat.chatInfo.featureEnabled(ChatFeature.Voice)
     val disableSendButton = simplexLinkProhibited || fileProhibited || voiceProhibited
-    if (composeState.value.preview !is ComposePreview.VoicePreview || composeState.value.editing) {
-      if (simplexLinkProhibited) {
-        MsgNotAllowedView(generalGetString(MR.strings.simplex_links_not_allowed), icon = painterResource(MR.images.ic_link))
-      } else if (fileProhibited) {
-        MsgNotAllowedView(generalGetString(MR.strings.files_and_media_not_allowed), icon = painterResource(MR.images.ic_draft))
-      } else if (voiceProhibited) {
-        MsgNotAllowedView(generalGetString(MR.strings.voice_messages_not_allowed), icon = painterResource(MR.images.ic_mic))
-      }
-      contextItemView()
-      when {
-        composeState.value.editing && composeState.value.preview is ComposePreview.VoicePreview -> {}
-        composeState.value.editing && composeState.value.preview is ComposePreview.FilePreview -> {}
-        else -> previewView()
-      }
-    } else {
-      Box {
-        Box(Modifier.align(Alignment.TopStart).padding(bottom = 69.dp)) {
+    val hasContextOrPreview = composeState.value.contextItem !is ComposeContextItem.NoContextItem || 
+                              composeState.value.preview !is ComposePreview.NoPreview
+
+    if (hasContextOrPreview) {
+      Surface(
+        modifier = Modifier
+          .fillMaxWidth()
+          .padding(horizontal = 8.dp, vertical = 4.dp)
+          .clip(androidx.compose.foundation.shape.RoundedCornerShape(24.dp)),
+        color = MaterialTheme.colors.surface,
+        elevation = 2.dp
+      ) {
+        Column {
+          if (simplexLinkProhibited) {
+            MsgNotAllowedView(generalGetString(MR.strings.simplex_links_not_allowed), icon = painterResource(MR.images.ic_link))
+          } else if (fileProhibited) {
+            MsgNotAllowedView(generalGetString(MR.strings.files_and_media_not_allowed), icon = painterResource(MR.images.ic_draft))
+          } else if (voiceProhibited) {
+            MsgNotAllowedView(generalGetString(MR.strings.voice_messages_not_allowed), icon = painterResource(MR.images.ic_mic))
+          }
           contextItemView()
-        }
-        Box(Modifier.align(Alignment.BottomStart)) {
           previewView()
         }
       }
