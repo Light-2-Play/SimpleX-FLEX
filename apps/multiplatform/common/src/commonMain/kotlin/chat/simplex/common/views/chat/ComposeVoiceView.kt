@@ -32,7 +32,11 @@ fun ComposeVoiceView(
 ) {
   val progress = rememberSaveable { mutableStateOf(0) }
   val duration = rememberSaveable(recordedDurationMs) { mutableStateOf(recordedDurationMs) }
-  val tonalColor = MaterialTheme.colors.surface.mixWith(MaterialTheme.colors.primary, 0.12f)
+ val tonalColor = if (MaterialTheme.colors.isLight) {
+    androidx.compose.ui.graphics.lerp(MaterialTheme.colors.surface, MaterialTheme.colors.primary, 0.07f)
+  } else {
+    androidx.compose.ui.graphics.lerp(MaterialTheme.colors.surface, MaterialTheme.colors.primary, 0.11f)
+  }
   val primary = MaterialTheme.colors.primary
 
   Box(
