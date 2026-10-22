@@ -1727,7 +1727,7 @@ fun ComposeView(
           .fillMaxWidth()
           .padding(horizontal = 8.dp, vertical = 4.dp)
           .clip(androidx.compose.foundation.shape.RoundedCornerShape(24.dp)),
-        color = MaterialTheme.colors.primary.copy(alpha = 0.12f).compositeOver(MaterialTheme.colors.surface),
+        color = MaterialTheme.colors.surface.mixWith(MaterialTheme.colors.primary, 0.12f),
         elevation = 0.dp
       ) {
         Column {
