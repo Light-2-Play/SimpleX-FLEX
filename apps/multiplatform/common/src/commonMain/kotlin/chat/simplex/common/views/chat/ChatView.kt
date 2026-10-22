@@ -1437,7 +1437,7 @@ fun BoxScope.ChatInfoToolbar(
       if (appPlatform.isAndroid) {
         Surface(
           modifier = Modifier.size(48.dp),
-          shape = CircleShape,
+          shape = RoundedCornerShape(percent = 50),
           color = MaterialTheme.colors.surface,
           elevation = 2.dp
         ) {
@@ -1470,7 +1470,7 @@ fun BoxScope.ChatInfoToolbar(
       barButtons.forEach { actionButton ->
         Surface(
           modifier = Modifier.size(48.dp),
-          shape = CircleShape,
+          shape = RoundedCornerShape(percent = 50),
           color = MaterialTheme.colors.surface,
           elevation = 2.dp
         ) {
