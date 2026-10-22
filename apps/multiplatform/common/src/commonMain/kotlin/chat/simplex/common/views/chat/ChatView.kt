@@ -1424,7 +1424,10 @@ fun BoxScope.ChatInfoToolbar(
   }} else null
 
  // СТАЛО:
-  if (oneHandUI.value && chatBottomBar.value && !showSearch.value) {
+ if (oneHandUI.value && chatBottomBar.value && !showSearch.value) {
+    // Приглушенный динамический цвет контейнеров в стиле M3 Tonal Palette
+    val islandContainerColor = MaterialTheme.colors.primary.copy(alpha = 0.14f).compositeOver(MaterialTheme.colors.surface)
+
     Row(
       modifier = Modifier
         .fillMaxWidth()
@@ -1438,8 +1441,8 @@ fun BoxScope.ChatInfoToolbar(
         Surface(
           modifier = Modifier.size(48.dp),
           shape = RoundedCornerShape(percent = 50),
-          color = MaterialTheme.colors.surface,
-          elevation = 2.dp
+          color = islandContainerColor,
+          elevation = 0.dp
         ) {
           Box(contentAlignment = Alignment.Center) {
             NavigationButtonBack(onBackClicked)
@@ -1452,9 +1455,9 @@ fun BoxScope.ChatInfoToolbar(
         modifier = Modifier
           .weight(1f)
           .height(48.dp),
-        shape = androidx.compose.foundation.shape.RoundedCornerShape(24.dp),
-        color = MaterialTheme.colors.surface,
-        elevation = 2.dp
+        shape = RoundedCornerShape(24.dp),
+        color = islandContainerColor,
+        elevation = 0.dp
       ) {
         Box(
           modifier = Modifier
@@ -1471,8 +1474,8 @@ fun BoxScope.ChatInfoToolbar(
         Surface(
           modifier = Modifier.size(48.dp),
           shape = RoundedCornerShape(percent = 50),
-          color = MaterialTheme.colors.surface,
-          elevation = 2.dp
+          color = islandContainerColor,
+          elevation = 0.dp
         ) {
           Box(contentAlignment = Alignment.Center) {
             Row { actionButton() }
