@@ -1423,18 +1423,78 @@ fun BoxScope.ChatInfoToolbar(
     }
   }} else null
 
-  DefaultAppBar(
-    navigationButton = { if (appPlatform.isAndroid || showSearch.value) { NavigationButtonBack(onBackClicked) }  },
-    title = { ChatInfoToolbarTitle(chatInfo) },
-    onTitleClick = if (chatInfo is ChatInfo.Local) null else info,
-    showSearch = showSearch.value,
-    searchAlwaysVisible = contentFilter.value != null,
-    onTop = !oneHandUI.value || !chatBottomBar.value,
-    searchPlaceholder = searchPlaceholder,
-    onSearchValueChanged = onSearchValueChanged,
-    searchTrailingContent = searchTrailingContent,
-    buttons = { barButtons.forEach { it() } }
-  )
+ // СТАЛО:
+  if (oneHandUI.value && chatBottomBar.value && !showSearch.value) {
+    Row(
+      modifier = Modifier
+        .fillMaxWidth()
+        .padding(horizontal = 8.dp, vertical = 6.dp)
+        .navigationBarsPadding(),
+      horizontalArrangement = Arrangement.spacedBy(8.dp),
+      verticalAlignment = Alignment.CenterVertically
+    ) {
+      // 1. Остров: Кнопка «Назад»
+      if (appPlatform.isAndroid) {
+        Surface(
+          modifier = Modifier.size(48.dp),
+          shape = CircleShape,
+          color = MaterialTheme.colors.surface,
+          elevation = 2.dp
+        ) {
+          Box(contentAlignment = Alignment.Center) {
+            NavigationButtonBack(onBackClicked)
+          }
+        }
+      }
+
+      // 2. Остров: Информация о чате (Центральная пилюля)
+      Surface(
+        modifier = Modifier
+          .weight(1f)
+          .height(48.dp),
+        shape = androidx.compose.foundation.shape.RoundedCornerShape(24.dp),
+        color = MaterialTheme.colors.surface,
+        elevation = 2.dp
+      ) {
+        Box(
+          modifier = Modifier
+            .fillMaxSize()
+            .then(if (chatInfo !is ChatInfo.Local) Modifier.clickable(onClick = info) else Modifier),
+          contentAlignment = Alignment.Center
+        ) {
+          ChatInfoToolbarTitle(chatInfo)
+        }
+      }
+
+      // 3. Острова: Кнопка «Поиск» и Меню «Троеточие»
+      barButtons.forEach { actionButton ->
+        Surface(
+          modifier = Modifier.size(48.dp),
+          shape = CircleShape,
+          color = MaterialTheme.colors.surface,
+          elevation = 2.dp
+        ) {
+          Box(contentAlignment = Alignment.Center) {
+            Row { actionButton() }
+          }
+        }
+      }
+    }
+  } else {
+    // Штатный вид (если открыт поиск или панель находится сверху экрана)
+    DefaultAppBar(
+      navigationButton = { if (appPlatform.isAndroid || showSearch.value) { NavigationButtonBack(onBackClicked) }  },
+      title = { ChatInfoToolbarTitle(chatInfo) },
+      onTitleClick = if (chatInfo is ChatInfo.Local) null else info,
+      showSearch = showSearch.value,
+      searchAlwaysVisible = contentFilter.value != null,
+      onTop = !oneHandUI.value || !chatBottomBar.value,
+      searchPlaceholder = searchPlaceholder,
+      onSearchValueChanged = onSearchValueChanged,
+      searchTrailingContent = searchTrailingContent,
+      buttons = { barButtons.forEach { it() } }
+    )
+  }
   Box(Modifier.fillMaxWidth().wrapContentSize(Alignment.TopEnd)) {
     val density = LocalDensity.current
     val width = remember { mutableStateOf(250.dp) }
