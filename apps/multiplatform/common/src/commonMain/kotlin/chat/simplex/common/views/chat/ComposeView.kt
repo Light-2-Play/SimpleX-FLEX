@@ -1721,8 +1721,11 @@ fun ComposeView(
     val disableSendButton = simplexLinkProhibited || fileProhibited || voiceProhibited
     val hasContextOrPreview = composeState.value.contextItem !is ComposeContextItem.NoContextItem || 
                               composeState.value.preview !is ComposePreview.NoPreview
-val tonalColor = MaterialTheme.colors.surface.mixWith(MaterialTheme.colors.primary, 0.12f)
-
+val tonalColor = if (MaterialTheme.colors.isLight) {
+      androidx.compose.ui.graphics.lerp(MaterialTheme.colors.surface, MaterialTheme.colors.primary, 0.07f)
+    } else {
+      androidx.compose.ui.graphics.lerp(MaterialTheme.colors.surface, MaterialTheme.colors.primary, 0.11f)
+    }
     if (hasContextOrPreview) {
       Surface(
         modifier = Modifier
