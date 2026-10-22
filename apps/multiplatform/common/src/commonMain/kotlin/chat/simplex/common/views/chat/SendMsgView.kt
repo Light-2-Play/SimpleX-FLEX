@@ -483,14 +483,16 @@ private fun SendMsgButton(
     Icon(
       icon,
       stringResource(MR.strings.icon_descr_send_message),
-      tint = Color.White,
+      tint = if (enabled) Color.White else MaterialTheme.colors.onSurface.copy(alpha = 0.38f),
       modifier = Modifier
         .size(sizeDp.value.dp)
-        .padding(4.dp)
         .alpha(alpha.value)
         .clip(CircleShape)
-        .background(if (enabled) sendButtonColor else MaterialTheme.colors.secondary.copy(alpha = 0.75f))
-        .padding(3.dp)
+        .background(
+          if (enabled) sendButtonColor 
+          else MaterialTheme.colors.onSurface.copy(alpha = 0.12f)
+        )
+        .padding(7.dp)
     )
   }
 }
