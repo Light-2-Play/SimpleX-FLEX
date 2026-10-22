@@ -1727,8 +1727,8 @@ fun ComposeView(
           .fillMaxWidth()
           .padding(horizontal = 8.dp, vertical = 4.dp)
           .clip(androidx.compose.foundation.shape.RoundedCornerShape(24.dp)),
-        color = MaterialTheme.colors.surface,
-        elevation = 2.dp
+        color = MaterialTheme.colors.primary.copy(alpha = 0.12f).compositeOver(MaterialTheme.colors.surface),
+        elevation = 0.dp
       ) {
         Column {
           if (simplexLinkProhibited) {
