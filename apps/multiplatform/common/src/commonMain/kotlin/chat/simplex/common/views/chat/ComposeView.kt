@@ -1720,14 +1720,15 @@ fun ComposeView(
     val disableSendButton = simplexLinkProhibited || fileProhibited || voiceProhibited
     val hasContextOrPreview = composeState.value.contextItem !is ComposeContextItem.NoContextItem || 
                               composeState.value.preview !is ComposePreview.NoPreview
+val tonalColor = MaterialTheme.colors.surface.mixWith(MaterialTheme.colors.primary, 0.12f)
 
     if (hasContextOrPreview) {
       Surface(
         modifier = Modifier
           .fillMaxWidth()
-          .padding(horizontal = 8.dp, vertical = 4.dp)
-          .clip(androidx.compose.foundation.shape.RoundedCornerShape(24.dp)),
-        color = MaterialTheme.colors.surface.mixWith(MaterialTheme.colors.primary, 0.12f),
+          .padding(horizontal = 8.dp, vertical = 3.dp)
+          .clip(RoundedCornerShape(24.dp)),
+        color = tonalColor, // Мягкий динамический тон
         elevation = 0.dp
       ) {
         Column {
@@ -1747,11 +1748,12 @@ fun ComposeView(
    // СТАЛО:
     Surface(
       modifier = Modifier
-        .padding(horizontal = 8.dp, vertical = 4.dp)
-        .clip(androidx.compose.foundation.shape.RoundedCornerShape(32.dp)),
-      color = MaterialTheme.colors.surface,
+        .fillMaxWidth()
+        .padding(horizontal = 8.dp, vertical = 3.dp)
+        .clip(RoundedCornerShape(28.dp)),
+      color = tonalColor, // Тот же мягкий динамический оттенок
       contentColor = MaterialTheme.colors.onSurface,
-      elevation = 2.dp
+      elevation = 0.dp
     ) {
       if (chat.chatInfo is ChatInfo.Group && chat.chatInfo.groupInfo.nextConnectPrepared) {
         if (chat.chatInfo.groupInfo.businessChat == null) {
