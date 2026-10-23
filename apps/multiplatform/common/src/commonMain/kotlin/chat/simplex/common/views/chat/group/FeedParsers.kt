@@ -1,6 +1,7 @@
 package chat.simplex.common.views.chat.group
 
 import kotlinx.serialization.json.*
+import chat.simplex.common.model.*
 
 object FeedParsers {
 
