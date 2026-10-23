@@ -1437,7 +1437,10 @@ private fun TagsView(searchText: MutableState<TextFieldValue>) {
                   chatModel.activeChatTagFilter.value = ActiveFilter.UserTag(tag)
                 }
               },
-              onLongClick = { showMenu.value = true },
+              onLongClick = { 
+              RichHaptics.perform(HapticPattern.HEAVY_CLICK)
+    if (!disabled && dropdownMenuItems != null)  
+               showMenu.value = true },
               interactionSource = interactionSource,
               indication = LocalIndication.current,
               enabled = !saving.value
