@@ -36,95 +36,114 @@ fun GroupFeedsSheet(
   val sheetBg = lerp(MaterialTheme.colors.surface, MaterialTheme.colors.primary, if (isLight) 0.04f else 0.07f)
   val cardBg = lerp(MaterialTheme.colors.surface, MaterialTheme.colors.primary, if (isLight) 0.08f else 0.12f)
 
-  Column(
+  // Полноэкранная подложка с привязкой содержимого к низу
+  Box(
     modifier = Modifier
-      .fillMaxWidth()
-      .clip(RoundedCornerShape(topStart = 32.dp, topEnd = 32.dp))
-      .background(sheetBg)
-      .padding(horizontal = 16.dp, vertical = 12.dp)
+      .fillMaxSize()
+      .clickable(
+        interactionSource = remember { MutableInteractionSource() },
+        indication = null,
+        onClick = close // закрытие по тапу вне шторки
+      ),
+    contentAlignment = Alignment.BottomCenter
   ) {
-    Box(
+    Column(
       modifier = Modifier
-        .align(Alignment.CenterHorizontally)
-        .size(width = 36.dp, height = 4.dp)
-        .clip(RoundedCornerShape(percent = 50))
-        .background(MaterialTheme.colors.onSurface.copy(alpha = 0.2f))
-    )
-
-    Spacer(Modifier.height(14.dp))
-
-    Row(
-      modifier = Modifier.fillMaxWidth(),
-      horizontalArrangement = Arrangement.SpaceBetween,
-      verticalAlignment = Alignment.CenterVertically
+        .fillMaxWidth()
+        .clip(RoundedCornerShape(topStart = 32.dp, topEnd = 32.dp))
+        .background(sheetBg)
+        .clickable(
+          interactionSource = remember { MutableInteractionSource() },
+          indication = null,
+          onClick = {} // предотвращаем клик сквозь саму шторку
+        )
+        .navigationBarsPadding() // отступ от нижней полосы жестов/кнопок
+        .padding(horizontal = 16.dp, vertical = 12.dp)
     ) {
-      Column {
-        Text(
-          "Zero-Relay Feeds",
-          style = MaterialTheme.typography.h6,
-          fontWeight = FontWeight.Bold,
-          color = MaterialTheme.colors.onSurface
-        )
-        Text(
-          "RSS / Mastodon bridge directly to this chat",
-          fontSize = 12.5.sp,
-          color = MaterialTheme.colors.onSurface.copy(alpha = 0.65f)
-        )
-      }
-
-      Surface(
-        shape = RoundedCornerShape(percent = 50),
-        color = MaterialTheme.colors.primary,
-        modifier = Modifier.size(40.dp)
-      ) {
-        IconButton(onClick = {
-          RichHaptics.perform(HapticPattern.CLICK)
-          showAddDialog = true
-        }) {
-          Icon(
-            painterResource(MR.images.ic_add),
-            contentDescription = "Add feed",
-            tint = MaterialTheme.colors.onPrimary,
-            modifier = Modifier.size(20.dp)
-          )
-        }
-      }
-    }
-
-    Spacer(Modifier.height(16.dp))
-
-    if (feeds.isEmpty()) {
+      // Drag Handle (полоска вверху шторки)
       Box(
         modifier = Modifier
-          .fillMaxWidth()
-          .padding(vertical = 36.dp),
-        contentAlignment = Alignment.Center
+          .align(Alignment.CenterHorizontally)
+          .size(width = 36.dp, height = 4.dp)
+          .clip(RoundedCornerShape(percent = 50))
+          .background(MaterialTheme.colors.onSurface.copy(alpha = 0.2f))
+      )
+
+      Spacer(Modifier.height(14.dp))
+
+      Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
       ) {
-        Text(
-          "No active feeds yet. Tap + to connect an RSS or Fediverse account.",
-          color = MaterialTheme.colors.secondary,
-          fontSize = 14.sp
-        )
-      }
-    } else {
-      LazyColumn(
-        verticalArrangement = Arrangement.spacedBy(8.dp),
-        modifier = Modifier.fillMaxWidth()
-      ) {
-        items(feeds) { sub ->
-          FeedItemCard(
-            sub = sub,
-            cardBg = cardBg,
-            onToggle = { enabled ->
-              feeds = feeds.map { if (it.id == sub.id) it.copy(enabled = enabled) else it }
-            },
-            onSyncNow = {
-              RichHaptics.perform(HapticPattern.TICK)
-              ZeroRelayFeedEngine.syncFeed(chatModel, sub) { updated ->
-                feeds = feeds.map { if (it.id == updated.id) updated else it }
-              }
-            }
+        Column {
+          Text(
+            "Zero-Relay Feeds",
+            style = MaterialTheme.typography.h6,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colors.onSurface
           )
+          Text(
+            "RSS / Mastodon bridge directly to this chat",
+            fontSize = 12.5.sp,
+            color = MaterialTheme.colors.onSurface.copy(alpha = 0.65f)
+          )
+        }
+
+        Surface(
+          shape = RoundedCornerShape(percent = 50),
+          color = MaterialTheme.colors.primary,
+          modifier = Modifier.size(40.dp)
+        ) {
+          IconButton(onClick = {
+            RichHaptics.perform(HapticPattern.CLICK)
+            showAddDialog = true
+          }) {
+            Icon(
+              painterResource(MR.images.ic_add),
+              contentDescription = "Add feed",
+              tint = MaterialTheme.colors.onPrimary,
+              modifier = Modifier.size(20.dp)
+            )
+          }
+        }
+      }
+
+      Spacer(Modifier.height(16.dp))
+
+      if (feeds.isEmpty()) {
+        Box(
+          modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 36.dp),
+          contentAlignment = Alignment.Center
+        ) {
+          Text(
+            "No active feeds yet. Tap + to connect an RSS or Fediverse account.",
+            color = MaterialTheme.colors.secondary,
+            fontSize = 14.sp
+          )
+        }
+      } else {
+        LazyColumn(
+          verticalArrangement = Arrangement.spacedBy(8.dp),
+          modifier = Modifier.fillMaxWidth()
+        ) {
+          items(feeds) { sub ->
+            FeedItemCard(
+              sub = sub,
+              cardBg = cardBg,
+              onToggle = { enabled ->
+                feeds = feeds.map { if (it.id == sub.id) it.copy(enabled = enabled) else it }
+              },
+              onSyncNow = {
+                RichHaptics.perform(HapticPattern.TICK)
+                ZeroRelayFeedEngine.syncFeed(chatModel, sub) { updated ->
+                  feeds = feeds.map { if (it.id == updated.id) updated else it }
+                }
+              }
+            )
+          }
         }
       }
     }
