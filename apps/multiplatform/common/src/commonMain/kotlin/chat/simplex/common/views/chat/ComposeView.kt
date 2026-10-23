@@ -1002,6 +1002,7 @@ fun ComposeView(
   fun sendMessage(ttl: Int?, sign: Boolean = false, toChat: Chat = chat, composed: ComposeState? = null) {
     withLongRunningApi(slow = 120_000) {
       sendMessageAsync(null, false, ttl, sign, toChat, composed ?: composeState.value)
+    RichHaptics.perform(HapticPattern.SUCCESS)
     }
   }
 
