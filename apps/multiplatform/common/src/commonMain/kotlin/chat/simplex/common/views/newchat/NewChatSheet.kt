@@ -635,6 +635,7 @@ private fun ContactsSearchBar(
   connectNameCandidate: MutableState<String?>,
   close: () -> Unit,
 ) {
+  val focusRequester = remember { FocusRequester() } // 1. ПЕРЕНЕСЕНО СЮДА
   var focused by remember { mutableStateOf(false) }
 
   val isLight = MaterialTheme.colors.isLight
@@ -668,7 +669,7 @@ private fun ContactsSearchBar(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp)
       ) {
-        val focusRequester = remember { FocusRequester() }
+        // 2. ЗДЕСЬ СТРОКУ «val focusRequester = ...» УДАЛЯЕМ, ОСТАВЛЯЕМ ТОЛЬКО ИКОНКУ:
         Icon(
           painterResource(MR.images.ic_search),
           contentDescription = null,
