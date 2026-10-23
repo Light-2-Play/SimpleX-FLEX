@@ -2,6 +2,7 @@ package chat.simplex.common.views.chat.group
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -36,14 +37,14 @@ fun GroupFeedsSheet(
   val sheetBg = lerp(MaterialTheme.colors.surface, MaterialTheme.colors.primary, if (isLight) 0.04f else 0.07f)
   val cardBg = lerp(MaterialTheme.colors.surface, MaterialTheme.colors.primary, if (isLight) 0.08f else 0.12f)
 
-  // Полноэкранная подложка с привязкой содержимого к низу
+  // Полноэкранный контейнер с выравниванием шторки строго по нижнему краю
   Box(
     modifier = Modifier
       .fillMaxSize()
       .clickable(
         interactionSource = remember { MutableInteractionSource() },
         indication = null,
-        onClick = close // закрытие по тапу вне шторки
+        onClick = close // закрытие по тапу в пустую область сверху
       ),
     contentAlignment = Alignment.BottomCenter
   ) {
@@ -55,12 +56,12 @@ fun GroupFeedsSheet(
         .clickable(
           interactionSource = remember { MutableInteractionSource() },
           indication = null,
-          onClick = {} // предотвращаем клик сквозь саму шторку
+          onClick = {} // блокируем закрытие при тапе по телу самой шторки
         )
-        .navigationBarsPadding() // отступ от нижней полосы жестов/кнопок
+        .navigationBarsPadding()
         .padding(horizontal = 16.dp, vertical = 12.dp)
     ) {
-      // Drag Handle (полоска вверху шторки)
+      // Полоска-держатель (Drag Handle)
       Box(
         modifier = Modifier
           .align(Alignment.CenterHorizontally)
@@ -71,6 +72,7 @@ fun GroupFeedsSheet(
 
       Spacer(Modifier.height(14.dp))
 
+      // Шапка шторки
       Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.SpaceBetween,
@@ -148,6 +150,158 @@ fun GroupFeedsSheet(
       }
     }
   }
+
+  // Диалог добавления фида при нажатии на "+"
+  if (showAddDialog) {
+    AddFeedDialog(
+      onDismiss = { showAddDialog = false },
+      onAdd = { url, title, type ->
+        val newSub = FeedSubscription(
+          id = System.currentTimeMillis().toString(),
+          targetGroupId = groupInfo.groupId,
+          url = url,
+          type = type,
+          title = if (title.isNotBlank()) title else url.removePrefix("https://").removePrefix("http://").take(30),
+          enabled = true,
+          lastFetchedTs = 0L,
+          seenItemIds = emptySet()
+        )
+        feeds = feeds + newSub
+        showAddDialog = false
+
+        // Сразу запускаем пробную синхронизацию
+        ZeroRelayFeedEngine.syncFeed(chatModel, newSub) { updated ->
+          feeds = feeds.map { if (it.id == updated.id) updated else it }
+        }
+      }
+    )
+  }
+}
+
+@Composable
+private fun AddFeedDialog(
+  onDismiss: () -> Unit,
+  onAdd: (url: String, title: String, type: FeedType) -> Unit
+) {
+  var url by remember { mutableStateOf("") }
+  var title by remember { mutableStateOf("") }
+  var feedType by remember { mutableStateOf(FeedType.RSS_ATOM) }
+
+  val isLight = MaterialTheme.colors.isLight
+  val dialogBg = lerp(MaterialTheme.colors.surface, MaterialTheme.colors.primary, if (isLight) 0.08f else 0.12f)
+
+  AlertDialog(
+    onDismissRequest = onDismiss,
+    shape = RoundedCornerShape(28.dp),
+    backgroundColor = dialogBg,
+    title = {
+      Text(
+        text = "Add Feed",
+        style = MaterialTheme.typography.h6,
+        fontWeight = FontWeight.Bold,
+        color = MaterialTheme.colors.onSurface
+      )
+    },
+    text = {
+      Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        // Переключатель типа потока (RSS vs Mastodon)
+        Row(
+          modifier = Modifier.fillMaxWidth(),
+          horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+          val isRss = feedType == FeedType.RSS_ATOM
+          Button(
+            onClick = {
+              RichHaptics.perform(HapticPattern.TICK)
+              feedType = FeedType.RSS_ATOM
+            },
+            modifier = Modifier.weight(1f).height(38.dp),
+            shape = RoundedCornerShape(percent = 50),
+            colors = ButtonDefaults.buttonColors(
+              backgroundColor = if (isRss) MaterialTheme.colors.primary else MaterialTheme.colors.surface.copy(alpha = 0.5f),
+              contentColor = if (isRss) MaterialTheme.colors.onPrimary else MaterialTheme.colors.onSurface
+            ),
+            elevation = null
+          ) {
+            Text("RSS / Atom", fontSize = 12.sp, fontWeight = FontWeight.Medium)
+          }
+
+          Button(
+            onClick = {
+              RichHaptics.perform(HapticPattern.TICK)
+              feedType = FeedType.MASTODON_ACTIVITYPUB
+            },
+            modifier = Modifier.weight(1f).height(38.dp),
+            shape = RoundedCornerShape(percent = 50),
+            colors = ButtonDefaults.buttonColors(
+              backgroundColor = if (!isRss) MaterialTheme.colors.primary else MaterialTheme.colors.surface.copy(alpha = 0.5f),
+              contentColor = if (!isRss) MaterialTheme.colors.onPrimary else MaterialTheme.colors.onSurface
+            ),
+            elevation = null
+          ) {
+            Text("Mastodon", fontSize = 12.sp, fontWeight = FontWeight.Medium)
+          }
+        }
+
+        OutlinedTextField(
+          value = url,
+          onValueChange = { url = it },
+          label = { Text("Feed URL") },
+          placeholder = {
+            Text(if (feedType == FeedType.RSS_ATOM) "https://example.com/rss.xml" else "https://mastodon.social/api/v1/accounts/123/statuses")
+          },
+          singleLine = true,
+          modifier = Modifier.fillMaxWidth(),
+          shape = RoundedCornerShape(16.dp),
+          colors = TextFieldDefaults.outlinedTextFieldColors(
+            focusedBorderColor = MaterialTheme.colors.primary,
+            cursorColor = MaterialTheme.colors.primary
+          )
+        )
+
+        OutlinedTextField(
+          value = title,
+          onValueChange = { title = it },
+          label = { Text("Title (Optional)") },
+          placeholder = { Text("News / Updates") },
+          singleLine = true,
+          modifier = Modifier.fillMaxWidth(),
+          shape = RoundedCornerShape(16.dp),
+          colors = TextFieldDefaults.outlinedTextFieldColors(
+            focusedBorderColor = MaterialTheme.colors.primary,
+            cursorColor = MaterialTheme.colors.primary
+          )
+        )
+      }
+    },
+    confirmButton = {
+      Button(
+        onClick = {
+          if (url.isNotBlank()) {
+            RichHaptics.perform(HapticPattern.SUCCESS)
+            onAdd(url.trim(), title.trim(), feedType)
+          }
+        },
+        enabled = url.isNotBlank(),
+        shape = RoundedCornerShape(percent = 50),
+        colors = ButtonDefaults.buttonColors(
+          backgroundColor = MaterialTheme.colors.primary,
+          contentColor = MaterialTheme.colors.onPrimary
+        ),
+        elevation = null
+      ) {
+        Text("Add")
+      }
+    },
+    dismissButton = {
+      TextButton(
+        onClick = onDismiss,
+        shape = RoundedCornerShape(percent = 50)
+      ) {
+        Text("Cancel", color = MaterialTheme.colors.primary)
+      }
+    }
+  )
 }
 
 @Composable
