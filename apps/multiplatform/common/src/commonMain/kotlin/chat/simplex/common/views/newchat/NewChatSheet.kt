@@ -70,17 +70,69 @@ fun ModalData.NewChatSheet(rh: RemoteHostInfo?, close: () -> Unit) {
         close = close
       )
     }
-    if (oneHandUI.value) {
-      Column(Modifier.align(Alignment.BottomCenter)) {
-        DefaultAppBar(
-          navigationButton = { NavigationButtonBack(onButtonClicked = close) },
-          fixedTitleText = generalGetString(MR.strings.new_chat),
-          onTop = false,
-        )
+    val isLight = MaterialTheme.colors.isLight
+  val islandColor = androidx.compose.ui.graphics.lerp(
+    MaterialTheme.colors.surface,
+    MaterialTheme.colors.primary,
+    if (isLight) 0.07f else 0.11f
+  )
+
+  if (oneHandUI.value) {
+    Row(
+      modifier = Modifier
+        .fillMaxWidth()
+        .padding(horizontal = 10.dp, vertical = 6.dp)
+        .navigationBarsPadding(),
+      horizontalArrangement = Arrangement.spacedBy(8.dp),
+      verticalAlignment = Alignment.CenterVertically
+    ) {
+      // 1. Остров «Назад»
+      Surface(
+        modifier = Modifier.size(48.dp),
+        shape = androidx.compose.foundation.shape.RoundedCornerShape(percent = 50),
+        color = islandColor,
+        elevation = 0.dp
+      ) {
+        Box(contentAlignment = Alignment.Center) {
+          NavigationButtonBack(onBackClicked = close)
+        }
       }
+
+      // 2. Остров «New chat»
+      Surface(
+        modifier = Modifier
+          .weight(1f)
+          .height(48.dp),
+        shape = androidx.compose.foundation.shape.RoundedCornerShape(24.dp),
+        color = islandColor,
+        elevation = 0.dp
+      ) {
+        Box(contentAlignment = Alignment.Center) {
+          Text(
+            stringResource(MR.strings.new_chat),
+            color = MaterialTheme.colors.onSurface,
+            fontWeight = FontWeight.SemiBold,
+            style = MaterialTheme.typography.h6
+          )
+        }
+      }
+      
+      // Балансировочный отступ справа для идеальной центровки заголовка
+      Spacer(Modifier.size(48.dp))
     }
+  } else {
+    DefaultAppBar(
+      navigationButton = { NavigationButtonBack(onBackClicked = close) },
+      title = {
+        Text(
+          stringResource(MR.strings.new_chat),
+          color = MaterialTheme.colors.onBackground,
+          fontWeight = FontWeight.SemiBold
+        )
+      },
+      onTop = true
+    )
   }
-}
 
 enum class ContactType {
   CARD, CONTACT_WITH_REQUEST, REQUEST, RECENT, CHAT_DELETED, UNLISTED
@@ -481,50 +533,82 @@ private fun ContactsSearchBar(
   connectNameCandidate: MutableState<String?>,
   close: () -> Unit,
 ) {
-  var focused by remember { mutableStateOf(false) }
+ var focused by remember { mutableStateOf(false) }
 
-  Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-    val focusRequester = remember { FocusRequester() }
-    Icon(
-      painterResource(MR.images.ic_search),
-      contentDescription = null,
-      Modifier.padding(start = DEFAULT_PADDING, end = DEFAULT_PADDING_HALF).size(22.dp * fontSizeSqrtMultiplier),
-      tint = MaterialTheme.colors.secondary
-    )
-    SearchTextField(
-      Modifier.weight(1f).onFocusChanged { focused = it.hasFocus }.focusRequester(focusRequester),
-      placeholder = stringResource(MR.strings.search_or_paste_simplex_link),
-      alwaysVisible = true,
-      searchText = searchText,
-      trailingContent = null,
-      // the clear button must line up with the filter icon it replaces, so no reduction here
-      reducedCloseButtonPadding = 0.dp,
+  val isLight = MaterialTheme.colors.isLight
+  val searchBgColor = androidx.compose.ui.graphics.lerp(
+    MaterialTheme.colors.surface,
+    MaterialTheme.colors.primary,
+    if (isLight) 0.07f else 0.11f
+  )
+  val dynamicTextColor = androidx.compose.ui.graphics.lerp(
+    MaterialTheme.colors.onSurface,
+    MaterialTheme.colors.primary,
+    0.15f
+  )
+
+  Surface(
+    modifier = Modifier
+      .fillMaxWidth()
+      .padding(horizontal = 10.dp, vertical = 4.dp),
+    shape = androidx.compose.foundation.shape.RoundedCornerShape(28.dp),
+    color = searchBgColor,
+    elevation = 0.dp
+  ) {
+    MaterialTheme(
+      colors = MaterialTheme.colors.copy(
+        onSurface = dynamicTextColor,
+        onBackground = dynamicTextColor,
+        secondary = dynamicTextColor.copy(alpha = 0.6f)
+      )
     ) {
-      searchText.value = searchText.value.copy(it)
-    }
-
-    if (connectProgressManager.showConnectProgress != null) {
-      Box(Modifier.padding(end = DEFAULT_PADDING_HALF)) {
-        CIFileViewScope.progressIndicator(sizeMultiplier = 0.75f)
-      }
-    }
-
-    val hasText = remember { derivedStateOf { searchText.value.text.isNotEmpty() } }
-    if (hasText.value) {
-      val hideSearchOnBack: () -> Unit = { searchText.value = TextFieldValue() }
-      BackHandler(onBack = hideSearchOnBack)
-      KeyChangeEffect(chatModel.currentRemoteHost.value) {
-        hideSearchOnBack()
-      }
-    } else {
-      Row {
-        val padding = if (appPlatform.isDesktop) 0.dp else 7.dp
-        if (chatModel.chats.size > 0) {
-          ToggleFilterButton()
+      Row(
+        verticalAlignment = Alignment.CenterVertically, 
+        modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp)
+      ) {
+        val focusRequester = remember { FocusRequester() }
+        Icon(
+          painterResource(MR.images.ic_search),
+          contentDescription = null,
+          Modifier.padding(start = DEFAULT_PADDING, end = DEFAULT_PADDING_HALF).size(22.dp * fontSizeSqrtMultiplier),
+          tint = MaterialTheme.colors.primary.copy(alpha = 0.8f)
+        )
+        SearchTextField(
+          Modifier.weight(1f).onFocusChanged { focused = it.hasFocus }.focusRequester(focusRequester),
+          placeholder = stringResource(MR.strings.search_or_paste_simplex_link),
+          alwaysVisible = true,
+          searchText = searchText,
+          trailingContent = null,
+          reducedCloseButtonPadding = 0.dp,
+        ) {
+          searchText.value = searchText.value.copy(it)
         }
-        Spacer(Modifier.width(padding))
+
+        if (connectProgressManager.showConnectProgress != null) {
+          Box(Modifier.padding(end = DEFAULT_PADDING_HALF)) {
+            CIFileViewScope.progressIndicator(sizeMultiplier = 0.75f)
+          }
+        }
+
+        val hasText = remember { derivedStateOf { searchText.value.text.isNotEmpty() } }
+        if (hasText.value) {
+          val hideSearchOnBack: () -> Unit = { searchText.value = TextFieldValue() }
+          BackHandler(onBack = hideSearchOnBack)
+          KeyChangeEffect(chatModel.currentRemoteHost.value) {
+            hideSearchOnBack()
+          }
+        } else {
+          Row {
+            val padding = if (appPlatform.isDesktop) 0.dp else 7.dp
+            if (chatModel.chats.size > 0) {
+              ToggleFilterButton()
+            }
+            Spacer(Modifier.width(padding))
+          }
+        }
       }
     }
+  }
     val focusManager = LocalFocusManager.current
     val keyboardState = getKeyboardState()
     LaunchedEffect(keyboardState.value) {
