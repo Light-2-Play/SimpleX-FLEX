@@ -39,7 +39,7 @@ import dev.icerock.moko.resources.compose.stringResource
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
 
-private val USER_PICKER_SECTION_SPACING = 32.dp
+private val USER_PICKER_SECTION_SPACING = 20.dp
 
 // Spec: spec/client/chat-list.md#UserPicker
 @Composable
@@ -131,7 +131,6 @@ fun UserPicker(
       }
   }
   LaunchedEffect(Unit) {
-    // Controller.ctrl can be null when self-destructing activates
     if (controller.hasChatCtrl()) {
       withBGApi {
         controller.reloadRemoteHosts()
@@ -141,14 +140,21 @@ fun UserPicker(
 
   val oneHandUI = remember { appPrefs.oneHandUI.state }
   val iconColor = MaterialTheme.colors.secondaryVariant
-  val background = if (appPlatform.isAndroid) MaterialTheme.colors.background.mixWith(MaterialTheme.colors.onBackground, alpha = 1 - userPickerAlpha()) else MaterialTheme.colors.surface
+  val isLight = MaterialTheme.colors.isLight
+  val sheetBgColor = androidx.compose.ui.graphics.lerp(
+    MaterialTheme.colors.surface,
+    MaterialTheme.colors.primary,
+    if (isLight) 0.04f else 0.07f
+  )
+
   PlatformUserPicker(
     modifier = Modifier
       .height(IntrinsicSize.Min)
       .fillMaxWidth()
-      .then(if (newChat.isVisible()) Modifier.shadow(8.dp, clip = true, ambientColor = background) else Modifier)
+      .then(if (newChat.isVisible()) Modifier.shadow(12.dp, shape = RoundedCornerShape(topStart = 32.dp, topEnd = 32.dp), clip = true, ambientColor = sheetBgColor) else Modifier)
+      .clip(RoundedCornerShape(topStart = 32.dp, topEnd = 32.dp))
+      .background(sheetBgColor)
       .padding(top = if (appPlatform.isDesktop && oneHandUI.value) 7.dp else 0.dp)
-      .background(background)
       .padding(bottom = USER_PICKER_SECTION_SPACING - DEFAULT_MIN_SECTION_ITEM_PADDING_VERTICAL),
     pickerState = userPickerState
   ) {
@@ -177,6 +183,22 @@ fun UserPicker(
 
     @Composable
     fun FirstSection() {
+      if (appPlatform.isAndroid) {
+        Box(
+          modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = 10.dp, bottom = 2.dp),
+          contentAlignment = Alignment.Center
+        ) {
+          Box(
+            modifier = Modifier
+              .size(width = 36.dp, height = 4.dp)
+              .clip(RoundedCornerShape(percent = 50))
+              .background(MaterialTheme.colors.onSurface.copy(alpha = 0.2f))
+          )
+        }
+      }
+
       if (remoteHosts.isNotEmpty()) {
         val currentRemoteHost = remember { chatModel.currentRemoteHost }.value
         val localDeviceActive = currentRemoteHost == null && chatModel.localUserCreated.value == true
@@ -200,7 +222,7 @@ fun UserPicker(
       }
       val currentUser = remember { chatModel.currentUser }.value
       if (appPlatform.isAndroid) {
-        Column(modifier = Modifier.padding(top = USER_PICKER_SECTION_SPACING, bottom = USER_PICKER_SECTION_SPACING - DEFAULT_MIN_SECTION_ITEM_PADDING_VERTICAL - 3.dp)) {
+        Column(modifier = Modifier.padding(top = 10.dp, bottom = 12.dp)) {
           UserPickerUsersSection(
             users = users,
             onUserClicked = onUserClicked,
@@ -282,18 +304,18 @@ fun UserPicker(
                 },
                 content = {
                   UserProfilesView(chatModel, search, profileHidden) { block ->
-                      if (authorized.value) {
+                    if (authorized.value) {
+                      block()
+                    } else {
+                      doWithAuth(
+                        generalGetString(MR.strings.auth_open_chat_profiles),
+                        generalGetString(MR.strings.auth_log_in_using_credential)
+                      ) {
+                        authorized.value = true
                         block()
-                      } else {
-                        doWithAuth(
-                          generalGetString(MR.strings.auth_open_chat_profiles),
-                          generalGetString(MR.strings.auth_log_in_using_credential)
-                        ) {
-                          authorized.value = true
-                          block()
-                        }
                       }
                     }
+                  }
                 })
             }
           },
@@ -350,6 +372,12 @@ private fun GlobalSettingsSection(
   setPerformLA: (Boolean) -> Unit,
 ) {
   val stopped = remember { chatModel.chatRunning }.value == false
+  val isLight = MaterialTheme.colors.isLight
+  val cardColor = androidx.compose.ui.graphics.lerp(
+    MaterialTheme.colors.surface,
+    MaterialTheme.colors.primary,
+    if (isLight) 0.06f else 0.09f
+  )
 
   if (appPlatform.isAndroid) {
     val text = generalGetString(MR.strings.settings_section_title_use_from_desktop).lowercase().capitalize(Locale.current)
@@ -378,20 +406,38 @@ private fun GlobalSettingsSection(
     )
   }
 
-  SectionItemView(
-    click = {
-      ModalManager.start.showModalCloseable(cardScreen = true) { close ->
-        SettingsView(chatModel, setPerformLA, close)
-      }
-    },
-    padding = if (appPlatform.isDesktop) PaddingValues(start = DEFAULT_PADDING * 1.7f, end = DEFAULT_PADDING + 2.dp) else PaddingValues(start = DEFAULT_PADDING, end = DEFAULT_PADDING_HALF)
+  Box(
+    modifier = Modifier
+      .fillMaxWidth()
+      .padding(horizontal = 14.dp, vertical = 3.dp)
+      .clip(RoundedCornerShape(20.dp))
+      .background(cardColor)
   ) {
-    val text = generalGetString(MR.strings.settings_section_title_settings).lowercase().capitalize(Locale.current)
-    Icon(painterResource(MR.images.ic_settings), text, tint = MaterialTheme.colors.secondary)
-    TextIconSpaced()
-    Text(text, color = Color.Unspecified)
-    Spacer(Modifier.weight(1f))
-    ColorModeSwitcher()
+    SectionItemView(
+      click = {
+        ModalManager.start.showModalCloseable(cardScreen = true) { close ->
+          SettingsView(chatModel, setPerformLA, close)
+        }
+      },
+      padding = if (appPlatform.isDesktop) PaddingValues(start = DEFAULT_PADDING * 1.7f, end = DEFAULT_PADDING + 2.dp) else PaddingValues(start = DEFAULT_PADDING, end = DEFAULT_PADDING_HALF)
+    ) {
+      val text = generalGetString(MR.strings.settings_section_title_settings).lowercase().capitalize(Locale.current)
+      Icon(
+        painterResource(MR.images.ic_settings),
+        text,
+        tint = MaterialTheme.colors.primary.copy(alpha = 0.85f),
+        modifier = Modifier.size(22.dp)
+      )
+      TextIconSpaced()
+      Text(
+        text,
+        color = MaterialTheme.colors.onSurface,
+        fontWeight = FontWeight.Medium,
+        fontSize = 15.5.sp
+      )
+      Spacer(Modifier.weight(1f))
+      ColorModeSwitcher()
+    }
   }
 }
 
@@ -404,52 +450,72 @@ fun UserProfilePickerItem(
   openSettings: () -> Unit = {},
   onClick: () -> Unit
 ) {
-  Row(
-    Modifier
-      .fillMaxWidth()
-      .sizeIn(minHeight = DEFAULT_MIN_SECTION_ITEM_HEIGHT)
-      .combinedClickable(
-        enabled = enabled,
-        onClick = if (u.activeUser) openSettings else onClick,
-        onLongClick = onLongClick,
-        interactionSource = remember { MutableInteractionSource() },
-        indication = if (!u.activeUser) LocalIndication.current else null
-      )
-      .onRightClick { if (enabled) onLongClick() }
-      .padding(start = DEFAULT_PADDING_HALF, end = DEFAULT_PADDING),
-    horizontalArrangement = Arrangement.SpaceBetween,
-    verticalAlignment = Alignment.CenterVertically
-  ) {
-    UserProfileRow(u, enabled)
-    if (u.activeUser) {
-      Icon(painterResource(MR.images.ic_done_filled), null, Modifier.size(20.dp), tint = MaterialTheme.colors.onBackground)
-    } else {
-      Row(verticalAlignment = Alignment.CenterVertically) {
-        if (unreadCount > 0) {
-          Box(
-            contentAlignment = Alignment.Center,
-          ) {
-            Text(
-              unreadCountStr(unreadCount),
-              color = Color.White,
-              fontSize = 10.sp,
-              modifier = Modifier
-                .background(if (u.showNtfs) MaterialTheme.colors.primaryVariant else MaterialTheme.colors.secondary, shape = CircleShape)
-                .padding(2.dp)
-                .badgeLayout()
-            )
-          }
+  val isLight = MaterialTheme.colors.isLight
+  val itemBg = if (u.activeUser) {
+    androidx.compose.ui.graphics.lerp(MaterialTheme.colors.surface, MaterialTheme.colors.primary, if (isLight) 0.16f else 0.22f)
+  } else {
+    androidx.compose.ui.graphics.lerp(MaterialTheme.colors.surface, MaterialTheme.colors.primary, if (isLight) 0.06f else 0.09f)
+  }
 
-          if (u.hidden) {
-            Spacer(Modifier.width(8.dp))
+  Box(
+    modifier = Modifier
+      .fillMaxWidth()
+      .padding(horizontal = 10.dp, vertical = 3.dp)
+      .clip(RoundedCornerShape(24.dp))
+      .background(itemBg)
+  ) {
+    Row(
+      Modifier
+        .fillMaxWidth()
+        .sizeIn(minHeight = DEFAULT_MIN_SECTION_ITEM_HEIGHT)
+        .combinedClickable(
+          enabled = enabled,
+          onClick = if (u.activeUser) openSettings else onClick,
+          onLongClick = onLongClick,
+          interactionSource = remember { MutableInteractionSource() },
+          indication = if (!u.activeUser) LocalIndication.current else null
+        )
+        .onRightClick { if (enabled) onLongClick() }
+        .padding(start = DEFAULT_PADDING_HALF, end = DEFAULT_PADDING),
+      horizontalArrangement = Arrangement.SpaceBetween,
+      verticalAlignment = Alignment.CenterVertically
+    ) {
+      UserProfileRow(u, enabled)
+      if (u.activeUser) {
+        Icon(
+          painterResource(MR.images.ic_done_filled),
+          null,
+          Modifier.size(20.dp),
+          tint = MaterialTheme.colors.primary
+        )
+      } else {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+          if (unreadCount > 0) {
+            Box(
+              contentAlignment = Alignment.Center,
+            ) {
+              Text(
+                unreadCountStr(unreadCount),
+                color = Color.White,
+                fontSize = 10.sp,
+                modifier = Modifier
+                  .background(if (u.showNtfs) MaterialTheme.colors.primaryVariant else MaterialTheme.colors.secondary, shape = CircleShape)
+                  .padding(2.dp)
+                  .badgeLayout()
+              )
+            }
+
+            if (u.hidden) {
+              Spacer(Modifier.width(8.dp))
+              Icon(painterResource(MR.images.ic_lock), null, Modifier.size(20.dp), tint = MaterialTheme.colors.secondary)
+            }
+          } else if (u.hidden) {
             Icon(painterResource(MR.images.ic_lock), null, Modifier.size(20.dp), tint = MaterialTheme.colors.secondary)
+          } else if (!u.showNtfs) {
+            Icon(painterResource(MR.images.ic_notifications_off), null, Modifier.size(20.dp), tint = MaterialTheme.colors.secondary)
+          } else {
+            Box(Modifier.size(20.dp))
           }
-        } else if (u.hidden) {
-          Icon(painterResource(MR.images.ic_lock), null, Modifier.size(20.dp), tint = MaterialTheme.colors.secondary)
-        } else if (!u.showNtfs) {
-          Icon(painterResource(MR.images.ic_notifications_off), null, Modifier.size(20.dp), tint = MaterialTheme.colors.secondary)
-        } else {
-          Box(Modifier.size(20.dp))
         }
       }
     }
@@ -468,12 +534,11 @@ fun UserProfileRow(u: User, enabled: Boolean = remember { chatModel.chatRunning 
       image = u.image,
       size = 54.dp * fontSizeSqrtMultiplier
     )
-    // the end padding is on the row, not the name, so the badge stays right after the name
     NameWithBadge(
       u.displayName,
       u.profile.localBadge,
       Modifier.padding(start = 10.dp, end = 8.dp),
-      color = if (enabled) MenuTextColor else MaterialTheme.colors.secondary,
+      color = if (enabled) MaterialTheme.colors.onSurface else MaterialTheme.colors.secondary,
       fontWeight = if (u.activeUser) FontWeight.Medium else FontWeight.Normal
     )
   }
@@ -481,10 +546,35 @@ fun UserProfileRow(u: User, enabled: Boolean = remember { chatModel.chatRunning 
 
 @Composable
 fun UserPickerOptionRow(icon: Painter, text: String, click: (() -> Unit)? = null, disabled: Boolean = false) {
-  SectionItemView(click, disabled = disabled, extraPadding = appPlatform.isDesktop) {
-    Icon(icon, text, tint = if (disabled) MaterialTheme.colors.secondary else MaterialTheme.colors.secondary)
-    TextIconSpaced()
-    Text(text = text, color = if (disabled) MaterialTheme.colors.secondary else Color.Unspecified)
+  val isLight = MaterialTheme.colors.isLight
+  val cardColor = androidx.compose.ui.graphics.lerp(
+    MaterialTheme.colors.surface,
+    MaterialTheme.colors.primary,
+    if (isLight) 0.06f else 0.09f
+  )
+
+  Box(
+    modifier = Modifier
+      .fillMaxWidth()
+      .padding(horizontal = 14.dp, vertical = 3.dp)
+      .clip(RoundedCornerShape(20.dp))
+      .background(cardColor)
+  ) {
+    SectionItemView(click, disabled = disabled, extraPadding = appPlatform.isDesktop) {
+      Icon(
+        icon,
+        text,
+        tint = if (disabled) MaterialTheme.colors.secondary else MaterialTheme.colors.primary.copy(alpha = 0.85f),
+        modifier = Modifier.size(22.dp)
+      )
+      TextIconSpaced()
+      Text(
+        text = text,
+        color = if (disabled) MaterialTheme.colors.secondary else MaterialTheme.colors.onSurface,
+        fontWeight = FontWeight.Medium,
+        fontSize = 15.5.sp
+      )
+    }
   }
 }
 
@@ -568,15 +658,24 @@ fun DevicePill(
   text: String,
   actionButtonVisible: Boolean,
   onActionButtonClick: (() -> Unit)? = null,
-  onClick: () -> Unit) {
+  onClick: () -> Unit
+) {
+  val isLight = MaterialTheme.colors.isLight
+  val pillBg = if (active) {
+    androidx.compose.ui.graphics.lerp(MaterialTheme.colors.surface, MaterialTheme.colors.primary, if (isLight) 0.16f else 0.22f)
+  } else {
+    Color.Transparent
+  }
+  val borderColor = if (active) MaterialTheme.colors.primary else MaterialTheme.colors.onSurface.copy(alpha = 0.2f)
+
   Row(
     Modifier
-      .clip(RoundedCornerShape(8.dp))
+      .clip(RoundedCornerShape(percent = 50))
       .border(
-        BorderStroke(1.dp, MaterialTheme.colors.secondaryVariant),
-        shape = RoundedCornerShape(8.dp)
+        BorderStroke(1.dp, borderColor),
+        shape = RoundedCornerShape(percent = 50)
       )
-      .background(if (active) MaterialTheme.colors.secondaryVariant else Color.Transparent)
+      .background(pillBg)
       .clickable(
         enabled = !active,
         onClick = onClick,
@@ -586,20 +685,21 @@ fun DevicePill(
     verticalAlignment = Alignment.CenterVertically
   ) {
     Row(
-      Modifier.padding(horizontal = 6.dp, vertical = 4.dp),
+      Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
       verticalAlignment = Alignment.CenterVertically
     ) {
       Icon(
         icon,
         text,
         Modifier.size(16.dp * fontSizeSqrtMultiplier),
-        tint = MaterialTheme.colors.onSurface
+        tint = if (active) MaterialTheme.colors.primary else MaterialTheme.colors.onSurface
       )
       Spacer(Modifier.width(DEFAULT_SPACE_AFTER_ICON * fontSizeSqrtMultiplier))
       Text(
         text,
         color = MaterialTheme.colors.onSurface,
-        fontSize = 12.sp,
+        fontSize = 12.5.sp,
+        fontWeight = if (active) FontWeight.Medium else FontWeight.Normal,
         overflow = TextOverflow.Ellipsis,
         maxLines = 1,
         modifier = if (onActionButtonClick != null && actionButtonVisible) Modifier.widthIn(max = 300.dp * fontSizeSqrtMultiplier) else Modifier
