@@ -142,8 +142,6 @@ private fun showNewChatSheet(oneHandUI: State<Boolean>) {
   chatModel.newChatSheetVisible.value = true
   ModalManager.start.showCustomModal { close ->
     val close = {
-      // It will set it faster than in onDispose. It's important to catch the actual state before
-      // closing modal for reacting with status bar changes in [App]
       chatModel.newChatSheetVisible.value = false
       close()
     }
@@ -256,7 +254,6 @@ fun ChatListView(chatModel: ChatModel, userPickerState: MutableStateFlow<Animate
     val showWhatsNew = shouldShowWhatsNew(chatModel)
     val showUpdatedConditions = chatModel.conditions.value.conditionsAction?.shouldShowNotice ?: false
     if (showWhatsNew || showUpdatedConditions) {
-      // Requested here, so that the country is known by the time the modal opens
       platform.androidLoadPlayStoreCountry()
       delay(1000L)
       ModalManager.center.showCustomModal { close -> WhatsNewView(close = close, updatedConditions = showUpdatedConditions) }
@@ -844,7 +841,6 @@ fun UserProfileButton(image: String?, allRead: Boolean, onButtonClicked: () -> U
   }
 }
 
-
 @Composable
 private fun BoxScope.unreadBadge(text: String? = "") {
   Text(
@@ -1018,7 +1014,7 @@ private fun ChatListSearchBar(
                       listState.scrollToItem(0)
                     }
                   }
-                 searchShowingSimplexLink.value = false
+                  searchShowingSimplexLink.value = false
                   searchChatFilteredBySimplexLink.value = emptySet()
                 }
               }
@@ -1248,21 +1244,13 @@ private fun BoxScope.ChatList(searchText: MutableState<TextFieldValue>, listStat
   }
 }
 
-// Default top-level part used to complete a bare name typed in the search field (search field only;
-// the message parser and the wire format are unchanged).
 private const val DEFAULT_NAME_TLD = "testing"
-// Shortest name that offers the button, so it is discoverable but does not flash on short prefixes.
 private const val MIN_NAME_LENGTH = 5
-// Wait this long after the last keystroke before the local name search runs.
 internal const val NAME_SEARCH_DEBOUNCE_MS = 300L
 
 private val nameLabelRegex = Regex("[a-zA-Z0-9]+(-[a-zA-Z0-9]+)*")
 private fun isNameLabel(s: String): Boolean = s.length in 1..63 && nameLabelRegex.matches(s)
 
-// On-device candidate for connecting by SimpleX name: the string sent to the core to resolve it.
-// Mirrors the domain grammar (nameLabelP/mkDomain in SimplexName.hs): an optional @/# prefix, then
-// dot-separated ASCII labels; a dotless word is completed with the default top-level part. Returns
-// the string to send (keeping @/# so the type is preserved), or null when the text is not a name.
 internal fun nameSearchCandidate(str: String): String? {
   val text = str.trim()
   val prefix = text.firstOrNull()?.takeIf { it == '@' || it == '#' }
@@ -1270,18 +1258,14 @@ internal fun nameSearchCandidate(str: String): String? {
   val labels = core.split(".")
   if (core.isEmpty() || labels.any { !isNameLabel(it) }) return null
   return when {
-    labels.size > 1 -> text                                            // already has a top-level part
+    labels.size > 1 -> text
     core.length >= MIN_NAME_LENGTH -> "${prefix ?: ""}$core.$DEFAULT_NAME_TLD"
     else -> null
   }
 }
 
-// The chat id a local (PRMNever) search resolved to — a contact, a business, or a channel — or null on a miss.
-// The core returns the correct type for @ vs # (getContactToConnect / type-filtered getGroupToConnect), so no
-// client-side type check is needed.
 internal suspend fun knownChatId(rhId: Long?, result: ConnectionPlanResult?): String? = when (val plan = result?.connectionPlan) {
   is ConnectionPlan.ContactAddress -> (plan.contactAddressPlan as? ContactAddressPlan.Known)?.contact?.let { contact ->
-    // a name-resolved chat may be prepared in the store but not yet listed, so add it (as the tap path does)
     if (chatModel.getContactChat(contact.contactId) == null) {
       chatModel.chatsContext.addChat(Chat(remoteHostId = rhId, chatInfo = ChatInfo.Direct(contact), chatItems = emptyList()))
     }
@@ -1300,9 +1284,6 @@ internal suspend fun knownChatId(rhId: Long?, result: ConnectionPlanResult?): St
   else -> null
 }
 
-// The list tags and the connect-by-name row share one slot. When there is no name, the tags show; on
-// mobile the row replaces the tags while shown. On desktop both show, arranged by the caller (which
-// knows whether the search bar is above or below), passed as desktopView.
 @Composable
 private fun TagsOrConnectByName(
   searchText: MutableState<TextFieldValue>,
@@ -1340,7 +1321,6 @@ internal fun ConnectByNameRow(name: String, searchText: MutableState<TextFieldVa
       .padding(vertical = DEFAULT_PADDING_HALF),
     verticalAlignment = Alignment.CenterVertically
   ) {
-    // icon and text aligned with the search bar's icon and text (same paddings and icon size)
     val icon = if (name.startsWith("@")) MR.images.ic_at else MR.images.ic_tag
     Icon(painterResource(icon), null, Modifier.padding(start = DEFAULT_PADDING, end = DEFAULT_PADDING_HALF).size(22.dp * fontSizeSqrtMultiplier), tint = MaterialTheme.colors.primary)
     Text(String.format(generalGetString(MR.strings.connect_plan_connect_to_name), name), color = MaterialTheme.colors.primary)
@@ -1353,21 +1333,21 @@ private fun NoChatsView(searchText: MutableState<TextFieldValue>) {
 
   if (searchText.value.text.isBlank()) {
     when (activeFilter) {
-      is ActiveFilter.PresetTag -> Text(generalGetString(MR.strings.no_filtered_chats), color = MaterialTheme.colors.secondary, textAlign = TextAlign.Center) // this should not happen
+      is ActiveFilter.PresetTag -> Text(generalGetString(MR.strings.no_filtered_chats), color = MaterialTheme.colors.secondary, textAlign = TextAlign.Center)
       is ActiveFilter.UserTag -> Text(String.format(generalGetString(MR.strings.no_chats_in_list), activeFilter.tag.chatTagText), color = MaterialTheme.colors.secondary, textAlign = TextAlign.Center)
       is ActiveFilter.Unread -> {
-          Row(
-            Modifier.clip(shape = CircleShape).clickable { chatModel.activeChatTagFilter.value = null }.padding(DEFAULT_PADDING_HALF),
-            horizontalArrangement = Arrangement.spacedBy(4.dp),
-            verticalAlignment = Alignment.CenterVertically
-          ) {
-            Icon(
-              painterResource(MR.images.ic_filter_list),
-              null,
-              tint = MaterialTheme.colors.secondary
-            )
-            Text(generalGetString(MR.strings.no_unread_chats), color = MaterialTheme.colors.secondary, textAlign = TextAlign.Center)
-          }
+        Row(
+          Modifier.clip(shape = CircleShape).clickable { chatModel.activeChatTagFilter.value = null }.padding(DEFAULT_PADDING_HALF),
+          horizontalArrangement = Arrangement.spacedBy(4.dp),
+          verticalAlignment = Alignment.CenterVertically
+        ) {
+          Icon(
+            painterResource(MR.images.ic_filter_list),
+            null,
+            tint = MaterialTheme.colors.secondary
+          )
+          Text(generalGetString(MR.strings.no_unread_chats), color = MaterialTheme.colors.secondary, textAlign = TextAlign.Center)
+        }
       }
       null -> {
         Text(generalGetString(MR.strings.no_chats), color = MaterialTheme.colors.secondary, textAlign = TextAlign.Center)
@@ -1426,42 +1406,40 @@ private fun TagsView(searchText: MutableState<TextFieldValue>) {
       val showMenu = rememberSaveable { mutableStateOf(false) }
       val saving = remember { mutableStateOf(false) }
       Box {
-  Row(
-    rowSizeModifier
-      .clip(shape = CircleShape)
-      .combinedClickable(
-        onClick = {
-          if (chatModel.activeChatTagFilter.value == ActiveFilter.UserTag(tag)) {
-            chatModel.activeChatTagFilter.value = null
+        Row(
+          rowSizeModifier
+            .clip(shape = CircleShape)
+            .combinedClickable(
+              onClick = {
+                if (chatModel.activeChatTagFilter.value == ActiveFilter.UserTag(tag)) {
+                  chatModel.activeChatTagFilter.value = null
+                } else {
+                  chatModel.activeChatTagFilter.value = ActiveFilter.UserTag(tag)
+                }
+              },
+              onLongClick = {
+                RichHaptics.perform(HapticPattern.HEAVY_CLICK)
+                showMenu.value = true
+              },
+              interactionSource = interactionSource,
+              indication = LocalIndication.current,
+              enabled = !saving.value
+            )
+            .onRightClick { showMenu.value = true }
+            .padding(4.dp),
+          horizontalArrangement = Arrangement.Center,
+          verticalAlignment = Alignment.CenterVertically
+        ) {
+          if (tag.chatTagEmoji != null) {
+            ReactionIcon(tag.chatTagEmoji, fontSize = 14.sp)
           } else {
-            chatModel.activeChatTagFilter.value = ActiveFilter.UserTag(tag)
+            Icon(
+              painterResource(if (current) MR.images.ic_label_filled else MR.images.ic_label),
+              null,
+              Modifier.size(18.sp.toDp()),
+              tint = if (current) MaterialTheme.colors.primary else MaterialTheme.colors.onBackground
+            )
           }
-        },
-        onLongClick = {
-          RichHaptics.perform(HapticPattern.HEAVY_CLICK)
-          showMenu.value = true
-        }, // <-- ВОТ ЗДЕСЬ НУЖНА ЗАПЯТАЯ
-        interactionSource = interactionSource,
-        indication = LocalIndication.current,
-        enabled = !saving.value
-      )
-      .onRightClick { showMenu.value = true }
-      .padding(4.dp),
-    horizontalArrangement = Arrangement.Center,
-    verticalAlignment = Alignment.CenterVertically
-  ) {
-    if (tag.chatTagEmoji != null) {
-      ReactionIcon(tag.chatTagEmoji, fontSize = 14.sp)
-    } else {
-      Icon(
-        painterResource(if (current) MR.images.ic_label_filled else MR.images.ic_label),
-        null,
-        Modifier.size(18.sp.toDp()),
-        tint = if (current) MaterialTheme.colors.primary else MaterialTheme.colors.onBackground
-      )
-    }
-  }
-}
           Spacer(Modifier.width(4.dp))
           Box {
             val badgeText = if ((unreadTags[tag.chatTagId] ?: 0) > 0) " ●" else ""
@@ -1479,7 +1457,6 @@ private fun TagsView(searchText: MutableState<TextFieldValue>) {
               maxLines = 1,
               overflow = TextOverflow.Ellipsis
             )
-            // Visible text with styles
             val visibleText = buildAnnotatedString {
               append(tag.chatTagText)
               withStyle(SpanStyle(fontSize = 12.5.sp, color = MaterialTheme.colors.primary)) {
