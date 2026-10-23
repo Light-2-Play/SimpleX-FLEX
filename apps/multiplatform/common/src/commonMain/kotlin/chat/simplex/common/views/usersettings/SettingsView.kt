@@ -9,12 +9,15 @@ import TextIconSpaced
 import androidx.compose.desktop.ui.tooling.preview.Preview
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.platform.*
 import dev.icerock.moko.resources.compose.painterResource
@@ -182,28 +185,49 @@ expect fun AdvancedSettingsAppSection(
 expect fun AppShutdownItem()
 
 @Composable private fun DatabaseItem(encrypted: Boolean, saved: Boolean, openDatabaseView: () -> Unit, stopped: Boolean) {
-  SectionItemView(openDatabaseView) {
-    Row(
-      Modifier.fillMaxWidth(),
-      verticalAlignment = Alignment.CenterVertically,
-      horizontalArrangement = Arrangement.SpaceBetween
-    ) {
-      Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
-        Icon(
-          painterResource(MR.images.ic_database),
-          contentDescription = stringResource(MR.strings.chat_data),
-          tint = if (encrypted && (appPlatform.isAndroid || !saved)) MaterialTheme.colors.secondary else WarningOrange,
-        )
-        TextIconSpaced(false)
-        Text(stringResource(MR.strings.chat_data))
-      }
-      if (stopped) {
-        Icon(
-          painterResource(MR.images.ic_report_filled),
-          contentDescription = stringResource(MR.strings.chat_is_stopped),
-          tint = Color.Red,
-          modifier = Modifier.padding(end = 6.dp)
-        )
+  val isLight = MaterialTheme.colors.isLight
+  val cardBg = lerp(
+    MaterialTheme.colors.surface,
+    MaterialTheme.colors.primary,
+    if (isLight) 0.06f else 0.09f
+  )
+
+  Box(
+    modifier = Modifier
+      .fillMaxWidth()
+      .padding(horizontal = 12.dp, vertical = 3.dp)
+      .clip(RoundedCornerShape(20.dp))
+      .background(cardBg)
+  ) {
+    SectionItemView(openDatabaseView) {
+      Row(
+        Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween
+      ) {
+        Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
+          Icon(
+            painterResource(MR.images.ic_database),
+            contentDescription = stringResource(MR.strings.chat_data),
+            tint = if (encrypted && (appPlatform.isAndroid || !saved)) MaterialTheme.colors.primary.copy(alpha = 0.85f) else WarningOrange,
+            modifier = Modifier.size(22.dp)
+          )
+          TextIconSpaced(false)
+          Text(
+            stringResource(MR.strings.chat_data),
+            color = MaterialTheme.colors.onSurface,
+            fontWeight = FontWeight.Medium,
+            fontSize = 15.5.sp
+          )
+        }
+        if (stopped) {
+          Icon(
+            painterResource(MR.images.ic_report_filled),
+            contentDescription = stringResource(MR.strings.chat_is_stopped),
+            tint = Color.Red,
+            modifier = Modifier.padding(end = 6.dp)
+          )
+        }
       }
     }
   }
@@ -233,62 +257,52 @@ fun ChatLockItem(
     click = showSettingsModal { SimplexLockView(ChatModel, currentLAMode, setPerformLA) },
     icon = if (performLA.value) painterResource(MR.images.ic_lock_filled) else painterResource(MR.images.ic_lock),
     text = stringResource(MR.strings.chat_lock),
-    iconColor = if (performLA.value) SimplexGreen else MaterialTheme.colors.secondary
+    iconColor = if (performLA.value) SimplexGreen else MaterialTheme.colors.primary.copy(alpha = 0.85f)
   ) {
-    Text(if (performLA.value) remember { currentLAMode.state }.value.text else generalGetString(MR.strings.la_mode_off), color = MaterialTheme.colors.secondary)
+    Text(
+      if (performLA.value) remember { currentLAMode.state }.value.text else generalGetString(MR.strings.la_mode_off),
+      color = MaterialTheme.colors.secondary,
+      fontSize = 14.sp
+    )
   }
 }
 
 @Composable fun ContributeItem(uriHandler: UriHandler) {
-  SectionItemView({ uriHandler.openExternalLink("https://github.com/simplex-chat/simplex-chat#contribute") }) {
-    Icon(
-      painterResource(MR.images.ic_keyboard),
-      contentDescription = "GitHub",
-      tint = MaterialTheme.colors.secondary,
-    )
-    TextIconSpaced()
-    Text(generalGetString(MR.strings.contribute), color = MaterialTheme.colors.primary)
-  }
+  SettingsActionItem(
+    icon = painterResource(MR.images.ic_keyboard),
+    text = generalGetString(MR.strings.contribute),
+    click = { uriHandler.openExternalLink("https://github.com/simplex-chat/simplex-chat#contribute") },
+    textColor = MaterialTheme.colors.primary
+  )
 }
 
 @Composable fun RateAppItem(uriHandler: UriHandler) {
-  SectionItemView({
-    runCatching { uriHandler.openUriCatching("market://details?id=chat.simplex.app") }
-      .onFailure { uriHandler.openUriCatching("https://play.google.com/store/apps/details?id=chat.simplex.app") }
-  }
-  ) {
-    Icon(
-      painterResource(MR.images.ic_star),
-      contentDescription = "Google Play",
-      tint = MaterialTheme.colors.secondary,
-    )
-    TextIconSpaced()
-    Text(generalGetString(MR.strings.rate_the_app), color = MaterialTheme.colors.primary)
-  }
+  SettingsActionItem(
+    icon = painterResource(MR.images.ic_star),
+    text = generalGetString(MR.strings.rate_the_app),
+    click = {
+      runCatching { uriHandler.openUriCatching("market://details?id=chat.simplex.app") }
+        .onFailure { uriHandler.openUriCatching("https://play.google.com/store/apps/details?id=chat.simplex.app") }
+    },
+    textColor = MaterialTheme.colors.primary
+  )
 }
 
 @Composable fun StarOnGithubItem(uriHandler: UriHandler) {
-  SectionItemView({ uriHandler.openExternalLink("https://github.com/simplex-chat/simplex-chat") }) {
-    Icon(
-      painter = painterResource(MR.images.ic_github),
-      contentDescription = "GitHub",
-      tint = MaterialTheme.colors.secondary,
-    )
-    TextIconSpaced()
-    Text(generalGetString(MR.strings.star_on_github), color = MaterialTheme.colors.primary)
-  }
+  SettingsActionItem(
+    icon = painterResource(MR.images.ic_github),
+    text = generalGetString(MR.strings.star_on_github),
+    click = { uriHandler.openExternalLink("https://github.com/simplex-chat/simplex-chat") },
+    textColor = MaterialTheme.colors.primary
+  )
 }
 
 @Composable fun ChatConsoleItem(showTerminal: () -> Unit) {
-  SectionItemView(showTerminal) {
-    Icon(
-      painter = painterResource(MR.images.ic_outline_terminal),
-      contentDescription = stringResource(MR.strings.chat_console),
-      tint = MaterialTheme.colors.secondary,
-    )
-    TextIconSpaced()
-    Text(stringResource(MR.strings.chat_console))
-  }
+  SettingsActionItem(
+    icon = painterResource(MR.images.ic_outline_terminal),
+    text = stringResource(MR.strings.chat_console),
+    click = showTerminal
+  )
 }
 
 @Composable fun TerminalAlwaysVisibleItem(pref: SharedPreference<Boolean>, onChange: (Boolean) -> Unit) {
@@ -301,30 +315,25 @@ fun ChatLockItem(
 }
 
 @Composable fun InstallTerminalAppItem(uriHandler: UriHandler) {
-  SectionItemView({ uriHandler.openExternalLink("https://github.com/simplex-chat/simplex-chat") }) {
-    Icon(
-      painter = painterResource(MR.images.ic_github),
-      contentDescription = "GitHub",
-      tint = MaterialTheme.colors.secondary,
-    )
-    TextIconSpaced()
-    Text(generalGetString(MR.strings.install_simplex_chat_for_terminal), color = MaterialTheme.colors.primary)
-  }
+  SettingsActionItem(
+    icon = painterResource(MR.images.ic_github),
+    text = generalGetString(MR.strings.install_simplex_chat_for_terminal),
+    click = { uriHandler.openExternalLink("https://github.com/simplex-chat/simplex-chat") },
+    textColor = MaterialTheme.colors.primary
+  )
 }
 
 @Composable fun ResetHintsItem(unchangedHints: MutableState<Boolean>) {
-  SectionItemView({
-    resetHintPreferences()
-    unchangedHints.value = true
-  }, disabled = unchangedHints.value) {
-    Icon(
-      painter = painterResource(MR.images.ic_lightbulb),
-      contentDescription = "Lightbulb",
-      tint = MaterialTheme.colors.secondary,
-    )
-    TextIconSpaced()
-    Text(generalGetString(MR.strings.reset_all_hints), color = if (unchangedHints.value) MaterialTheme.colors.secondary else MaterialTheme.colors.primary)
-  }
+  SettingsActionItem(
+    icon = painterResource(MR.images.ic_lightbulb),
+    text = generalGetString(MR.strings.reset_all_hints),
+    click = {
+      resetHintPreferences()
+      unchangedHints.value = true
+    },
+    disabled = unchangedHints.value,
+    textColor = if (unchangedHints.value) MaterialTheme.colors.secondary else MaterialTheme.colors.primary
+  )
 }
 
 private fun resetHintPreferences() {
@@ -335,11 +344,45 @@ fun unchangedHintPreferences(): Boolean = appPreferences.hintPreferences.all { i
 
 @Composable
 fun AppVersionItem(showVersion: () -> Unit) {
-  SectionItemView(showVersion) { AppVersionText() }
+  val isLight = MaterialTheme.colors.isLight
+  val cardBg = lerp(
+    MaterialTheme.colors.surface,
+    MaterialTheme.colors.primary,
+    if (isLight) 0.06f else 0.09f
+  )
+
+  Box(
+    modifier = Modifier
+      .fillMaxWidth()
+      .padding(horizontal = 12.dp, vertical = 3.dp)
+      .clip(RoundedCornerShape(20.dp))
+      .background(cardBg)
+  ) {
+    SectionItemView(showVersion) {
+      Row(
+        Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically
+      ) {
+        Icon(
+          painterResource(MR.images.ic_info),
+          contentDescription = null,
+          tint = MaterialTheme.colors.primary.copy(alpha = 0.85f),
+          modifier = Modifier.size(22.dp)
+        )
+        TextIconSpaced(false)
+        AppVersionText()
+      }
+    }
+  }
 }
 
 @Composable fun AppVersionText() {
-  Text(appVersionInfo.first + (if (appVersionInfo.second != null) " (" + appVersionInfo.second + ")" else ""))
+  Text(
+    appVersionInfo.first + (if (appVersionInfo.second != null) " (" + appVersionInfo.second + ")" else ""),
+    color = MaterialTheme.colors.onSurface,
+    fontWeight = FontWeight.Medium,
+    fontSize = 15.5.sp
+  )
 }
 
 @Composable fun ProfilePreview(profileOf: NamedChat, size: Dp = 60.dp, iconColor: Color = MaterialTheme.colors.secondaryVariant, textColor: Color = MaterialTheme.colors.onBackground, stopped: Boolean = false, badge: LocalBadge? = null) {
@@ -368,39 +411,107 @@ fun AppVersionItem(showVersion: () -> Unit) {
 }
 
 @Composable
-fun SettingsActionItem(icon: Painter, text: String, click: (() -> Unit)? = null, textColor: Color = Color.Unspecified, iconColor: Color = MaterialTheme.colors.secondary, disabled: Boolean = false, extraPadding: Boolean = false) {
-  SectionItemView(click, disabled = disabled, extraPadding = extraPadding) {
-    Icon(icon, text, tint = if (disabled) MaterialTheme.colors.secondary else iconColor)
-    TextIconSpaced(extraPadding)
-    Text(text, color = if (disabled) MaterialTheme.colors.secondary else textColor)
+fun SettingsActionItem(
+  icon: Painter,
+  text: String,
+  click: (() -> Unit)? = null,
+  textColor: Color = Color.Unspecified,
+  iconColor: Color = MaterialTheme.colors.primary.copy(alpha = 0.85f),
+  disabled: Boolean = false,
+  extraPadding: Boolean = false
+) {
+  val isLight = MaterialTheme.colors.isLight
+  val cardBg = lerp(
+    MaterialTheme.colors.surface,
+    MaterialTheme.colors.primary,
+    if (isLight) 0.06f else 0.09f
+  )
+
+  Box(
+    modifier = Modifier
+      .fillMaxWidth()
+      .padding(horizontal = 12.dp, vertical = 3.dp)
+      .clip(RoundedCornerShape(20.dp))
+      .background(cardBg)
+  ) {
+    SectionItemView(click, disabled = disabled, extraPadding = extraPadding) {
+      Icon(
+        icon,
+        contentDescription = text,
+        tint = if (disabled) MaterialTheme.colors.secondary else if (iconColor != MaterialTheme.colors.secondary) iconColor else MaterialTheme.colors.primary.copy(alpha = 0.85f),
+        modifier = Modifier.size(22.dp)
+      )
+      TextIconSpaced(extraPadding)
+      Text(
+        text,
+        color = if (disabled) MaterialTheme.colors.secondary else if (textColor != Color.Unspecified) textColor else MaterialTheme.colors.onSurface,
+        fontWeight = FontWeight.Medium,
+        fontSize = 15.5.sp
+      )
+    }
   }
 }
 
 @Composable
-fun SettingsActionItemWithContent(icon: Painter?, text: String? = null, click: (() -> Unit)? = null, iconColor: Color = MaterialTheme.colors.secondary, textColor: Color = MaterialTheme.colors.onBackground, disabled: Boolean = false, extraPadding: Boolean = false, content: @Composable RowScope.() -> Unit) {
-  SectionItemView(
-    click,
-    extraPadding = extraPadding,
-    padding = if (extraPadding && icon != null)
-      PaddingValues(start = DEFAULT_PADDING * 1.7f, end = itemHPadding)
-    else
-      PaddingValues(horizontal = itemHPadding),
-    disabled = disabled
+fun SettingsActionItemWithContent(
+  icon: Painter?,
+  text: String? = null,
+  click: (() -> Unit)? = null,
+  iconColor: Color = MaterialTheme.colors.primary.copy(alpha = 0.85f),
+  textColor: Color = MaterialTheme.colors.onSurface,
+  disabled: Boolean = false,
+  extraPadding: Boolean = false,
+  content: @Composable RowScope.() -> Unit
+) {
+  val isLight = MaterialTheme.colors.isLight
+  val cardBg = lerp(
+    MaterialTheme.colors.surface,
+    MaterialTheme.colors.primary,
+    if (isLight) 0.06f else 0.09f
+  )
+
+  Box(
+    modifier = Modifier
+      .fillMaxWidth()
+      .padding(horizontal = 12.dp, vertical = 3.dp)
+      .clip(RoundedCornerShape(20.dp))
+      .background(cardBg)
   ) {
-    if (icon != null) {
-      Icon(icon, text, Modifier, tint = if (disabled) MaterialTheme.colors.secondary else iconColor)
-      TextIconSpaced(extraPadding)
-    }
-    if (text != null) {
-      val padding = with(LocalDensity.current) { 6.sp.toDp() }
-      Text(text, Modifier.weight(1f).padding(vertical = padding), color = if (disabled) MaterialTheme.colors.secondary else textColor)
-      Spacer(Modifier.width(DEFAULT_PADDING))
-      Row(Modifier.widthIn(max = (windowWidth() - DEFAULT_PADDING * 2) / 2)) {
-        content()
+    SectionItemView(
+      click,
+      extraPadding = extraPadding,
+      padding = if (extraPadding && icon != null)
+        PaddingValues(start = DEFAULT_PADDING * 1.7f, end = itemHPadding)
+      else
+        PaddingValues(horizontal = itemHPadding),
+      disabled = disabled
+    ) {
+      if (icon != null) {
+        Icon(
+          icon,
+          text,
+          Modifier.size(22.dp),
+          tint = if (disabled) MaterialTheme.colors.secondary else if (iconColor != MaterialTheme.colors.secondary) iconColor else MaterialTheme.colors.primary.copy(alpha = 0.85f)
+        )
+        TextIconSpaced(extraPadding)
       }
-    } else {
-      Row {
-        content()
+      if (text != null) {
+        val padding = with(LocalDensity.current) { 6.sp.toDp() }
+        Text(
+          text,
+          Modifier.weight(1f).padding(vertical = padding),
+          color = if (disabled) MaterialTheme.colors.secondary else textColor,
+          fontWeight = FontWeight.Medium,
+          fontSize = 15.5.sp
+        )
+        Spacer(Modifier.width(DEFAULT_PADDING))
+        Row(Modifier.widthIn(max = (windowWidth() - DEFAULT_PADDING * 2) / 2)) {
+          content()
+        }
+      } else {
+        Row {
+          content()
+        }
       }
     }
   }
@@ -411,11 +522,11 @@ fun SettingsPreferenceItem(
   icon: Painter?,
   text: String,
   pref: SharedPreference<Boolean>,
-  iconColor: Color = MaterialTheme.colors.secondary,
+  iconColor: Color = MaterialTheme.colors.primary.copy(alpha = 0.85f),
   enabled: Boolean = true,
   onChange: ((Boolean) -> Unit)? = null,
 ) {
-  SettingsActionItemWithContent(icon, text, iconColor = iconColor,) {
+  SettingsActionItemWithContent(icon, text, iconColor = iconColor) {
     SharedPreferenceToggle(pref, enabled, onChange)
   }
 }
@@ -440,13 +551,18 @@ fun PreferenceToggle(
 fun PreferenceToggleWithIcon(
   text: String,
   icon: Painter? = null,
-  iconColor: Color? = MaterialTheme.colors.secondary,
+  iconColor: Color? = null,
   disabled: Boolean = false,
   checked: Boolean,
   extraPadding: Boolean = false,
   onChange: (Boolean) -> Unit = {},
 ) {
-  SettingsActionItemWithContent(icon, text, iconColor = iconColor ?: MaterialTheme.colors.secondary, extraPadding = extraPadding) {
+  SettingsActionItemWithContent(
+    icon = icon,
+    text = text,
+    iconColor = iconColor ?: MaterialTheme.colors.primary.copy(alpha = 0.85f),
+    extraPadding = extraPadding
+  ) {
     DefaultSwitch(
       checked = checked,
       onCheckedChange = {
@@ -506,11 +622,7 @@ private fun runAuth(title: String, desc: String, onFinish: (success: Boolean) ->
   )
 }
 
-@Preview/*(
-  uiMode = Configuration.UI_MODE_NIGHT_YES,
-  showBackground = true,
-  name = "Dark Mode"
-)*/
+@Preview
 @Composable
 fun PreviewSettingsLayout() {
   SimpleXTheme {
