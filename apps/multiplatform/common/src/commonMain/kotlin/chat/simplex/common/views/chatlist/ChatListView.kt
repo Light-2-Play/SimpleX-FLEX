@@ -1426,40 +1426,42 @@ private fun TagsView(searchText: MutableState<TextFieldValue>) {
       val showMenu = rememberSaveable { mutableStateOf(false) }
       val saving = remember { mutableStateOf(false) }
       Box {
-        Row(
-          rowSizeModifier
-            .clip(shape = CircleShape)
-            .combinedClickable(
-              onClick = {
-                if (chatModel.activeChatTagFilter.value == ActiveFilter.UserTag(tag)) {
-                  chatModel.activeChatTagFilter.value = null
-                } else {
-                  chatModel.activeChatTagFilter.value = ActiveFilter.UserTag(tag)
-                }
-              },
-              onLongClick = {
-              RichHaptics.perform(HapticPattern.HEAVY_CLICK)
-              showMenu.value = true
-              }
-              interactionSource = interactionSource,
-              indication = LocalIndication.current,
-              enabled = !saving.value
-            )
-            .onRightClick { showMenu.value = true }
-            .padding(4.dp),
-          horizontalArrangement = Arrangement.Center,
-          verticalAlignment = Alignment.CenterVertically
-        ) {
-          if (tag.chatTagEmoji != null) {
-            ReactionIcon(tag.chatTagEmoji, fontSize = 14.sp)
+  Row(
+    rowSizeModifier
+      .clip(shape = CircleShape)
+      .combinedClickable(
+        onClick = {
+          if (chatModel.activeChatTagFilter.value == ActiveFilter.UserTag(tag)) {
+            chatModel.activeChatTagFilter.value = null
           } else {
-            Icon(
-              painterResource(if (current) MR.images.ic_label_filled else MR.images.ic_label),
-              null,
-              Modifier.size(18.sp.toDp()),
-              tint = if (current) MaterialTheme.colors.primary else MaterialTheme.colors.onBackground
-            )
+            chatModel.activeChatTagFilter.value = ActiveFilter.UserTag(tag)
           }
+        },
+        onLongClick = {
+          RichHaptics.perform(HapticPattern.HEAVY_CLICK)
+          showMenu.value = true
+        }, // <-- ВОТ ЗДЕСЬ НУЖНА ЗАПЯТАЯ
+        interactionSource = interactionSource,
+        indication = LocalIndication.current,
+        enabled = !saving.value
+      )
+      .onRightClick { showMenu.value = true }
+      .padding(4.dp),
+    horizontalArrangement = Arrangement.Center,
+    verticalAlignment = Alignment.CenterVertically
+  ) {
+    if (tag.chatTagEmoji != null) {
+      ReactionIcon(tag.chatTagEmoji, fontSize = 14.sp)
+    } else {
+      Icon(
+        painterResource(if (current) MR.images.ic_label_filled else MR.images.ic_label),
+        null,
+        Modifier.size(18.sp.toDp()),
+        tint = if (current) MaterialTheme.colors.primary else MaterialTheme.colors.onBackground
+      )
+    }
+  }
+}
           Spacer(Modifier.width(4.dp))
           Box {
             val badgeText = if ((unreadTags[tag.chatTagId] ?: 0) > 0) " ●" else ""
