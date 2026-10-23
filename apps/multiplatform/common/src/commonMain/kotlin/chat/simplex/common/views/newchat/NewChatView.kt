@@ -133,6 +133,7 @@ fun ModalData.NewChatView(rh: RemoteHostInfo?, selection: NewChatOption, showQRC
         ) {
           tabTitles.forEachIndexed { index, it ->
             LeadingIconTab(
+              RichHaptics.perform(HapticPattern.CLICK)
               selected = pagerState.currentPage == index,
               onClick = {
                 scope.launch {
