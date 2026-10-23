@@ -59,7 +59,7 @@ object ZeroRelayFeedEngine {
           delay(800)
         }
 
-        val updatedSeen = (sub.seenItemIds + freshEntries.map { it.id }).takeLast(200).toSet()
+        val updatedSeen = (sub.seenItemIds + freshEntries.map { it.id }).toList().takeLast(200).toSet()
         onUpdated(
           sub.copy(
             lastFetchedTs = System.currentTimeMillis(),
