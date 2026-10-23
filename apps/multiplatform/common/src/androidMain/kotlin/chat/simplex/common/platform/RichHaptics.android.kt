@@ -2,7 +2,6 @@ package chat.simplex.common.platform
 
 import android.content.Context
 import android.os.Build
-import android.os.CombinedVibration
 import android.os.VibrationEffect
 import android.os.Vibrator
 import android.os.VibratorManager
@@ -10,8 +9,17 @@ import android.provider.Settings
 
 actual object RichHaptics {
 
+  private val context: Context? by lazy {
+    try {
+      val at = Class.forName("android.app.ActivityThread")
+      at.getMethod("currentApplication").invoke(null) as? Context
+    } catch (_: Exception) {
+      null
+    }
+  }
+
   private val vibrator: Vibrator? by lazy {
-    val ctx = appContext
+    val ctx = context ?: return@lazy null
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
       val manager = ctx.getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as? VibratorManager
       manager?.defaultVibrator
@@ -22,9 +30,10 @@ actual object RichHaptics {
   }
 
   private fun isHapticFeedbackEnabled(): Boolean {
+    val ctx = context ?: return true
     return try {
       Settings.System.getInt(
-        appContext.contentResolver,
+        ctx.contentResolver,
         Settings.System.HAPTIC_FEEDBACK_ENABLED,
         1
       ) != 0
@@ -38,11 +47,13 @@ actual object RichHaptics {
     if (!vib.hasVibrator() || !isHapticFeedbackEnabled()) return
 
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-      // Android 11+ (API 30+) — поддержка примитивов композиции
       val effect = when (pattern) {
         HapticPattern.TICK -> createPrimitive(vib, VibrationEffect.Composition.PRIMITIVE_TICK, 0.5f)
         HapticPattern.CLICK -> createPrimitive(vib, VibrationEffect.Composition.PRIMITIVE_CLICK, 0.8f)
-        HapticPattern.HEAVY_CLICK -> createPrimitive(vib, VibrationEffect.Composition.PRIMITIVE_HEAVY_CLICK, 1.0f)
+        HapticPattern.HEAVY_CLICK -> {
+          createPrimitive(vib, VibrationEffect.Composition.PRIMITIVE_CLICK, 1.0f)
+            ?: if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) VibrationEffect.createPredefined(VibrationEffect.EFFECT_HEAVY_CLICK) else null
+        }
         HapticPattern.DOUBLE_CLICK -> {
           VibrationEffect.startComposition()
             .addPrimitive(VibrationEffect.Composition.PRIMITIVE_CLICK, 0.7f, 0)
@@ -76,7 +87,7 @@ actual object RichHaptics {
         HapticPattern.ERROR -> {
           VibrationEffect.startComposition()
             .addPrimitive(VibrationEffect.Composition.PRIMITIVE_CLICK, 0.9f, 0)
-            .addPrimitive(VibrationEffect.Composition.PRIMITIVE_HEAVY_CLICK, 1.0f, 70)
+            .addPrimitive(VibrationEffect.Composition.PRIMITIVE_CLICK, 1.0f, 70)
             .compose()
         }
       }
@@ -87,7 +98,6 @@ actual object RichHaptics {
       }
     }
 
-    // Fallback для Android 10 (API 29)
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
       val predefined = when (pattern) {
         HapticPattern.TICK -> VibrationEffect.EFFECT_TICK
@@ -100,7 +110,6 @@ actual object RichHaptics {
       return
     }
 
-    // Fallback для старых версий (API 26+)
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
       val duration = when (pattern) {
         HapticPattern.TICK -> 10L
