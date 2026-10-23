@@ -24,9 +24,11 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import dev.icerock.moko.resources.compose.painterResource
@@ -69,10 +71,6 @@ fun ModalData.NewChatView(rh: RemoteHostInfo?, selection: NewChatOption, showQRC
   }
   DisposableEffect(Unit) {
     onDispose {
-      /** When [AddContactLearnMore] is open, we don't need to drop [ChatModel.showingInvitation].
-       * Otherwise, it will be called here AFTER [AddContactLearnMore] is launched and will clear the value too soon.
-       * It will be dropped automatically when connection established or when user goes away from this screen.
-       **/
       if (chatModel.showingInvitation.value != null && ModalManager.start.openModalCount() <= 1) {
         val conn = contactConnection.value
         if (chatModel.showingInvitation.value?.connChatUsed == false && conn != null) {
@@ -172,6 +170,97 @@ fun ModalData.NewChatView(rh: RemoteHostInfo?, selection: NewChatOption, showQRC
             }
             SectionBottomSpacer()
           }
+        }
+      }
+    }
+  }
+}
+
+@Composable
+fun ExpressiveQRCodeCard(
+  title: String? = null,
+  titleButton: (@Composable () -> Unit)? = null,
+  onShareClick: (() -> Unit)? = null,
+  content: @Composable () -> Unit
+) {
+  val isLight = MaterialTheme.colors.isLight
+  val cardBg = lerp(
+    MaterialTheme.colors.surface,
+    MaterialTheme.colors.primary,
+    if (isLight) 0.06f else 0.09f
+  )
+
+  Surface(
+    modifier = Modifier
+      .fillMaxWidth()
+      .padding(horizontal = 12.dp, vertical = 6.dp),
+    shape = RoundedCornerShape(32.dp),
+    color = cardBg,
+    elevation = 0.dp
+  ) {
+    Column(
+      modifier = Modifier
+        .fillMaxWidth()
+        .padding(18.dp),
+      horizontalAlignment = Alignment.CenterHorizontally,
+      verticalArrangement = Arrangement.spacedBy(14.dp)
+    ) {
+      if (title != null || titleButton != null) {
+        Row(
+          modifier = Modifier.fillMaxWidth(),
+          verticalAlignment = Alignment.CenterVertically,
+          horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+          if (title != null) {
+            Text(
+              text = title,
+              style = MaterialTheme.typography.subtitle1,
+              fontWeight = FontWeight.SemiBold,
+              color = MaterialTheme.colors.onSurface
+            )
+          } else {
+            Spacer(Modifier.width(1.dp))
+          }
+          titleButton?.invoke()
+        }
+      }
+
+      Surface(
+        shape = RoundedCornerShape(24.dp),
+        color = Color.White,
+        elevation = 0.dp
+      ) {
+        Box(
+          modifier = Modifier.padding(14.dp),
+          contentAlignment = Alignment.Center
+        ) {
+          content()
+        }
+      }
+
+      if (onShareClick != null) {
+        Button(
+          onClick = onShareClick,
+          modifier = Modifier
+            .fillMaxWidth()
+            .height(46.dp),
+          shape = RoundedCornerShape(percent = 50),
+          colors = ButtonDefaults.buttonColors(
+            backgroundColor = MaterialTheme.colors.primary,
+            contentColor = MaterialTheme.colors.onPrimary
+          ),
+          elevation = null
+        ) {
+          Icon(
+            painter = painterResource(MR.images.ic_share),
+            contentDescription = null,
+            modifier = Modifier.size(18.dp)
+          )
+          Spacer(Modifier.width(8.dp))
+          Text(
+            text = stringResource(MR.strings.share_verb),
+            fontWeight = FontWeight.Medium
+          )
         }
       }
     }
@@ -298,7 +387,6 @@ fun ActiveProfilePicker(
   }
   val selectedProfile by remember { chatModel.currentUser }
   val searchTextOrPassword = rememberSaveable { search }
-  // Intentionally don't use derivedStateOf in order to NOT change an order after user was selected
   val filteredProfiles = remember(searchTextOrPassword.value) {
     filteredProfiles(chatModel.users.map { it.user }.sortedBy { !it.activeUser }, searchTextOrPassword.value)
   }
@@ -327,7 +415,7 @@ fun ActiveProfilePicker(
         withApi {
           try {
             appPreferences.incognito.set(false)
-            var updatedConn: PendingContactConnection? = null;
+            var updatedConn: PendingContactConnection? = null
 
             if (contactConnection != null) {
               updatedConn = controller.apiChangeConnectionUser(rhId, contactConnection.pccConnId, user.userId)
@@ -366,8 +454,8 @@ fun ActiveProfilePicker(
           }
         }
       },
-        image = { ProfileImage(size = 42.dp, image = user.image) },
-        badge = user.profile.localBadge
+      image = { ProfileImage(size = 42.dp, image = user.image) },
+      badge = user.profile.localBadge
     )
   }
 
@@ -467,6 +555,8 @@ fun ActiveProfilePicker(
 @Composable
 private fun InviteView(rhId: Long?, connLinkInvitation: CreatedConnLink, contactConnection: MutableState<PendingContactConnection?>, onboarding: Boolean = false) {
   val showShortLink = remember { mutableStateOf(true) }
+  val clipboard = LocalClipboardManager.current
+  val linkUri = connLinkInvitation.simplexChatUri(short = showShortLink.value)
 
   if (BuildConfigCommon.SIMPLEX_ASSETS) {
     Image(
@@ -489,95 +579,128 @@ private fun InviteView(rhId: Long?, connLinkInvitation: CreatedConnLink, contact
       Modifier.fillMaxWidth().padding(horizontal = DEFAULT_PADDING, vertical = DEFAULT_PADDING_HALF),
       style = MaterialTheme.typography.body1
     )
-    LinkTextView(connLinkInvitation.simplexChatUri(short = showShortLink.value), true)
+    LinkTextView(linkUri, true)
     Text(
       stringResource(MR.strings.onboarding_or_show_qr_code),
       Modifier.fillMaxWidth().padding(horizontal = DEFAULT_PADDING, vertical = DEFAULT_PADDING_HALF),
       style = MaterialTheme.typography.body1
     )
-    SimpleXCreatedLinkQRCode(connLinkInvitation, short = showShortLink.value, onShare = { chatModel.markShowingInvitationUsed() })
-  } else {
-    SectionView(stringResource(MR.strings.share_this_1_time_link), headerBottomPadding = 5.dp) {
-      LinkTextView(connLinkInvitation.simplexChatUri(short = showShortLink.value), true)
+    ExpressiveQRCodeCard {
+      SimpleXCreatedLinkQRCode(connLinkInvitation, short = showShortLink.value, onShare = { chatModel.markShowingInvitationUsed() })
     }
+  } else {
+    Text(
+      stringResource(MR.strings.share_this_1_time_link),
+      modifier = Modifier.padding(start = 16.dp, top = 8.dp, bottom = 4.dp),
+      style = MaterialTheme.typography.subtitle2,
+      color = MaterialTheme.colors.primary.copy(alpha = 0.85f),
+      fontWeight = FontWeight.SemiBold
+    )
+    LinkTextView(linkUri, true)
 
-    Spacer(Modifier.height(DEFAULT_PADDING))
+    Spacer(Modifier.height(10.dp))
 
-    SectionViewWithButton(
-      stringResource(MR.strings.or_show_this_qr_code).uppercase(),
-      titleButton = if (connLinkInvitation.connShortLink != null) {{ ToggleShortLinkButton(showShortLink) }} else null
+    ExpressiveQRCodeCard(
+      title = stringResource(MR.strings.or_show_this_qr_code),
+      titleButton = if (connLinkInvitation.connShortLink != null) {
+        { ToggleShortLinkButton(showShortLink) }
+      } else null,
+      onShareClick = {
+        chatModel.markShowingInvitationUsed()
+        clipboard.shareText(linkUri)
+      }
     ) {
       SimpleXCreatedLinkQRCode(connLinkInvitation, short = showShortLink.value, onShare = { chatModel.markShowingInvitationUsed() })
     }
   }
 
   if (!onboarding) {
-  Spacer(Modifier.height(DEFAULT_PADDING))
-  val incognito by remember(chatModel.showingInvitation.value?.conn?.incognito, controller.appPrefs.incognito.get()) {
-    derivedStateOf {
-      chatModel.showingInvitation.value?.conn?.incognito ?: controller.appPrefs.incognito.get()
-    }
-  }
-  val currentUser = remember { chatModel.currentUser }.value
-
-  if (currentUser != null) {
-    SectionView(stringResource(MR.strings.new_chat_share_profile), headerBottomPadding = 5.dp) {
-      SectionItemView(
-        padding = PaddingValues(
-          top = 0.dp,
-          bottom = 0.dp,
-          start = 16.dp,
-          end = 16.dp
-        ),
-        click = {
-          ModalManager.start.showCustomModal(keyboardCoversBar = false) { close ->
-            val search = rememberSaveable { mutableStateOf("") }
-            ModalView(
-              { close() },
-              showSearch = true,
-              searchAlwaysVisible = true,
-              onSearchValueChanged = { search.value = it },
-              content = {
-                ActiveProfilePicker(
-                  search = search,
-                  close = close,
-                  rhId = rhId,
-                  contactConnection = contactConnection.value
-                )
-              })
-          }
-        }
-      ) {
-        if (incognito) {
-          Spacer(Modifier.width(8.dp))
-          Icon(
-            painterResource(MR.images.ic_theater_comedy_filled),
-            contentDescription = stringResource(MR.strings.incognito),
-            tint = Indigo,
-            modifier = Modifier.size(32.dp)
-          )
-          Spacer(Modifier.width(2.dp))
-        } else {
-          ProfileImage(size = 42.dp, image = currentUser.image)
-        }
-        TextIconSpaced(false)
-        Text(
-          text = if (incognito) stringResource(MR.strings.incognito) else currentUser.chatViewName,
-          color = MaterialTheme.colors.onBackground
-        )
-        Column(modifier = Modifier.fillMaxWidth(), horizontalAlignment = Alignment.End) {
-          Icon(
-            painter = painterResource(MR.images.ic_arrow_forward_ios),
-            contentDescription = stringResource(MR.strings.new_chat_share_profile),
-            tint = MaterialTheme.colors.secondary,
-          )
-        }
+    Spacer(Modifier.height(DEFAULT_PADDING))
+    val incognito by remember(chatModel.showingInvitation.value?.conn?.incognito, controller.appPrefs.incognito.get()) {
+      derivedStateOf {
+        chatModel.showingInvitation.value?.conn?.incognito ?: controller.appPrefs.incognito.get()
       }
     }
-    if (incognito) {
-      SectionTextFooter(generalGetString(MR.strings.connect__a_new_random_profile_will_be_shared))
+    val currentUser = remember { chatModel.currentUser }.value
+
+    if (currentUser != null) {
+      val isLight = MaterialTheme.colors.isLight
+      val cardBg = lerp(
+        MaterialTheme.colors.surface,
+        MaterialTheme.colors.primary,
+        if (isLight) 0.06f else 0.09f
+      )
+
+      Text(
+        stringResource(MR.strings.new_chat_share_profile),
+        modifier = Modifier.padding(start = 16.dp, top = 8.dp, bottom = 4.dp),
+        style = MaterialTheme.typography.subtitle2,
+        color = MaterialTheme.colors.primary.copy(alpha = 0.85f),
+        fontWeight = FontWeight.SemiBold
+      )
+
+      Surface(
+        modifier = Modifier
+          .fillMaxWidth()
+          .padding(horizontal = 12.dp, vertical = 4.dp),
+        shape = RoundedCornerShape(20.dp),
+        color = cardBg,
+        elevation = 0.dp
+      ) {
+        SectionItemView(
+          padding = PaddingValues(horizontal = 16.dp, vertical = 4.dp),
+          click = {
+            ModalManager.start.showCustomModal(keyboardCoversBar = false) { close ->
+              val search = rememberSaveable { mutableStateOf("") }
+              ModalView(
+                { close() },
+                showSearch = true,
+                searchAlwaysVisible = true,
+                onSearchValueChanged = { search.value = it },
+                content = {
+                  ActiveProfilePicker(
+                    search = search,
+                    close = close,
+                    rhId = rhId,
+                    contactConnection = contactConnection.value
+                  )
+                }
+              )
+            }
+          }
+        ) {
+          if (incognito) {
+            Spacer(Modifier.width(8.dp))
+            Icon(
+              painterResource(MR.images.ic_theater_comedy_filled),
+              contentDescription = stringResource(MR.strings.incognito),
+              tint = Indigo,
+              modifier = Modifier.size(32.dp)
+            )
+            Spacer(Modifier.width(2.dp))
+          } else {
+            ProfileImage(size = 42.dp, image = currentUser.image)
+          }
+          TextIconSpaced(false)
+          Text(
+            text = if (incognito) stringResource(MR.strings.incognito) else currentUser.chatViewName,
+            color = MaterialTheme.colors.onSurface,
+            fontWeight = FontWeight.Medium
+          )
+          Column(modifier = Modifier.fillMaxWidth(), horizontalAlignment = Alignment.End) {
+            Icon(
+              painter = painterResource(MR.images.ic_arrow_forward_ios),
+              contentDescription = stringResource(MR.strings.new_chat_share_profile),
+              tint = MaterialTheme.colors.secondary,
+              modifier = Modifier.size(16.dp)
+            )
+          }
+        }
+      }
+      if (incognito) {
+        SectionTextFooter(generalGetString(MR.strings.connect__a_new_random_profile_will_be_shared))
+      }
     }
-  }
   }
 }
 
@@ -645,23 +768,61 @@ private fun ConnectView(rhId: Long?, showQRCodeScanner: MutableState<Boolean>, p
     )
   }
 
-  SectionView(stringResource(MR.strings.paste_the_link_you_received), headerBottomPadding = 5.dp) {
+  val isLight = MaterialTheme.colors.isLight
+  val cardBg = lerp(
+    MaterialTheme.colors.surface,
+    MaterialTheme.colors.primary,
+    if (isLight) 0.06f else 0.09f
+  )
+
+  Text(
+    stringResource(MR.strings.paste_the_link_you_received),
+    modifier = Modifier.padding(start = 16.dp, top = 8.dp, bottom = 4.dp),
+    style = MaterialTheme.typography.subtitle2,
+    color = MaterialTheme.colors.primary.copy(alpha = 0.85f),
+    fontWeight = FontWeight.SemiBold
+  )
+  Surface(
+    modifier = Modifier
+      .fillMaxWidth()
+      .padding(horizontal = 12.dp, vertical = 4.dp),
+    shape = RoundedCornerShape(20.dp),
+    color = cardBg,
+    elevation = 0.dp
+  ) {
     PasteLinkView(rhId, pastedLink, showQRCodeScanner, close)
   }
 
   if (appPlatform.isAndroid) {
-    Spacer(Modifier.height(10.dp))
+    Spacer(Modifier.height(14.dp))
 
-    SectionView(stringResource(MR.strings.or_scan_qr_code), headerBottomPadding = 5.dp) {
-      QRCodeScanner(showQRCodeScanner) { text ->
-        val linkVerified = verifyOnly(text)
-        if (!linkVerified) {
-          AlertManager.shared.showAlertMsg(
-            title = generalGetString(MR.strings.invalid_qr_code),
-            text = generalGetString(MR.strings.code_you_scanned_is_not_simplex_link_qr_code)
-          )
+    Text(
+      stringResource(MR.strings.or_scan_qr_code),
+      modifier = Modifier.padding(start = 16.dp, top = 8.dp, bottom = 4.dp),
+      style = MaterialTheme.typography.subtitle2,
+      color = MaterialTheme.colors.primary.copy(alpha = 0.85f),
+      fontWeight = FontWeight.SemiBold
+    )
+
+    Surface(
+      modifier = Modifier
+        .fillMaxWidth()
+        .padding(horizontal = 12.dp, vertical = 4.dp),
+      shape = RoundedCornerShape(28.dp),
+      color = cardBg,
+      elevation = 0.dp
+    ) {
+      Box(modifier = Modifier.padding(12.dp)) {
+        QRCodeScanner(showQRCodeScanner) { text ->
+          val linkVerified = verifyOnly(text)
+          if (!linkVerified) {
+            AlertManager.shared.showAlertMsg(
+              title = generalGetString(MR.strings.invalid_qr_code),
+              text = generalGetString(MR.strings.code_you_scanned_is_not_simplex_link_qr_code)
+            )
+          }
+          verifyAndConnect(rhId, text, close)
         }
-        verifyAndConnect(rhId, text, close)
       }
     }
   }
@@ -715,51 +876,109 @@ private fun PasteLinkView(rhId: Long?, pastedLink: MutableState<String>, showQRC
 @Composable
 fun LinkTextView(link: String, share: Boolean) {
   val clipboard = LocalClipboardManager.current
-  Row(Modifier.fillMaxWidth().heightIn(min = DEFAULT_MIN_SECTION_ITEM_HEIGHT).padding(horizontal = DEFAULT_PADDING), verticalAlignment = Alignment.CenterVertically) {
-    Box(Modifier.weight(1f).clickable {
-      chatModel.markShowingInvitationUsed()
-      clipboard.shareText(link)
-    }) {
-      BasicTextField(
-        value = link,
-        onValueChange = {  },
-        enabled = false,
-        textStyle = TextStyle(fontSize = 16.sp, color = MaterialTheme.colors.onBackground),
-        singleLine = true,
-        decorationBox = @Composable { innerTextField ->
-          TextFieldDefaults.TextFieldDecorationBox(
-            value = link,
-            innerTextField = innerTextField,
-            contentPadding = PaddingValues(),
-            label = null,
-            visualTransformation = VisualTransformation.None,
-            leadingIcon = null,
-            trailingIcon = null,
-            singleLine = true,
-            enabled = false,
-            isError = false,
-            interactionSource = remember { MutableInteractionSource() },
-            colors = TextFieldDefaults.textFieldColors(backgroundColor = Color.Unspecified)
-          )
-        })
-    }
-    // Element Text() can add ellipsis (...) in random place of the string, sometimes even after half of width of a screen.
-    // So using BasicTextField + manual ...
-    Text("…", fontSize = 16.sp)
-    if (share) {
-      Spacer(Modifier.width(DEFAULT_PADDING))
-      IconButton({
-        chatModel.markShowingInvitationUsed()
-        clipboard.setText(AnnotatedString(link))
-      }, Modifier.size(20.dp)) {
-        Icon(painterResource(MR.images.ic_content_copy), null, tint = MaterialTheme.colors.primary)
+  val isLight = MaterialTheme.colors.isLight
+  val cardBg = lerp(
+    MaterialTheme.colors.surface,
+    MaterialTheme.colors.primary,
+    if (isLight) 0.06f else 0.09f
+  )
+  val iconBg = lerp(
+    MaterialTheme.colors.surface,
+    MaterialTheme.colors.primary,
+    if (isLight) 0.12f else 0.18f
+  )
+
+  Surface(
+    modifier = Modifier
+      .fillMaxWidth()
+      .padding(horizontal = 12.dp, vertical = 4.dp),
+    shape = RoundedCornerShape(20.dp),
+    color = cardBg,
+    elevation = 0.dp
+  ) {
+    Row(
+      Modifier
+        .fillMaxWidth()
+        .heightIn(min = DEFAULT_MIN_SECTION_ITEM_HEIGHT)
+        .padding(horizontal = 14.dp, vertical = 6.dp),
+      verticalAlignment = Alignment.CenterVertically
+    ) {
+      Box(
+        Modifier
+          .weight(1f)
+          .clickable {
+            chatModel.markShowingInvitationUsed()
+            clipboard.shareText(link)
+          }
+      ) {
+        BasicTextField(
+          value = link,
+          onValueChange = { },
+          enabled = false,
+          textStyle = TextStyle(fontSize = 15.sp, color = MaterialTheme.colors.onSurface),
+          singleLine = true,
+          decorationBox = @Composable { innerTextField ->
+            TextFieldDefaults.TextFieldDecorationBox(
+              value = link,
+              innerTextField = innerTextField,
+              contentPadding = PaddingValues(),
+              label = null,
+              visualTransformation = VisualTransformation.None,
+              leadingIcon = null,
+              trailingIcon = null,
+              singleLine = true,
+              enabled = false,
+              isError = false,
+              interactionSource = remember { MutableInteractionSource() },
+              colors = TextFieldDefaults.textFieldColors(backgroundColor = Color.Transparent)
+            )
+          }
+        )
       }
-      Spacer(Modifier.width(DEFAULT_PADDING))
-      IconButton({
-        chatModel.markShowingInvitationUsed()
-        clipboard.shareText(link)
-      }, Modifier.size(20.dp)) {
-        Icon(painterResource(MR.images.ic_share_filled), null, tint = MaterialTheme.colors.primary)
+      Text("…", fontSize = 16.sp, color = MaterialTheme.colors.onSurface)
+      if (share) {
+        Spacer(Modifier.width(8.dp))
+        Surface(
+          shape = CircleShape,
+          color = iconBg,
+          elevation = 0.dp
+        ) {
+          IconButton(
+            onClick = {
+              chatModel.markShowingInvitationUsed()
+              clipboard.setText(AnnotatedString(link))
+            },
+            modifier = Modifier.size(36.dp)
+          ) {
+            Icon(
+              painterResource(MR.images.ic_content_copy),
+              contentDescription = null,
+              tint = MaterialTheme.colors.primary,
+              modifier = Modifier.size(18.dp)
+            )
+          }
+        }
+        Spacer(Modifier.width(8.dp))
+        Surface(
+          shape = CircleShape,
+          color = iconBg,
+          elevation = 0.dp
+        ) {
+          IconButton(
+            onClick = {
+              chatModel.markShowingInvitationUsed()
+              clipboard.shareText(link)
+            },
+            modifier = Modifier.size(36.dp)
+          ) {
+            Icon(
+              painterResource(MR.images.ic_share_filled),
+              contentDescription = null,
+              tint = MaterialTheme.colors.primary,
+              modifier = Modifier.size(18.dp)
+            )
+          }
+        }
       }
     }
   }
