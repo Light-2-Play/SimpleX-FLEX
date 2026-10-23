@@ -11,19 +11,24 @@ import androidx.compose.desktop.ui.tooling.preview.Preview
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import dev.icerock.moko.resources.compose.painterResource
 import dev.icerock.moko.resources.compose.stringResource
-import androidx.compose.ui.unit.dp
 import chat.simplex.common.model.*
 import chat.simplex.common.ui.theme.*
 import chat.simplex.common.views.helpers.*
@@ -45,7 +50,6 @@ fun UserAddressView(
   onboarding: Boolean = false,
   close: () -> Unit
 ) {
-  // TODO close when remote host changes
   val shareViaProfile = remember { mutableStateOf(shareViaProfile) }
   val progressIndicator = remember { mutableStateOf(false) }
   val user = remember { chatModel.currentUser }
@@ -139,7 +143,7 @@ fun UserAddressView(
       sendEmail = { userAddress ->
         uriHandler.sendEmail(
           generalGetString(MR.strings.email_invite_subject),
-          generalGetString(MR.strings.email_invite_body).format(simplexChatLink(userAddress.connLinkContact.connFullLink)) // TODO [short links] replace with short link
+          generalGetString(MR.strings.email_invite_body).format(simplexChatLink(userAddress.connLinkContact.connFullLink))
         )
       },
       setProfileAddress = ::setProfileAddress,
@@ -191,7 +195,7 @@ fun UserAddressView(
         Modifier
           .padding(horizontal = 2.dp)
           .size(30.dp),
-        color = MaterialTheme.colors.secondary,
+        color = MaterialTheme.colors.primary,
         strokeWidth = 3.dp
       )
     }
@@ -251,7 +255,6 @@ fun showAddShortLinkAlert(
             )
           }
         }
-        // Cancel
         SectionItemView({
           AlertManager.shared.hideAlert()
         }) {
@@ -265,6 +268,137 @@ fun showAddShortLinkAlert(
       }
     }
   )
+}
+
+@Composable
+fun ExpressiveQRCodeCard(
+  title: String? = null,
+  titleButton: (@Composable () -> Unit)? = null,
+  onShareClick: (() -> Unit)? = null,
+  onShareViaChatClick: (() -> Unit)? = null,
+  content: @Composable () -> Unit
+) {
+  val isLight = MaterialTheme.colors.isLight
+  val cardBg = lerp(
+    MaterialTheme.colors.surface,
+    MaterialTheme.colors.primary,
+    if (isLight) 0.06f else 0.09f
+  )
+  val actionBtnBg = lerp(
+    MaterialTheme.colors.surface,
+    MaterialTheme.colors.primary,
+    if (isLight) 0.14f else 0.20f
+  )
+
+  Surface(
+    modifier = Modifier
+      .fillMaxWidth()
+      .padding(horizontal = 12.dp, vertical = 6.dp),
+    shape = RoundedCornerShape(32.dp),
+    color = cardBg,
+    elevation = 0.dp
+  ) {
+    Column(
+      modifier = Modifier
+        .fillMaxWidth()
+        .padding(18.dp),
+      horizontalAlignment = Alignment.CenterHorizontally,
+      verticalArrangement = Arrangement.spacedBy(14.dp)
+    ) {
+      if (title != null || titleButton != null) {
+        Row(
+          modifier = Modifier.fillMaxWidth(),
+          verticalAlignment = Alignment.CenterVertically,
+          horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+          if (title != null) {
+            Text(
+              text = title,
+              style = MaterialTheme.typography.subtitle1,
+              fontWeight = FontWeight.SemiBold,
+              color = MaterialTheme.colors.onSurface
+            )
+          } else {
+            Spacer(Modifier.width(1.dp))
+          }
+          titleButton?.invoke()
+        }
+      }
+
+      Surface(
+        shape = RoundedCornerShape(24.dp),
+        color = Color.White,
+        elevation = 0.dp
+      ) {
+        Box(
+          modifier = Modifier.padding(14.dp),
+          contentAlignment = Alignment.Center
+        ) {
+          content()
+        }
+      }
+
+      if (onShareClick != null || onShareViaChatClick != null) {
+        Row(
+          modifier = Modifier.fillMaxWidth(),
+          horizontalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+          if (onShareClick != null) {
+            Button(
+              onClick = onShareClick,
+              modifier = Modifier
+                .weight(1f)
+                .height(46.dp),
+              shape = RoundedCornerShape(percent = 50),
+              colors = ButtonDefaults.buttonColors(
+                backgroundColor = MaterialTheme.colors.primary,
+                contentColor = MaterialTheme.colors.onPrimary
+              ),
+              elevation = null
+            ) {
+              Icon(
+                painter = painterResource(MR.images.ic_share),
+                contentDescription = null,
+                modifier = Modifier.size(18.dp)
+              )
+              Spacer(Modifier.width(8.dp))
+              Text(
+                text = stringResource(MR.strings.share_verb),
+                fontWeight = FontWeight.Medium
+              )
+            }
+          }
+
+          if (onShareViaChatClick != null) {
+            Button(
+              onClick = onShareViaChatClick,
+              modifier = Modifier
+                .weight(1f)
+                .height(46.dp),
+              shape = RoundedCornerShape(percent = 50),
+              colors = ButtonDefaults.buttonColors(
+                backgroundColor = actionBtnBg,
+                contentColor = MaterialTheme.colors.primary
+              ),
+              elevation = null
+            ) {
+              Icon(
+                painter = painterResource(MR.images.ic_forward),
+                contentDescription = null,
+                modifier = Modifier.size(18.dp)
+              )
+              Spacer(Modifier.width(8.dp))
+              Text(
+                text = stringResource(MR.strings.share_via_chat),
+                fontWeight = FontWeight.Medium,
+                maxLines = 1
+              )
+            }
+          }
+        }
+      }
+    }
+  }
 }
 
 @Composable
@@ -334,27 +468,26 @@ private fun UserAddressLayout(
             Modifier.fillMaxWidth().padding(horizontal = DEFAULT_PADDING, vertical = DEFAULT_PADDING_HALF),
             style = MaterialTheme.typography.body1
           )
-          SimpleXCreatedLinkQRCode(userAddress.connLinkContact, short = showShortLink.value)
+          ExpressiveQRCodeCard {
+            SimpleXCreatedLinkQRCode(userAddress.connLinkContact, short = showShortLink.value)
+          }
         } else {
           val addressSettingsState = remember { mutableStateOf(AddressSettingsState(settings = userAddress.addressSettings)) }
           val savedAddressSettingsState = remember { mutableStateOf(addressSettingsState.value) }
 
-          SectionViewWithButton(
-            stringResource(MR.strings.for_social_media),
-            titleButton = if (userAddress.connLinkContact.connShortLink != null) {{ ToggleShortLinkButton(showShortLink) }} else null
-          ) {
-            SimpleXCreatedLinkQRCode(userAddress.connLinkContact, short = showShortLink.value)
-            if (userAddress.shouldBeUpgraded) {
-              AddShortLinkButton(text = stringResource(MR.strings.add_short_link)) { showAddShortLinkAlert(null) }
-            }
-            ShareAddressButton {
+          ExpressiveQRCodeCard(
+            title = stringResource(MR.strings.for_social_media),
+            titleButton = if (userAddress.connLinkContact.connShortLink != null) {
+              { ToggleShortLinkButton(showShortLink) }
+            } else null,
+            onShareClick = {
               if (userAddress.shouldBeUpgraded) {
                 showAddShortLinkAlert { share(userAddress.connLinkContact.simplexChatUri(short = showShortLink.value)) }
               } else {
                 share(userAddress.connLinkContact.simplexChatUri(short = showShortLink.value))
               }
-            }
-            ShareViaChatButton {
+            },
+            onShareViaChatClick = {
               val shareViaChat = {
                 chatModel.sharedContent.value = SharedContent.MyAddress
                 chatModel.chatId.value = null
@@ -362,10 +495,16 @@ private fun UserAddressLayout(
               }
               if (userAddress.shouldBeUpgraded) showAddShortLinkAlert { shareViaChat() } else shareViaChat()
             }
-            // ShareViaEmailButton { sendEmail(userAddress) }
-            BusinessAddressToggle(addressSettingsState) { saveAddressSettings(addressSettingsState.value, savedAddressSettingsState) }
-            AddressSettingsButton(user, userAddress, shareViaProfile, setProfileAddress, saveAddressSettings)
+          ) {
+            SimpleXCreatedLinkQRCode(userAddress.connLinkContact, short = showShortLink.value)
           }
+
+          if (userAddress.shouldBeUpgraded) {
+            AddShortLinkButton(text = stringResource(MR.strings.add_short_link)) { showAddShortLinkAlert(null) }
+          }
+          BusinessAddressToggle(addressSettingsState) { saveAddressSettings(addressSettingsState.value, savedAddressSettingsState) }
+          AddressSettingsButton(user, userAddress, shareViaProfile, setProfileAddress, saveAddressSettings)
+
           if (addressSettingsState.value.businessAddress) {
             SectionTextFooter(stringResource(MR.strings.add_your_team_members_to_conversations))
           }
@@ -440,17 +579,6 @@ private fun AddShortLinkButton(text: String, onClick: () -> Unit) {
   SettingsActionItem(
     painterResource(MR.images.ic_arrow_upward),
     text,
-    onClick,
-    iconColor = MaterialTheme.colors.primary,
-    textColor = MaterialTheme.colors.primary,
-  )
-}
-
-@Composable
-private fun ShareViaChatButton(onClick: () -> Unit) {
-  SettingsActionItem(
-    painterResource(MR.images.ic_forward),
-    stringResource(MR.strings.share_via_chat),
     onClick,
     iconColor = MaterialTheme.colors.primary,
     textColor = MaterialTheme.colors.primary,
@@ -544,7 +672,6 @@ private fun ModalData.UserAddressSettings(
   }
 
   LaunchedEffect(Unit) {
-    // Enables unsaved changes alert on this view.
     chatModel.centerPanelBackgroundClickHandler = {
       onClose(close = { ModalManager.start.closeModals() })
     }
@@ -754,13 +881,20 @@ private fun AcceptIncognitoToggle(addressSettingsState: MutableState<AddressSett
 @Composable
 private fun AutoReplyEditor(addressSettingsState: MutableState<AddressSettingsState>) {
   val autoReply = rememberSaveable { mutableStateOf(addressSettingsState.value.autoReply) }
-  TextEditor(
-    autoReply,
-    Modifier.height(100.dp),
-    placeholder = stringResource(MR.strings.enter_welcome_message_optional),
-    contentPadding = PaddingValues(),
-    shape = SectionCardShape
-  )
+  Box(
+    modifier = Modifier
+      .fillMaxWidth()
+      .padding(horizontal = 12.dp, vertical = 4.dp)
+      .clip(RoundedCornerShape(20.dp))
+  ) {
+    TextEditor(
+      autoReply,
+      Modifier.height(100.dp),
+      placeholder = stringResource(MR.strings.enter_welcome_message_optional),
+      contentPadding = PaddingValues(12.dp),
+      shape = RoundedCornerShape(20.dp)
+    )
+  }
   LaunchedEffect(autoReply.value) {
     if (autoReply.value != addressSettingsState.value.autoReply) {
       addressSettingsState.value = AddressSettingsState(
@@ -775,16 +909,30 @@ private fun AutoReplyEditor(addressSettingsState: MutableState<AddressSettingsSt
 
 @Composable
 private fun saveAddressSettingsButton(disabled: Boolean, onClick: () -> Unit) {
-  SectionItemView(onClick, disabled = disabled) {
-    Text(stringResource(MR.strings.save_verb), color = if (disabled) MaterialTheme.colors.secondary else MaterialTheme.colors.primary)
+  Button(
+    onClick = onClick,
+    enabled = !disabled,
+    modifier = Modifier
+      .fillMaxWidth()
+      .padding(horizontal = 14.dp, vertical = 6.dp)
+      .height(48.dp),
+    shape = RoundedCornerShape(percent = 50),
+    colors = ButtonDefaults.buttonColors(
+      backgroundColor = MaterialTheme.colors.primary,
+      contentColor = Color.White,
+      disabledBackgroundColor = MaterialTheme.colors.onSurface.copy(alpha = 0.12f),
+      disabledContentColor = MaterialTheme.colors.onSurface.copy(alpha = 0.38f)
+    ),
+    elevation = null
+  ) {
+    Text(
+      stringResource(MR.strings.save_verb),
+      fontWeight = FontWeight.SemiBold
+    )
   }
 }
 
-@Preview/*(
-  uiMode = Configuration.UI_MODE_NIGHT_YES,
-  showBackground = true,
-  name = "Dark Mode"
-)*/
+@Preview
 @Composable
 fun PreviewUserAddressLayoutNoAddress() {
   SimpleXTheme {
@@ -814,11 +962,7 @@ private fun showUnsavedChangesAlert(save: () -> Unit, revert: () -> Unit) {
   )
 }
 
-@Preview/*(
-  uiMode = Configuration.UI_MODE_NIGHT_YES,
-  showBackground = true,
-  name = "Dark Mode"
-)*/
+@Preview
 @Composable
 fun PreviewUserAddressLayoutAddressCreated() {
   SimpleXTheme {
