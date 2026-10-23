@@ -133,9 +133,9 @@ fun ModalData.NewChatView(rh: RemoteHostInfo?, selection: NewChatOption, showQRC
         ) {
           tabTitles.forEachIndexed { index, it ->
             LeadingIconTab(
-              RichHaptics.perform(HapticPattern.CLICK)
               selected = pagerState.currentPage == index,
               onClick = {
+                RichHaptics.perform(HapticPattern.CLICK)
                 scope.launch {
                   pagerState.animateScrollToPage(index)
                 }
@@ -152,7 +152,7 @@ fun ModalData.NewChatView(rh: RemoteHostInfo?, selection: NewChatOption, showQRC
             )
           }
         }
-
+        
         HorizontalPager(state = pagerState, Modifier, pageNestedScrollConnection = LocalAppBarHandler.current!!.connection, verticalAlignment = Alignment.Top, userScrollEnabled = appPlatform.isAndroid) { index ->
           Column(
             Modifier
