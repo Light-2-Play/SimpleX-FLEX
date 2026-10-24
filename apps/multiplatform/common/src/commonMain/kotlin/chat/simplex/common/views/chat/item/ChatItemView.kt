@@ -382,32 +382,59 @@ fun ChatItemView(
                 }
               }
 
-              @Composable
-              fun MsgReactionsMenu() {
-                val rs = MsgReaction.supported.mapNotNull { r ->
-                  if (null == cItem.reactions.find { it.userReacted && it.reaction.text == r.text }) {
-                    r
-                  } else {
-                    null
-                  }
+             @Composable
+            fun MsgReactionsMenu() {
+              val allReactions = remember {
+                val extras = listOf(
+                  // Жесты и руки
+                  "👍", "👎", "👏", "🙌", "🤝", "👌", "✌️", "🤞", "🤙", "🫡", "🙏", "👊", "✊", "🫂",
+                  // Огонь, энергия и праздники
+                  "🔥", "⚡", "✨", "💯", "🎉", "🚀", "🎯", "🏆",
+                  // Эмоции и лица
+                  "❤️", "💔", "😍", "🥰", "😘", "😎", "😂", "🤣", "🥹", "🤔",
+                  "🧐", "🤫", "🫠", "😴", "😢", "😭", "😱", "🤯", "😡", "🤬",
+                  "🥶", "🤢", "🤮",
+                  // Мемы, символы и предметы
+                  "🗿", "💀", "👻", "🤡", "💩", "👀", "🍿", "🍻", "☕", "💸",
+                  "🛡️", "🔒", "✅", "❌", "⚠️"
+                ).map { MsgReaction(it) }
+
+                (MsgReaction.supported + extras).distinctBy { it.text }
+              }
+
+              val rs = allReactions.mapNotNull { r ->
+                if (null == cItem.reactions.find { it.userReacted && it.reaction.text == r.text }) {
+                  r
+                } else {
+                  null
                 }
-                if (rs.isNotEmpty()) {
-                  Row(modifier = Modifier.padding(horizontal = DEFAULT_PADDING).horizontalScroll(rememberScrollState()), verticalAlignment = Alignment.CenterVertically) {
-                    rs.forEach() { r ->
-                      Box(
-                        Modifier.size(36.dp).clip(CircleShape).clickable {
+              }
+
+              if (rs.isNotEmpty()) {
+                Row(
+                  modifier = Modifier
+                    .padding(horizontal = DEFAULT_PADDING)
+                    .horizontalScroll(rememberScrollState()),
+                  verticalAlignment = Alignment.CenterVertically
+                ) {
+                  rs.forEach { r ->
+                    Box(
+                      Modifier
+                        .size(36.dp)
+                        .clip(CircleShape)
+                        .clickable {
                           RichHaptics.perform(HapticPattern.CLICK)
                           setReaction(cInfo, cItem, true, r)
                           showMenu.value = false
                         },
-                        contentAlignment = Alignment.Center
-                      ) {
-                        ReactionIcon(r.text, 12.sp)
-                      }
+                      contentAlignment = Alignment.Center
+                    ) {
+                      ReactionIcon(r.text, 12.sp)
                     }
                   }
                 }
               }
+            }
 
               @Composable
               fun DeleteItemMenu() {
