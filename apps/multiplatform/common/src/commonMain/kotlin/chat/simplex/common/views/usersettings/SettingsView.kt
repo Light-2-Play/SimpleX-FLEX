@@ -97,6 +97,8 @@ fun SettingsLayout(
     hideKeyboard(view)
   }
   val notificationsMode = remember { chatModel.controller.appPrefs.notificationsMode.state }
+  val bottomPadding = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() + 90.dp
+
   ColumnWithScrollBar {
     AppBarTitle(stringResource(MR.strings.your_settings))
 
@@ -129,7 +131,8 @@ fun SettingsLayout(
         )
       }
     }
-    SectionBottomSpacer()
+    // Запас высоты для свободного скролла выше кнопки "Назад" и нижнего оверлея
+    Spacer(Modifier.height(bottomPadding))
   }
 }
 
@@ -142,6 +145,8 @@ fun HelpAndSupportView(
   val uriHandler = LocalUriHandler.current
   val stopped = chatModel.chatRunning.value == false
   val userDisplayName = chatModel.currentUser.value?.displayName ?: ""
+  val bottomPadding = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() + 90.dp
+
   ColumnWithScrollBar {
     AppBarTitle(stringResource(MR.strings.help_and_support))
 
@@ -170,7 +175,7 @@ fun HelpAndSupportView(
       }
       StarOnGithubItem(uriHandler)
     }
-    SectionBottomSpacer()
+    Spacer(Modifier.height(bottomPadding))
   }
 }
 
@@ -180,54 +185,41 @@ expect fun AdvancedSettingsAppSection(
   withAuth: (title: String, desc: String, block: () -> Unit) -> Unit,
 )
 
-// Shutdown is only available on Android; on desktop the app is closed via the window.
 @Composable
 expect fun AppShutdownItem()
 
 @Composable private fun DatabaseItem(encrypted: Boolean, saved: Boolean, openDatabaseView: () -> Unit, stopped: Boolean) {
-  val isLight = MaterialTheme.colors.isLight
-  val cardBg = lerp(
-    MaterialTheme.colors.surface,
-    MaterialTheme.colors.primary,
-    if (isLight) 0.06f else 0.09f
-  )
-
-  Box(
-    modifier = Modifier
-      .fillMaxWidth()
-      .padding(horizontal = 12.dp, vertical = 3.dp)
-      .clip(RoundedCornerShape(20.dp))
-      .background(cardBg)
-  ) {
-    SectionItemView(openDatabaseView) {
-      Row(
-        Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.SpaceBetween
-      ) {
-        Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
-          Icon(
-            painterResource(MR.images.ic_database),
-            contentDescription = stringResource(MR.strings.chat_data),
-            tint = if (encrypted && (appPlatform.isAndroid || !saved)) MaterialTheme.colors.primary.copy(alpha = 0.85f) else WarningOrange,
-            modifier = Modifier.size(22.dp)
-          )
-          TextIconSpaced(false)
-          Text(
-            stringResource(MR.strings.chat_data),
-            color = MaterialTheme.colors.onSurface,
-            fontWeight = FontWeight.Medium,
-            fontSize = 15.5.sp
-          )
-        }
-        if (stopped) {
-          Icon(
-            painterResource(MR.images.ic_report_filled),
-            contentDescription = stringResource(MR.strings.chat_is_stopped),
-            tint = Color.Red,
-            modifier = Modifier.padding(end = 6.dp)
-          )
-        }
+  SectionItemView({
+    RichHaptics.perform(HapticPattern.CLICK)
+    openDatabaseView()
+  }) {
+    Row(
+      Modifier.fillMaxWidth(),
+      verticalAlignment = Alignment.CenterVertically,
+      horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+      Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
+        Icon(
+          painterResource(MR.images.ic_database),
+          contentDescription = stringResource(MR.strings.chat_data),
+          tint = if (encrypted && (appPlatform.isAndroid || !saved)) MaterialTheme.colors.primary.copy(alpha = 0.85f) else WarningOrange,
+          modifier = Modifier.size(22.dp)
+        )
+        TextIconSpaced(false)
+        Text(
+          stringResource(MR.strings.chat_data),
+          color = MaterialTheme.colors.onSurface,
+          fontWeight = FontWeight.Medium,
+          fontSize = 15.5.sp
+        )
+      }
+      if (stopped) {
+        Icon(
+          painterResource(MR.images.ic_report_filled),
+          contentDescription = stringResource(MR.strings.chat_is_stopped),
+          tint = Color.Red,
+          modifier = Modifier.padding(end = 6.dp)
+        )
       }
     }
   }
@@ -309,7 +301,10 @@ fun ChatLockItem(
   SettingsActionItemWithContent(painterResource(MR.images.ic_engineering), stringResource(MR.strings.terminal_always_visible)) {
     DefaultSwitch(
       checked = remember { pref.state }.value,
-      onCheckedChange = onChange,
+      onCheckedChange = {
+        RichHaptics.perform(if (it) HapticPattern.TOGGLE_ON else HapticPattern.TOGGLE_OFF)
+        onChange(it)
+      },
     )
   }
 }
@@ -344,34 +339,22 @@ fun unchangedHintPreferences(): Boolean = appPreferences.hintPreferences.all { i
 
 @Composable
 fun AppVersionItem(showVersion: () -> Unit) {
-  val isLight = MaterialTheme.colors.isLight
-  val cardBg = lerp(
-    MaterialTheme.colors.surface,
-    MaterialTheme.colors.primary,
-    if (isLight) 0.06f else 0.09f
-  )
-
-  Box(
-    modifier = Modifier
-      .fillMaxWidth()
-      .padding(horizontal = 12.dp, vertical = 3.dp)
-      .clip(RoundedCornerShape(20.dp))
-      .background(cardBg)
-  ) {
-    SectionItemView(showVersion) {
-      Row(
-        Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically
-      ) {
-        Icon(
-          painterResource(MR.images.ic_info),
-          contentDescription = null,
-          tint = MaterialTheme.colors.primary.copy(alpha = 0.85f),
-          modifier = Modifier.size(22.dp)
-        )
-        TextIconSpaced(false)
-        AppVersionText()
-      }
+  SectionItemView({
+    RichHaptics.perform(HapticPattern.CLICK)
+    showVersion()
+  }) {
+    Row(
+      Modifier.fillMaxWidth(),
+      verticalAlignment = Alignment.CenterVertically
+    ) {
+      Icon(
+        painterResource(MR.images.ic_info),
+        contentDescription = null,
+        tint = MaterialTheme.colors.primary.copy(alpha = 0.85f),
+        modifier = Modifier.size(22.dp)
+      )
+      TextIconSpaced(false)
+      AppVersionText()
     }
   }
 }
@@ -420,35 +403,27 @@ fun SettingsActionItem(
   disabled: Boolean = false,
   extraPadding: Boolean = false
 ) {
-  val isLight = MaterialTheme.colors.isLight
-  val cardBg = lerp(
-    MaterialTheme.colors.surface,
-    MaterialTheme.colors.primary,
-    if (isLight) 0.06f else 0.09f
-  )
-
-  Box(
-    modifier = Modifier
-      .fillMaxWidth()
-      .padding(horizontal = 12.dp, vertical = 3.dp)
-      .clip(RoundedCornerShape(20.dp))
-      .background(cardBg)
-  ) {
-    SectionItemView(click, disabled = disabled, extraPadding = extraPadding) {
-      Icon(
-        icon,
-        contentDescription = text,
-        tint = if (disabled) MaterialTheme.colors.secondary else if (iconColor != MaterialTheme.colors.secondary) iconColor else MaterialTheme.colors.primary.copy(alpha = 0.85f),
-        modifier = Modifier.size(22.dp)
-      )
-      TextIconSpaced(extraPadding)
-      Text(
-        text,
-        color = if (disabled) MaterialTheme.colors.secondary else if (textColor != Color.Unspecified) textColor else MaterialTheme.colors.onSurface,
-        fontWeight = FontWeight.Medium,
-        fontSize = 15.5.sp
-      )
+  val onClick = if (click != null) {
+    {
+      RichHaptics.perform(HapticPattern.CLICK)
+      click()
     }
+  } else null
+
+  SectionItemView(onClick, disabled = disabled, extraPadding = extraPadding) {
+    Icon(
+      icon,
+      contentDescription = text,
+      tint = if (disabled) MaterialTheme.colors.secondary else if (iconColor != MaterialTheme.colors.secondary) iconColor else MaterialTheme.colors.primary.copy(alpha = 0.85f),
+      modifier = Modifier.size(22.dp)
+    )
+    TextIconSpaced(extraPadding)
+    Text(
+      text,
+      color = if (disabled) MaterialTheme.colors.secondary else if (textColor != Color.Unspecified) textColor else MaterialTheme.colors.onSurface,
+      fontWeight = FontWeight.Medium,
+      fontSize = 15.5.sp
+    )
   }
 }
 
@@ -463,55 +438,47 @@ fun SettingsActionItemWithContent(
   extraPadding: Boolean = false,
   content: @Composable RowScope.() -> Unit
 ) {
-  val isLight = MaterialTheme.colors.isLight
-  val cardBg = lerp(
-    MaterialTheme.colors.surface,
-    MaterialTheme.colors.primary,
-    if (isLight) 0.06f else 0.09f
-  )
+  val onClick = if (click != null) {
+    {
+      RichHaptics.perform(HapticPattern.CLICK)
+      click()
+    }
+  } else null
 
-  Box(
-    modifier = Modifier
-      .fillMaxWidth()
-      .padding(horizontal = 12.dp, vertical = 3.dp)
-      .clip(RoundedCornerShape(20.dp))
-      .background(cardBg)
+  SectionItemView(
+    onClick,
+    extraPadding = extraPadding,
+    padding = if (extraPadding && icon != null)
+      PaddingValues(start = DEFAULT_PADDING * 1.7f, end = itemHPadding)
+    else
+      PaddingValues(horizontal = itemHPadding),
+    disabled = disabled
   ) {
-    SectionItemView(
-      click,
-      extraPadding = extraPadding,
-      padding = if (extraPadding && icon != null)
-        PaddingValues(start = DEFAULT_PADDING * 1.7f, end = itemHPadding)
-      else
-        PaddingValues(horizontal = itemHPadding),
-      disabled = disabled
-    ) {
-      if (icon != null) {
-        Icon(
-          icon,
-          text,
-          Modifier.size(22.dp),
-          tint = if (disabled) MaterialTheme.colors.secondary else if (iconColor != MaterialTheme.colors.secondary) iconColor else MaterialTheme.colors.primary.copy(alpha = 0.85f)
-        )
-        TextIconSpaced(extraPadding)
+    if (icon != null) {
+      Icon(
+        icon,
+        text,
+        Modifier.size(22.dp),
+        tint = if (disabled) MaterialTheme.colors.secondary else if (iconColor != MaterialTheme.colors.secondary) iconColor else MaterialTheme.colors.primary.copy(alpha = 0.85f)
+      )
+      TextIconSpaced(extraPadding)
+    }
+    if (text != null) {
+      val padding = with(LocalDensity.current) { 6.sp.toDp() }
+      Text(
+        text,
+        Modifier.weight(1f).padding(vertical = padding),
+        color = if (disabled) MaterialTheme.colors.secondary else textColor,
+        fontWeight = FontWeight.Medium,
+        fontSize = 15.5.sp
+      )
+      Spacer(Modifier.width(DEFAULT_PADDING))
+      Row(Modifier.widthIn(max = (windowWidth() - DEFAULT_PADDING * 2) / 2)) {
+        content()
       }
-      if (text != null) {
-        val padding = with(LocalDensity.current) { 6.sp.toDp() }
-        Text(
-          text,
-          Modifier.weight(1f).padding(vertical = padding),
-          color = if (disabled) MaterialTheme.colors.secondary else textColor,
-          fontWeight = FontWeight.Medium,
-          fontSize = 15.5.sp
-        )
-        Spacer(Modifier.width(DEFAULT_PADDING))
-        Row(Modifier.widthIn(max = (windowWidth() - DEFAULT_PADDING * 2) / 2)) {
-          content()
-        }
-      } else {
-        Row {
-          content()
-        }
+    } else {
+      Row {
+        content()
       }
     }
   }
@@ -541,7 +508,10 @@ fun PreferenceToggle(
   SettingsActionItemWithContent(null, text, disabled = disabled) {
     DefaultSwitch(
       checked = checked,
-      onCheckedChange = onChange,
+      onCheckedChange = {
+        RichHaptics.perform(if (it) HapticPattern.TOGGLE_ON else HapticPattern.TOGGLE_OFF)
+        onChange(it)
+      },
       enabled = !disabled
     )
   }
@@ -566,6 +536,7 @@ fun PreferenceToggleWithIcon(
     DefaultSwitch(
       checked = checked,
       onCheckedChange = {
+        RichHaptics.perform(if (it) HapticPattern.TOGGLE_ON else HapticPattern.TOGGLE_OFF)
         onChange(it)
       },
       enabled = !disabled
