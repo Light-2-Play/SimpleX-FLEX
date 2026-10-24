@@ -45,6 +45,11 @@ import chat.simplex.common.views.chat.item.LocalVoiceTranscriptionWidget
 import chat.simplex.app.ai.VoiceTranscriptionBox
 import androidx.compose.runtime.CompositionLocalProvider
 import chat.simplex.common.platform.UsbPanicDetector
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
 
 var showSingBoxDialogState = mutableStateOf(false)
 var openByeDpiDialog: (() -> Unit)? = null
@@ -57,12 +62,30 @@ class MainActivity: FragmentActivity() {
   override fun onCreate(savedInstanceState: Bundle?) {
     // 1. Блокировка запуска: если "Panic on USB" включен и кабель воткнут — выходим сразу
     if (UsbPanicDetector.checkStartupUsbBlock(this)) {
-      return
-    }
+  return
+}
     
     mainActivity = WeakReference(this)
     super.onCreate(savedInstanceState)
 
+private var usbWatcherJob: Job? = null
+
+private fun startForegroundUsbWatcher() {
+  if (!UsbPanicDetector.isEnabled()) return
+  usbWatcherJob?.cancel()
+  usbWatcherJob = lifecycleScope.launch {
+    while (isActive) {
+      UsbPanicDetector.triggerIfConnected(applicationContext, chatModel)
+      delay(350) // опрос порта каждые 350 мс
+    }
+  }
+}
+
+private fun stopForegroundUsbWatcher() {
+  usbWatcherJob?.cancel()
+  usbWatcherJob = null
+}
+    
     openByeDpiDialog = {
       showSingBoxDialogState.value = true
     }
@@ -181,16 +204,22 @@ class MainActivity: FragmentActivity() {
     processExternalIntent(intent)
   }
 
-  override fun onResume() {
-    super.onResume()
-    AppLock.recheckAuthState()
-    chat.simplex.common.views.chatlist.ByeDpiBridge.isRunning.value = SingBoxService.isRunning
-  }
+ override fun onResume() {
+  super.onResume()
+  // Мгновенная проверка при возврате экрана в фокус и старт цикла
+  UsbPanicDetector.triggerIfConnected(applicationContext, chatModel)
+  startForegroundUsbWatcher()
 
+  AppLock.recheckAuthState()
+  chat.simplex.common.views.chatlist.ByeDpiBridge.isRunning.value = SingBoxService.isRunning
+}
+ 
   override fun onPause() {
-    super.onPause()
-    AppLock.appWasHidden()
-  }
+  super.onPause()
+  // Останавливаем цикл, когда экран заблокирован или свернут
+  stopForegroundUsbWatcher()
+  AppLock.appWasHidden()
+}
 
   override fun onStop() {
     super.onStop()
