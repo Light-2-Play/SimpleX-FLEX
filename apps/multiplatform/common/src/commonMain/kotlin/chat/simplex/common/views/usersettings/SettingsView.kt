@@ -41,6 +41,12 @@ import chat.simplex.res.MR
 
 @Composable
 fun SettingsView(chatModel: ChatModel, setPerformLA: (Boolean) -> Unit, close: () -> Unit) {
+ var showFlexSettings by remember { mutableStateOf(false) }
+
+if (showFlexSettings) {
+  FlexSettingsView(onBack = { showFlexSettings = false })
+  return
+}
   val stopped = chatModel.chatRunning.value == false
   val showSettingsModal: (@Composable (ChatModel) -> Unit) -> (() -> Unit) = { modalView -> { ModalManager.start.showModal(settings = true, cardScreen = true) { modalView(chatModel) } } }
   SettingsLayout(
@@ -102,6 +108,7 @@ fun SettingsLayout(
   ColumnWithScrollBar {
     AppBarTitle(stringResource(MR.strings.your_settings))
 
+    FlexSettingsEntryTile(onClick = { showFlexSettings = true })
 // Вставляем секцию FLEX Settings
 FlexSettingsSection()
     
