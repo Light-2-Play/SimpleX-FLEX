@@ -66,7 +66,7 @@ fun PrivacySettingsView(
     SectionDividerSpaced()
 
     // Секция экстренной защиты (Panic on USB)
-    SectionView("Emergency Security") {
+   SectionView("Emergency Security") {
       var killOnUsbEnabled by remember { mutableStateOf(UsbPanicDetector.isEnabled()) }
       PreferenceToggleWithIcon(
         text = "Panic on USB connect",
@@ -75,7 +75,7 @@ fun PrivacySettingsView(
         checked = killOnUsbEnabled,
         onChange = { enabled ->
           killOnUsbEnabled = enabled
-          UsbPanicDetector.isEnabled = { enabled }
+          UsbPanicDetector.setEnabled(enabled) // сохраняем значение в SharedPreferences
           if (enabled) {
             RichHaptics.perform(HapticPattern.WARNING)
           } else {
