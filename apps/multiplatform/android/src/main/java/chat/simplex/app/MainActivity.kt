@@ -59,33 +59,33 @@ class MainActivity: FragmentActivity() {
     const val OLD_ANDROID_UI_FLAGS = View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
   }
 
+  private var usbWatcherJob: Job? = null
+
+  private fun startForegroundUsbWatcher() {
+    if (!UsbPanicDetector.isEnabled()) return
+    usbWatcherJob?.cancel()
+    usbWatcherJob = lifecycleScope.launch {
+      while (isActive) {
+        UsbPanicDetector.triggerIfConnected(applicationContext, chatModel)
+        delay(350) // опрос порта каждые 350 мс
+      }
+    }
+  }
+
+  private fun stopForegroundUsbWatcher() {
+    usbWatcherJob?.cancel()
+    usbWatcherJob = null
+  }
+
   override fun onCreate(savedInstanceState: Bundle?) {
     // 1. Блокировка запуска: если "Panic on USB" включен и кабель воткнут — выходим сразу
     if (UsbPanicDetector.checkStartupUsbBlock(this)) {
-  return
-}
-    
+      return
+    }
+
     mainActivity = WeakReference(this)
     super.onCreate(savedInstanceState)
 
-private var usbWatcherJob: Job? = null
-
-private fun startForegroundUsbWatcher() {
-  if (!UsbPanicDetector.isEnabled()) return
-  usbWatcherJob?.cancel()
-  usbWatcherJob = lifecycleScope.launch {
-    while (isActive) {
-      UsbPanicDetector.triggerIfConnected(applicationContext, chatModel)
-      delay(350) // опрос порта каждые 350 мс
-    }
-  }
-}
-
-private fun stopForegroundUsbWatcher() {
-  usbWatcherJob?.cancel()
-  usbWatcherJob = null
-}
-    
     openByeDpiDialog = {
       showSingBoxDialogState.value = true
     }
@@ -195,7 +195,7 @@ private fun stopForegroundUsbWatcher() {
     SimplexApp.context.schedulePeriodicServiceRestartWorker()
     SimplexApp.context.schedulePeriodicWakeUp()
 
-   UsbPanicDetector.startMonitoring(applicationContext, chatModel)
+    UsbPanicDetector.startMonitoring(applicationContext, chatModel)
   }
 
   override fun onNewIntent(intent: Intent) {
@@ -204,22 +204,22 @@ private fun stopForegroundUsbWatcher() {
     processExternalIntent(intent)
   }
 
- override fun onResume() {
-  super.onResume()
-  // Мгновенная проверка при возврате экрана в фокус и старт цикла
-  UsbPanicDetector.triggerIfConnected(applicationContext, chatModel)
-  startForegroundUsbWatcher()
+  override fun onResume() {
+    super.onResume()
+    // Мгновенная проверка при возврате экрана в фокус и старт цикла
+    UsbPanicDetector.triggerIfConnected(applicationContext, chatModel)
+    startForegroundUsbWatcher()
 
-  AppLock.recheckAuthState()
-  chat.simplex.common.views.chatlist.ByeDpiBridge.isRunning.value = SingBoxService.isRunning
-}
- 
+    AppLock.recheckAuthState()
+    chat.simplex.common.views.chatlist.ByeDpiBridge.isRunning.value = SingBoxService.isRunning
+  }
+
   override fun onPause() {
-  super.onPause()
-  // Останавливаем цикл, когда экран заблокирован или свернут
-  stopForegroundUsbWatcher()
-  AppLock.appWasHidden()
-}
+    super.onPause()
+    // Останавливаем цикл, когда экран заблокирован или свернут
+    stopForegroundUsbWatcher()
+    AppLock.appWasHidden()
+  }
 
   override fun onStop() {
     super.onStop()
@@ -229,6 +229,7 @@ private fun stopForegroundUsbWatcher() {
 
   override fun onDestroy() {
     super.onDestroy()
+    stopForegroundUsbWatcher()
     // Остановка детектора USB и сервисов
     UsbPanicDetector.stopMonitoring(applicationContext)
     SingBoxService.stop()
