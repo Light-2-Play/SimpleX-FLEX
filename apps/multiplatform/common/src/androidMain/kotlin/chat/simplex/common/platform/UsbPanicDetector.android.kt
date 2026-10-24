@@ -9,15 +9,52 @@ import android.os.Process
 import chat.simplex.common.model.ChatModel
 
 actual object UsbPanicDetector {
+  private const val PREFS_NAME = "simplex_flex_security"
+  private const val KEY_PANIC_ON_USB = "panic_on_usb"
+
   private var isRegistered = false
   private var wasConnected = false
-  actual var isEnabled: () -> Boolean = { false }
+  private var isFirstBroadcast = true
+  private var appContext: Context? = null
+  var chatModelInstance: ChatModel? = null
+
+  private fun getContext(): Context? {
+    if (appContext != null) return appContext
+    return try {
+      val at = Class.forName("android.app.ActivityThread")
+      val app = at.getMethod("currentApplication").invoke(null) as? Context
+      appContext = app?.applicationContext
+      appContext
+    } catch (_: Exception) {
+      null
+    }
+  }
+
+  actual fun isEnabled(): Boolean {
+    val ctx = getContext() ?: return false
+    val sp = ctx.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    return sp.getBoolean(KEY_PANIC_ON_USB, false)
+  }
+
+  actual fun setEnabled(enabled: Boolean) {
+    val ctx = getContext() ?: return
+    val sp = ctx.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    sp.edit().putBoolean(KEY_PANIC_ON_USB, enabled).apply()
+  }
 
   private val receiver = object : BroadcastReceiver() {
     override fun onReceive(context: Context?, intent: Intent?) {
       if (intent?.action == "android.hardware.usb.action.USB_STATE") {
         val connected = intent.extras?.getBoolean("connected") ?: false
 
+        // Пропускаем начальное системное состояние при старте
+        if (isFirstBroadcast) {
+          isFirstBroadcast = false
+          wasConnected = connected
+          return
+        }
+
+        // Срабатывает строго в момент вставки кабеля
         if (connected && !wasConnected) {
           if (isEnabled()) {
             try {
@@ -37,9 +74,8 @@ actual object UsbPanicDetector {
     }
   }
 
-  var chatModelInstance: ChatModel? = null
-
   fun startMonitoring(context: Context, model: ChatModel) {
+    appContext = context.applicationContext
     chatModelInstance = model
     if (isRegistered) return
 
