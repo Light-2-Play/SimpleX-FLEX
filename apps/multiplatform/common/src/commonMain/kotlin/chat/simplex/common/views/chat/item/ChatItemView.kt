@@ -41,11 +41,9 @@ import kotlinx.datetime.Clock
 import kotlin.math.*
 
 val LocalVoiceTranscriptionWidget = staticCompositionLocalOf<@Composable (ChatItem) -> Unit> {
-    { /* Пустышка для Desktop/iOS */ }
+  { /* Пустышка для Desktop/iOS */ }
 }
-// TODO refactor so that FramedItemView can show all CIContent items if they're deleted (see Swift code)
 
-// СТАЛО (M3 Expressive: крупные радиусы 26dp и органичный хвостик):
 private val msgRectMaxRadius = 26.dp
 private val msgBubbleMaxRadius = 28.dp
 val msgTailWidthDp = 10.dp
@@ -124,7 +122,10 @@ fun ChatItemView(
   val alignment = if (sent) Alignment.CenterEnd else Alignment.CenterStart
   val showMenu = remember { mutableStateOf(false) }
   val fullDeleteAllowed = remember(cInfo) { cInfo.featureEnabled(ChatFeature.FullDelete) }
-  val onLinkLongClick = { _: String -> showMenu.value = true }
+  val onLinkLongClick = { _: String ->
+    RichHaptics.perform(HapticPattern.HEAVY_CLICK)
+    showMenu.value = true
+  }
   val live = remember { derivedStateOf { composeState.value.liveMessage != null } }.value
 
   Box(
@@ -199,16 +200,21 @@ fun ChatItemView(
               .combinedClickable(
                 onClick = {
                   if (cItem.allowAddReaction || r.userReacted) {
+                    RichHaptics.perform(HapticPattern.TICK)
                     setReaction(cInfo, cItem, !r.userReacted, r.reaction)
                   }
                 },
                 onLongClick = {
+                  RichHaptics.perform(HapticPattern.HEAVY_CLICK)
                   showReactionsMenu()
                 },
                 interactionSource = interactionSource,
                 indication = LocalIndication.current
               )
-              .onRightClick { showReactionsMenu() }
+              .onRightClick {
+                RichHaptics.perform(HapticPattern.HEAVY_CLICK)
+                showReactionsMenu()
+              }
           }
           Row(modifier.padding(2.dp), verticalAlignment = Alignment.CenterVertically) {
             ReactionIcon(r.reaction.text, fontSize = 12.sp)
@@ -272,7 +278,10 @@ fun ChatItemView(
       }
 
       IconButton(
-        onClick,
+        onClick = {
+          RichHaptics.perform(HapticPattern.CLICK)
+          onClick()
+        },
         Modifier
           .padding(start = if (alignStart) 0.dp else DEFAULT_PADDING_HALF + 3.dp, end = if (alignStart) DEFAULT_PADDING_HALF + 3.dp else 0.dp)
           .then(if (fullyVisible) Modifier.background(mixedBackgroundColor, CircleShape) else Modifier)
@@ -283,7 +292,6 @@ fun ChatItemView(
       }
     }
 
-    // improvement could be to track "forwarded from" scope and open it
     @Composable
     fun GoToItemButton(alignStart: Boolean, parentActivated: State<Boolean>) {
       val chatTypeApiIdMsgId = cItem.meta.itemForwarded?.chatTypeApiIdMsgId
@@ -308,513 +316,541 @@ fun ChatItemView(
     Column(horizontalAlignment = if (cItem.chatDir.sent) Alignment.End else Alignment.Start) {
       val canReply = (cItem.content is CIContent.SndMsgContent || cItem.content is CIContent.RcvMsgContent) &&
           cInfo !is ChatInfo.Local && !cItem.isReport && !cItem.meta.isLive && cItem.meta.itemDeleted == null
+
+      // Тактильный отклик при свайпе для ответа (Swipe-to-Reply)
+      val swipeTriggered = remember { mutableStateOf(false) }
+      LaunchedEffect(swipeOffset) {
+        if (canReply && swipeOffset <= -30f) {
+          if (!swipeTriggered.value) {
+            swipeTriggered.value = true
+            RichHaptics.perform(HapticPattern.SWIPE_ACTION)
+          }
+        } else if (swipeOffset > -15f) {
+          swipeTriggered.value = false
+        }
+      }
+
       Box {
         Row(verticalAlignment = Alignment.CenterVertically) {
           val bubbleInteractionSource = remember { MutableInteractionSource() }
-        val bubbleHovered = bubbleInteractionSource.collectIsHoveredAsState()
-        if (cItem.chatDir.sent) {
-          GoToItemButton(true, bubbleHovered)
-        }
-        Column(Modifier.weight(1f, fill = false)) {
-          val enterInteraction = remember { HoverInteraction.Enter() }
-          LaunchedEffect(highlighted.value, hoveredItemId.value) {
-            if (highlighted.value || hoveredItemId.value == cItem.id) {
-              bubbleInteractionSource.emit(enterInteraction)
-            } else {
-              bubbleInteractionSource.emit(HoverInteraction.Exit(enterInteraction))
-            }
+          val bubbleHovered = bubbleInteractionSource.collectIsHoveredAsState()
+          if (cItem.chatDir.sent) {
+            GoToItemButton(true, bubbleHovered)
           }
-          Column(
-            Modifier
-              .clipChatItem(cItem, itemSeparation.largeGap, revealed.value)
-              .hoverable(bubbleInteractionSource)
-              .combinedClickable(
-                onLongClick = { showMenu.value = true },
-                onClick = {
-                  if (appPlatform.isAndroid && (searchIsNotBlank.value || cItem.meta.itemForwarded?.chatTypeApiIdMsgId != null)) {
-                    hoveredItemId.value = if (hoveredItemId.value == cItem.id) null else cItem.id
-                  }
-                  onClick()
-                }, interactionSource = bubbleInteractionSource, indication = LocalIndication.current)
-              .onRightClick { showMenu.value = true },
-          ) {
-            @Composable
-            fun framedItemView() {
-              FramedItemView(chatsCtx, chat, cItem, uriHandler, imageProvider, linkMode = linkMode, showViaProxy = showViaProxy, showMenu, showTimestamp = showTimestamp, tailVisible = itemSeparation.largeGap, receiveFile, onLinkLongClick, scrollToItem, scrollToItemId, scrollToQuotedItemFromItem)
-            }
-
-            fun deleteMessageQuestionText(): String {
-              return if (!sent || fullDeleteAllowed || cInfo is ChatInfo.Local) {
-                generalGetString(MR.strings.delete_message_cannot_be_undone_warning)
+          Column(Modifier.weight(1f, fill = false)) {
+            val enterInteraction = remember { HoverInteraction.Enter() }
+            LaunchedEffect(highlighted.value, hoveredItemId.value) {
+              if (highlighted.value || hoveredItemId.value == cItem.id) {
+                bubbleInteractionSource.emit(enterInteraction)
               } else {
-                generalGetString(MR.strings.delete_message_mark_deleted_warning)
+                bubbleInteractionSource.emit(HoverInteraction.Exit(enterInteraction))
               }
             }
+            Column(
+              Modifier
+                .clipChatItem(cItem, itemSeparation.largeGap, revealed.value)
+                .hoverable(bubbleInteractionSource)
+                .combinedClickable(
+                  onLongClick = {
+                    RichHaptics.perform(HapticPattern.HEAVY_CLICK)
+                    showMenu.value = true
+                  },
+                  onClick = {
+                    if (appPlatform.isAndroid && (searchIsNotBlank.value || cItem.meta.itemForwarded?.chatTypeApiIdMsgId != null)) {
+                      hoveredItemId.value = if (hoveredItemId.value == cItem.id) null else cItem.id
+                    }
+                    onClick()
+                  },
+                  interactionSource = bubbleInteractionSource,
+                  indication = LocalIndication.current
+                )
+                .onRightClick {
+                  RichHaptics.perform(HapticPattern.HEAVY_CLICK)
+                  showMenu.value = true
+                },
+            ) {
+              @Composable
+              fun framedItemView() {
+                FramedItemView(chatsCtx, chat, cItem, uriHandler, imageProvider, linkMode = linkMode, showViaProxy = showViaProxy, showMenu, showTimestamp = showTimestamp, tailVisible = itemSeparation.largeGap, receiveFile, onLinkLongClick, scrollToItem, scrollToItemId, scrollToQuotedItemFromItem)
+              }
 
-            @Composable
-            fun MsgReactionsMenu() {
-              val rs = MsgReaction.supported.mapNotNull { r ->
-                if (null == cItem.reactions.find { it.userReacted && it.reaction.text == r.text }) {
-                  r
+              fun deleteMessageQuestionText(): String {
+                return if (!sent || fullDeleteAllowed || cInfo is ChatInfo.Local) {
+                  generalGetString(MR.strings.delete_message_cannot_be_undone_warning)
                 } else {
-                  null
+                  generalGetString(MR.strings.delete_message_mark_deleted_warning)
                 }
               }
-              if (rs.isNotEmpty()) {
-                Row(modifier = Modifier.padding(horizontal = DEFAULT_PADDING).horizontalScroll(rememberScrollState()), verticalAlignment = Alignment.CenterVertically) {
-                  rs.forEach() { r ->
-                    Box(
-                      Modifier.size(36.dp).clip(CircleShape).clickable {
-                        setReaction(cInfo, cItem, true, r)
-                        showMenu.value = false
-                      },
-                      contentAlignment = Alignment.Center
-                    ) {
-                      ReactionIcon(r.text, 12.sp)
+
+              @Composable
+              fun MsgReactionsMenu() {
+                val rs = MsgReaction.supported.mapNotNull { r ->
+                  if (null == cItem.reactions.find { it.userReacted && it.reaction.text == r.text }) {
+                    r
+                  } else {
+                    null
+                  }
+                }
+                if (rs.isNotEmpty()) {
+                  Row(modifier = Modifier.padding(horizontal = DEFAULT_PADDING).horizontalScroll(rememberScrollState()), verticalAlignment = Alignment.CenterVertically) {
+                    rs.forEach() { r ->
+                      Box(
+                        Modifier.size(36.dp).clip(CircleShape).clickable {
+                          RichHaptics.perform(HapticPattern.CLICK)
+                          setReaction(cInfo, cItem, true, r)
+                          showMenu.value = false
+                        },
+                        contentAlignment = Alignment.Center
+                      ) {
+                        ReactionIcon(r.text, 12.sp)
+                      }
                     }
                   }
                 }
               }
-            }
 
-            @Composable
-            fun DeleteItemMenu() {
-              DefaultDropdownMenu(showMenu) {
-                DeleteItemAction(chatsCtx, cInfo, cItem, revealed, showMenu, questionText = deleteMessageQuestionText(), deleteMessage, deleteMessages)
-                if (cItem.canBeDeletedForSelf) {
-                  Divider()
-                  SelectItemAction(showMenu, selectChatItem)
-                }
-              }
-            }
-
-            @Composable
-            fun MsgContentItemDropdownMenu() {
-              val saveFileLauncher = rememberSaveFileLauncher(ciFile = cItem.file)
-              when {
-                // cItem.id check is a special case for live message chat item which has negative ID while not sent yet
-                cItem.isReport && cItem.meta.itemDeleted == null && cInfo is ChatInfo.Group -> {
-                  DefaultDropdownMenu(showMenu) {
-                    if (cItem.chatDir !is CIDirection.GroupSnd && cInfo.groupInfo.membership.memberRole >= GroupMemberRole.Moderator) {
-                      ArchiveReportItemAction(cItem.id, cInfo.groupInfo.membership.memberActive, showMenu, archiveReports)
-                    }
-                    DeleteItemAction(chatsCtx, cInfo, cItem, revealed, showMenu, questionText = deleteMessageQuestionText(), deleteMessage, deleteMessages, buttonText = stringResource(MR.strings.delete_report))
+              @Composable
+              fun DeleteItemMenu() {
+                DefaultDropdownMenu(showMenu) {
+                  DeleteItemAction(chatsCtx, cInfo, cItem, revealed, showMenu, questionText = deleteMessageQuestionText(), deleteMessage, deleteMessages)
+                  if (cItem.canBeDeletedForSelf) {
                     Divider()
                     SelectItemAction(showMenu, selectChatItem)
                   }
                 }
-                cItem.content.msgContent != null && cItem.id >= 0 && !cItem.isReport -> {
-                  DefaultDropdownMenu(showMenu) {
-                    if (cInfo.featureEnabled(ChatFeature.Reactions) && cItem.allowAddReaction) {
-                      MsgReactionsMenu()
-                    }
-                    if (cItem.meta.itemDeleted == null && !live && !cItem.localNote && cInfo.sendMsgEnabled) {
-                      ItemAction(stringResource(MR.strings.reply_verb), painterResource(MR.images.ic_reply), onClick = {
-                        if (composeState.value.editing) {
-                          composeState.value = ComposeState(contextItem = ComposeContextItem.QuotedItem(cItem), useLinkPreviews = useLinkPreviews)
-                        } else {
-                          composeState.value = composeState.value.copy(contextItem = ComposeContextItem.QuotedItem(cItem))
-                        }
-                        showMenu.value = false
-                      })
-                    }
-                    val clipboard = LocalClipboardManager.current
-                    val cachedRemoteReqs = remember { CIFile.cachedRemoteFileRequests }
-                    val copyAndShareAllowed = when {
-                      cItem.content.text.isNotEmpty() -> true
-                      cItem.file?.forwardingAllowed() == true -> true
-                      else -> false
-                    }
+              }
 
-                    if (copyAndShareAllowed) {
-                      ItemAction(stringResource(MR.strings.share_verb), painterResource(MR.images.ic_share), onClick = {
-                        var fileSource = getLoadedFileSource(cItem.file)
-                        val shareIfExists = {
-                          when (val f = fileSource) {
-                            null -> clipboard.shareText(cItem.content.text)
-                            else -> shareFile(cItem.text, f)
+              @Composable
+              fun MsgContentItemDropdownMenu() {
+                val saveFileLauncher = rememberSaveFileLauncher(ciFile = cItem.file)
+                when {
+                  cItem.isReport && cItem.meta.itemDeleted == null && cInfo is ChatInfo.Group -> {
+                    DefaultDropdownMenu(showMenu) {
+                      if (cItem.chatDir !is CIDirection.GroupSnd && cInfo.groupInfo.membership.memberRole >= GroupMemberRole.Moderator) {
+                        ArchiveReportItemAction(cItem.id, cInfo.groupInfo.membership.memberActive, showMenu, archiveReports)
+                      }
+                      DeleteItemAction(chatsCtx, cInfo, cItem, revealed, showMenu, questionText = deleteMessageQuestionText(), deleteMessage, deleteMessages, buttonText = stringResource(MR.strings.delete_report))
+                      Divider()
+                      SelectItemAction(showMenu, selectChatItem)
+                    }
+                  }
+                  cItem.content.msgContent != null && cItem.id >= 0 && !cItem.isReport -> {
+                    DefaultDropdownMenu(showMenu) {
+                      if (cInfo.featureEnabled(ChatFeature.Reactions) && cItem.allowAddReaction) {
+                        MsgReactionsMenu()
+                      }
+                      if (cItem.meta.itemDeleted == null && !live && !cItem.localNote && cInfo.sendMsgEnabled) {
+                        ItemAction(stringResource(MR.strings.reply_verb), painterResource(MR.images.ic_reply), onClick = {
+                          RichHaptics.perform(HapticPattern.CLICK)
+                          if (composeState.value.editing) {
+                            composeState.value = ComposeState(contextItem = ComposeContextItem.QuotedItem(cItem), useLinkPreviews = useLinkPreviews)
+                          } else {
+                            composeState.value = composeState.value.copy(contextItem = ComposeContextItem.QuotedItem(cItem))
                           }
                           showMenu.value = false
-                        }
-                        if (chatModel.connectedToRemote() && fileSource == null) {
-                          withLongRunningApi(slow = 600_000) {
-                            cItem.file?.loadRemoteFile(true)
-                            fileSource = getLoadedFileSource(cItem.file)
-                            shareIfExists()
+                        })
+                      }
+                      val clipboard = LocalClipboardManager.current
+                      val cachedRemoteReqs = remember { CIFile.cachedRemoteFileRequests }
+                      val copyAndShareAllowed = when {
+                        cItem.content.text.isNotEmpty() -> true
+                        cItem.file?.forwardingAllowed() == true -> true
+                        else -> false
+                      }
+
+                      if (copyAndShareAllowed) {
+                        ItemAction(stringResource(MR.strings.share_verb), painterResource(MR.images.ic_share), onClick = {
+                          RichHaptics.perform(HapticPattern.CLICK)
+                          var fileSource = getLoadedFileSource(cItem.file)
+                          val shareIfExists = {
+                            when (val f = fileSource) {
+                              null -> clipboard.shareText(cItem.content.text)
+                              else -> shareFile(cItem.text, f)
+                            }
+                            showMenu.value = false
                           }
-                        } else shareIfExists()
-                      })
-                    }
-                    if (copyAndShareAllowed) {
-                      ItemAction(stringResource(MR.strings.copy_verb), painterResource(MR.images.ic_content_copy), onClick = {
-                        copyItemToClipboard(cItem, clipboard)
-                        showMenu.value = false
-                      })
-                    }
-                    if (cItem.file != null && (getLoadedFilePath(cItem.file) != null || (chatModel.connectedToRemote() && cachedRemoteReqs[cItem.file.fileSource] != false && cItem.file.loaded))) {
-                      SaveContentItemAction(cItem, saveFileLauncher, showMenu)
-                    } else if (cItem.file != null && cItem.file.fileStatus is CIFileStatus.RcvInvitation && fileSizeValid(cItem.file, ciSenderProfile(cItem, chat.chatInfo))) {
-                      ItemAction(stringResource(MR.strings.download_file), painterResource(MR.images.ic_arrow_downward), onClick = {
-                        withBGApi {
-                          Log.d(TAG, "ChatItemView downloadFileAction")
-                          val user = chatModel.currentUser.value
-                          if (user != null) {
-                            controller.receiveFile(rhId, user, cItem.file.fileId)
+                          if (chatModel.connectedToRemote() && fileSource == null) {
+                            withLongRunningApi(slow = 600_000) {
+                              cItem.file?.loadRemoteFile(true)
+                              fileSource = getLoadedFileSource(cItem.file)
+                              shareIfExists()
+                            }
+                          } else shareIfExists()
+                        })
+                      }
+                      if (copyAndShareAllowed) {
+                        ItemAction(stringResource(MR.strings.copy_verb), painterResource(MR.images.ic_content_copy), onClick = {
+                          RichHaptics.perform(HapticPattern.SUCCESS)
+                          copyItemToClipboard(cItem, clipboard)
+                          showMenu.value = false
+                        })
+                      }
+                      if (cItem.file != null && (getLoadedFilePath(cItem.file) != null || (chatModel.connectedToRemote() && cachedRemoteReqs[cItem.file.fileSource] != false && cItem.file.loaded))) {
+                        SaveContentItemAction(cItem, saveFileLauncher, showMenu)
+                      } else if (cItem.file != null && cItem.file.fileStatus is CIFileStatus.RcvInvitation && fileSizeValid(cItem.file, ciSenderProfile(cItem, chat.chatInfo))) {
+                        ItemAction(stringResource(MR.strings.download_file), painterResource(MR.images.ic_arrow_downward), onClick = {
+                          RichHaptics.perform(HapticPattern.CLICK)
+                          withBGApi {
+                            val user = chatModel.currentUser.value
+                            if (user != null) {
+                              controller.receiveFile(rhId, user, cItem.file.fileId)
+                            }
                           }
+                          showMenu.value = false
+                        })
+                      }
+                      if (cItem.meta.editable && cItem.content.msgContent !is MsgContent.MCVoice && !live) {
+                        ItemAction(stringResource(MR.strings.edit_verb), painterResource(MR.images.ic_edit_filled), onClick = {
+                          RichHaptics.perform(HapticPattern.CLICK)
+                          composeState.value = ComposeState(editingItem = cItem, useLinkPreviews = useLinkPreviews)
+                          showMenu.value = false
+                        })
+                      }
+                      if (cItem.meta.itemDeleted == null &&
+                        (cItem.file == null || cItem.file.forwardingAllowed()) &&
+                        !cItem.isLiveDummy && !live
+                      ) {
+                        ItemAction(stringResource(MR.strings.forward_chat_item), painterResource(MR.images.ic_forward), onClick = {
+                          RichHaptics.perform(HapticPattern.CLICK)
+                          forwardItem(cInfo, cItem)
+                          showMenu.value = false
+                        })
+                      }
+                      ItemInfoAction(cInfo, cItem, showItemDetails, showMenu)
+                      if (revealed.value) {
+                        HideItemAction(revealed, showMenu, reveal)
+                      }
+                      if (cItem.meta.itemDeleted == null && cItem.file != null && cItem.file.cancelAction != null && !cItem.localNote) {
+                        CancelFileItemAction(cItem.file.fileId, showMenu, cancelFile = cancelFile, cancelAction = cItem.file.cancelAction)
+                      }
+                      if (!(live && cItem.meta.isLive) && !preview) {
+                        DeleteItemAction(chatsCtx, cInfo, cItem, revealed, showMenu, questionText = deleteMessageQuestionText(), deleteMessage, deleteMessages)
+                      }
+                      if (cItem.chatDir !is CIDirection.GroupSnd) {
+                        val groupInfo = cItem.memberToModerate(cInfo)?.first
+                        if (groupInfo != null) {
+                          ModerateItemAction(cItem, questionText = moderateMessageQuestionText(cInfo.featureEnabled(ChatFeature.FullDelete), 1), showMenu, deleteMessage)
+                        } else if (cItem.meta.itemDeleted == null && cInfo is ChatInfo.Group && cInfo.groupInfo.groupFeatureEnabled(GroupFeature.Reports) && cInfo.groupInfo.membership.memberRole == GroupMemberRole.Member && !live) {
+                          ReportItemAction(cItem, composeState, showMenu)
                         }
-                        showMenu.value = false
-                      })
-                    }
-                    if (cItem.meta.editable && cItem.content.msgContent !is MsgContent.MCVoice && !live) {
-                      ItemAction(stringResource(MR.strings.edit_verb), painterResource(MR.images.ic_edit_filled), onClick = {
-                        composeState.value = ComposeState(editingItem = cItem, useLinkPreviews = useLinkPreviews)
-                        showMenu.value = false
-                      })
-                    }
-                    if (cItem.meta.itemDeleted == null &&
-                      (cItem.file == null || cItem.file.forwardingAllowed()) &&
-                      !cItem.isLiveDummy && !live
-                    ) {
-                      ItemAction(stringResource(MR.strings.forward_chat_item), painterResource(MR.images.ic_forward), onClick = {
-                        forwardItem(cInfo, cItem)
-                        showMenu.value = false
-                      })
-                    }
-                    ItemInfoAction(cInfo, cItem, showItemDetails, showMenu)
-                    if (revealed.value) {
-                      HideItemAction(revealed, showMenu, reveal)
-                    }
-                    if (cItem.meta.itemDeleted == null && cItem.file != null && cItem.file.cancelAction != null && !cItem.localNote) {
-                      CancelFileItemAction(cItem.file.fileId, showMenu, cancelFile = cancelFile, cancelAction = cItem.file.cancelAction)
-                    }
-                    if (!(live && cItem.meta.isLive) && !preview) {
-                      DeleteItemAction(chatsCtx, cInfo, cItem, revealed, showMenu, questionText = deleteMessageQuestionText(), deleteMessage, deleteMessages)
-                    }
-                    if (cItem.chatDir !is CIDirection.GroupSnd) {
-                      val groupInfo = cItem.memberToModerate(cInfo)?.first
-                      if (groupInfo != null) {
-                        ModerateItemAction(cItem, questionText = moderateMessageQuestionText(cInfo.featureEnabled(ChatFeature.FullDelete), 1), showMenu, deleteMessage)
-                      } else if (cItem.meta.itemDeleted == null && cInfo is ChatInfo.Group && cInfo.groupInfo.groupFeatureEnabled(GroupFeature.Reports) && cInfo.groupInfo.membership.memberRole == GroupMemberRole.Member && !live) {
-                        ReportItemAction(cItem, composeState, showMenu)
+                      }
+                      if (cItem.canBeDeletedForSelf) {
+                        Divider()
+                        SelectItemAction(showMenu, selectChatItem)
                       }
                     }
-                    if (cItem.canBeDeletedForSelf) {
-                      Divider()
-                      SelectItemAction(showMenu, selectChatItem)
+                  }
+                  cItem.meta.itemDeleted != null -> {
+                    DefaultDropdownMenu(showMenu) {
+                      if (revealed.value) {
+                        HideItemAction(revealed, showMenu, reveal)
+                      } else if (!cItem.isDeletedContent) {
+                        RevealItemAction(revealed, showMenu, reveal)
+                      } else if (range.value != null) {
+                        ExpandItemAction(revealed, showMenu, reveal)
+                      }
+                      ItemInfoAction(cInfo, cItem, showItemDetails, showMenu)
+                      DeleteItemAction(chatsCtx, cInfo, cItem, revealed, showMenu, questionText = deleteMessageQuestionText(), deleteMessage, deleteMessages)
+                      if (cItem.canBeDeletedForSelf) {
+                        Divider()
+                        SelectItemAction(showMenu, selectChatItem)
+                      }
                     }
                   }
-                }
-                cItem.meta.itemDeleted != null -> {
-                  DefaultDropdownMenu(showMenu) {
-                    if (revealed.value) {
-                      HideItemAction(revealed, showMenu, reveal)
-                    } else if (!cItem.isDeletedContent) {
-                      RevealItemAction(revealed, showMenu, reveal)
-                    } else if (range.value != null) {
-                      ExpandItemAction(revealed, showMenu, reveal)
-                    }
-                    ItemInfoAction(cInfo, cItem, showItemDetails, showMenu)
-                    DeleteItemAction(chatsCtx, cInfo, cItem, revealed, showMenu, questionText = deleteMessageQuestionText(), deleteMessage, deleteMessages)
-                    if (cItem.canBeDeletedForSelf) {
-                      Divider()
-                      SelectItemAction(showMenu, selectChatItem)
+                  cItem.isDeletedContent -> {
+                    DefaultDropdownMenu(showMenu) {
+                      ItemInfoAction(cInfo, cItem, showItemDetails, showMenu)
+                      DeleteItemAction(chatsCtx, cInfo, cItem, revealed, showMenu, questionText = deleteMessageQuestionText(), deleteMessage, deleteMessages)
+                      if (cItem.canBeDeletedForSelf) {
+                        Divider()
+                        SelectItemAction(showMenu, selectChatItem)
+                      }
                     }
                   }
-                }
-                cItem.isDeletedContent -> {
-                  DefaultDropdownMenu(showMenu) {
-                    ItemInfoAction(cInfo, cItem, showItemDetails, showMenu)
-                    DeleteItemAction(chatsCtx, cInfo, cItem, revealed, showMenu, questionText = deleteMessageQuestionText(), deleteMessage, deleteMessages)
-                    if (cItem.canBeDeletedForSelf) {
-                      Divider()
-                      SelectItemAction(showMenu, selectChatItem)
+                  cItem.mergeCategory != null && ((range.value?.count() ?: 0) > 1 || revealed.value) -> {
+                    DefaultDropdownMenu(showMenu) {
+                      if (revealed.value) {
+                        ShrinkItemAction(revealed, showMenu, reveal)
+                      } else {
+                        ExpandItemAction(revealed, showMenu, reveal)
+                      }
+                      DeleteItemAction(chatsCtx, cInfo, cItem, revealed, showMenu, questionText = deleteMessageQuestionText(), deleteMessage, deleteMessages)
+                      if (cItem.canBeDeletedForSelf) {
+                        Divider()
+                        SelectItemAction(showMenu, selectChatItem)
+                      }
                     }
                   }
-                }
-                cItem.mergeCategory != null && ((range.value?.count() ?: 0) > 1 || revealed.value) -> {
-                  DefaultDropdownMenu(showMenu) {
-                    if (revealed.value) {
-                      ShrinkItemAction(revealed, showMenu, reveal)
-                    } else {
-                      ExpandItemAction(revealed, showMenu, reveal)
-                    }
-                    DeleteItemAction(chatsCtx, cInfo, cItem, revealed, showMenu, questionText = deleteMessageQuestionText(), deleteMessage, deleteMessages)
-                    if (cItem.canBeDeletedForSelf) {
-                      Divider()
-                      SelectItemAction(showMenu, selectChatItem)
-                    }
-                  }
-                }
-                else -> {
-                  DefaultDropdownMenu(showMenu) {
-                    DeleteItemAction(chatsCtx, cInfo, cItem, revealed, showMenu, questionText = deleteMessageQuestionText(), deleteMessage, deleteMessages)
-                    if (selectedChatItems.value == null) {
-                      Divider()
-                      SelectItemAction(showMenu, selectChatItem)
+                  else -> {
+                    DefaultDropdownMenu(showMenu) {
+                      DeleteItemAction(chatsCtx, cInfo, cItem, revealed, showMenu, questionText = deleteMessageQuestionText(), deleteMessage, deleteMessages)
+                      if (selectedChatItems.value == null) {
+                        Divider()
+                        SelectItemAction(showMenu, selectChatItem)
+                      }
                     }
                   }
                 }
               }
-            }
 
-            @Composable
-            fun MarkedDeletedItemDropdownMenu() {
-              DefaultDropdownMenu(showMenu) {
-                if (!cItem.isDeletedContent) {
-                  RevealItemAction(revealed, showMenu, reveal)
-                }
-                ItemInfoAction(cInfo, cItem, showItemDetails, showMenu)
-                DeleteItemAction(chatsCtx, cInfo, cItem, revealed, showMenu, questionText = deleteMessageQuestionText(), deleteMessage, deleteMessages)
-                if (cItem.canBeDeletedForSelf) {
-                  Divider()
-                  SelectItemAction(showMenu, selectChatItem)
+              @Composable
+              fun MarkedDeletedItemDropdownMenu() {
+                DefaultDropdownMenu(showMenu) {
+                  if (!cItem.isDeletedContent) {
+                    RevealItemAction(revealed, showMenu, reveal)
+                  }
+                  ItemInfoAction(cInfo, cItem, showItemDetails, showMenu)
+                  DeleteItemAction(chatsCtx, cInfo, cItem, revealed, showMenu, questionText = deleteMessageQuestionText(), deleteMessage, deleteMessages)
+                  if (cItem.canBeDeletedForSelf) {
+                    Divider()
+                    SelectItemAction(showMenu, selectChatItem)
+                  }
                 }
               }
-            }
 
-            @Composable
-            fun ContentItem() {
-              val mc = cItem.content.msgContent
-              if (cItem.quotedItem == null && cItem.meta.itemForwarded == null && cItem.meta.itemDeleted == null && !cItem.meta.isLive) {
-                if (mc is MsgContent.MCText && isShortEmoji(cItem.content.text)) {
-                  EmojiItemView(cItem, cInfo.timedMessagesTTL, showViaProxy = showViaProxy, showTimestamp = showTimestamp)
-               } else if (mc is MsgContent.MCVoice && cItem.content.text.isEmpty()) {
-                 Column(
-                    horizontalAlignment = if (cItem.chatDir.sent) Alignment.End else Alignment.Start
-                  ) {
-                    CIVoiceView(mc.duration, cItem.file, cItem.meta.itemEdited, cItem.chatDir.sent, hasText = false, cItem, cInfo.timedMessagesTTL, showViaProxy = showViaProxy, showTimestamp = showTimestamp, longClick = { onLinkLongClick("") }, receiveFile = receiveFile)
-                    LocalVoiceTranscriptionWidget.current(cItem)
+              @Composable
+              fun ContentItem() {
+                val mc = cItem.content.msgContent
+                if (cItem.quotedItem == null && cItem.meta.itemForwarded == null && cItem.meta.itemDeleted == null && !cItem.meta.isLive) {
+                  if (mc is MsgContent.MCText && isShortEmoji(cItem.content.text)) {
+                    EmojiItemView(cItem, cInfo.timedMessagesTTL, showViaProxy = showViaProxy, showTimestamp = showTimestamp)
+                  } else if (mc is MsgContent.MCVoice && cItem.content.text.isEmpty()) {
+                    Column(
+                      horizontalAlignment = if (cItem.chatDir.sent) Alignment.End else Alignment.Start
+                    ) {
+                      CIVoiceView(mc.duration, cItem.file, cItem.meta.itemEdited, cItem.chatDir.sent, hasText = false, cItem, cInfo.timedMessagesTTL, showViaProxy = showViaProxy, showTimestamp = showTimestamp, longClick = { onLinkLongClick("") }, receiveFile = receiveFile)
+                      LocalVoiceTranscriptionWidget.current(cItem)
+                    }
+                  } else {
+                    framedItemView()
                   }
                 } else {
                   framedItemView()
                 }
-              } else {
-                framedItemView()
+                MsgContentItemDropdownMenu()
               }
-              MsgContentItemDropdownMenu()
-            }
-            
-            @Composable fun LegacyDeletedItem() {
-              DeletedItemView(cItem, cInfo.timedMessagesTTL, showViaProxy = showViaProxy, showTimestamp = showTimestamp)
-              DefaultDropdownMenu(showMenu) {
-                ItemInfoAction(cInfo, cItem, showItemDetails, showMenu)
-                DeleteItemAction(chatsCtx, cInfo, cItem, revealed, showMenu, questionText = deleteMessageQuestionText(), deleteMessage, deleteMessages)
-                if (cItem.canBeDeletedForSelf) {
-                  Divider()
-                  SelectItemAction(showMenu, selectChatItem)
+
+              @Composable fun LegacyDeletedItem() {
+                DeletedItemView(cItem, cInfo.timedMessagesTTL, showViaProxy = showViaProxy, showTimestamp = showTimestamp)
+                DefaultDropdownMenu(showMenu) {
+                  ItemInfoAction(cInfo, cItem, showItemDetails, showMenu)
+                  DeleteItemAction(chatsCtx, cInfo, cItem, revealed, showMenu, questionText = deleteMessageQuestionText(), deleteMessage, deleteMessages)
+                  if (cItem.canBeDeletedForSelf) {
+                    Divider()
+                    SelectItemAction(showMenu, selectChatItem)
+                  }
                 }
               }
-            }
 
-            @Composable fun CallItem(status: CICallStatus, duration: Int) {
-              CICallItemView(cInfo, cItem, status, duration, showTimestamp = showTimestamp, acceptCall, cInfo.timedMessagesTTL)
-              DeleteItemMenu()
-            }
-
-            fun mergedGroupEventText(chatItem: ChatItem, reversedChatItems: List<ChatItem>): String? {
-              val (count, ns) = chatModel.getConnectedMemberNames(chatItem, reversedChatItems)
-              val members = when {
-                ns.size == 1 -> String.format(generalGetString(MR.strings.rcv_group_event_1_member_connected), ns[0])
-                ns.size == 2 -> String.format(generalGetString(MR.strings.rcv_group_event_2_members_connected), ns[0], ns[1])
-                ns.size == 3 -> String.format(generalGetString(MR.strings.rcv_group_event_3_members_connected), ns[0], ns[1], ns[2])
-                ns.size > 3 -> String.format(generalGetString(MR.strings.rcv_group_event_n_members_connected), ns[0], ns[1], ns.size - 2)
-                else -> ""
+              @Composable fun CallItem(status: CICallStatus, duration: Int) {
+                CICallItemView(cInfo, cItem, status, duration, showTimestamp = showTimestamp, acceptCall, cInfo.timedMessagesTTL)
+                DeleteItemMenu()
               }
-              return if (count <= 1) {
-                null
-              } else if (ns.isEmpty()) {
-                generalGetString(if (cInfo.isChannel) MR.strings.rcv_channel_events_count else MR.strings.rcv_group_events_count).format(count)
-              } else if (count > ns.size) {
-                members + " " + generalGetString(MR.strings.rcv_group_and_other_events).format(count - ns.size)
-              } else {
-                members
-              }
-            }
 
-            fun eventItemViewText(reversedChatItems: List<ChatItem>): AnnotatedString {
-              val memberDisplayName = cItem.memberDisplayName
-              val t = mergedGroupEventText(cItem, reversedChatItems)
-              return if (!revealed.value && t != null) {
-                chatEventText(t, cItem.timestampText)
-              } else if (memberDisplayName != null) {
-                buildAnnotatedString {
-                  withStyle(chatEventStyle) { append(memberDisplayName) }
-                  append(" ")
-                }.plus(chatEventText(cItem, cInfo.isChannel))
-              } else {
-                chatEventText(cItem, cInfo.isChannel)
-              }
-            }
-
-            @Composable fun EventItemView() {
-              val reversedChatItems = chatsCtx.chatItems.value.asReversed()
-              CIEventView(eventItemViewText(reversedChatItems))
-            }
-
-            @Composable fun PendingReviewEventItemView() {
-              Text(
-                buildAnnotatedString {
-                  withStyle(chatEventStyle.copy(fontWeight = FontWeight.Bold)) { append(cItem.content.text(cInfo.isChannel)) }
-                },
-                Modifier.padding(horizontal = 6.dp, vertical = 6.dp)
-              )
-            }
-
-            @Composable
-            fun DeletedItem() {
-              MarkedDeletedItemView(chatsCtx, cItem, cInfo, cInfo.timedMessagesTTL, revealed, showViaProxy = showViaProxy, showTimestamp = showTimestamp)
-              DefaultDropdownMenu(showMenu) {
-                if (revealed.value) {
-                  HideItemAction(revealed, showMenu, reveal)
-                } else if (!cItem.isDeletedContent) {
-                  RevealItemAction(revealed, showMenu, reveal)
-                } else if (range.value != null) {
-                  ExpandItemAction(revealed, showMenu, reveal)
+              fun mergedGroupEventText(chatItem: ChatItem, reversedChatItems: List<ChatItem>): String? {
+                val (count, ns) = chatModel.getConnectedMemberNames(chatItem, reversedChatItems)
+                val members = when {
+                  ns.size == 1 -> String.format(generalGetString(MR.strings.rcv_group_event_1_member_connected), ns[0])
+                  ns.size == 2 -> String.format(generalGetString(MR.strings.rcv_group_event_2_members_connected), ns[0], ns[1])
+                  ns.size == 3 -> String.format(generalGetString(MR.strings.rcv_group_event_3_members_connected), ns[0], ns[1], ns[2])
+                  ns.size > 3 -> String.format(generalGetString(MR.strings.rcv_group_event_n_members_connected), ns[0], ns[1], ns.size - 2)
+                  else -> ""
                 }
-                ItemInfoAction(cInfo, cItem, showItemDetails, showMenu)
-                DeleteItemAction(chatsCtx, cInfo, cItem, revealed, showMenu, questionText = generalGetString(MR.strings.delete_message_cannot_be_undone_warning), deleteMessage, deleteMessages)
-                if (cItem.canBeDeletedForSelf) {
-                  Divider()
-                  SelectItemAction(showMenu, selectChatItem)
-                }
-              }
-            }
-
-            @Composable
-            fun e2eeInfoText(sId: StringResource) {
-              Text(
-                buildAnnotatedString {
-                  withStyle(chatEventStyle) { append(annotatedStringResource(sId)) }
-                },
-                Modifier.padding(horizontal = 6.dp, vertical = 6.dp)
-              )
-            }
-
-            @Composable
-            fun DirectE2EEInfoText(e2EEInfo: E2EEInfo) {
-              e2eeInfoText(when (e2EEInfo.pqEnabled) {
-                true -> MR.strings.e2ee_info_pq
-                false -> MR.strings.e2ee_info_no_pq
-                null -> MR.strings.e2ee_info_e2ee
-              })
-            }
-
-            @Composable
-            fun GroupE2EEInfoText(e2EEInfo: E2EEInfo) {
-              e2eeInfoText(if (e2EEInfo.public == true) MR.strings.e2ee_info_no_e2ee else MR.strings.e2ee_info_no_pq)
-            }
-
-            if (cItem.meta.itemDeleted != null && (!revealed.value || cItem.isDeletedContent)) {
-              MarkedDeletedItemView(chatsCtx, cItem, cInfo, cInfo.timedMessagesTTL, revealed, showViaProxy = showViaProxy, showTimestamp = showTimestamp)
-              MarkedDeletedItemDropdownMenu()
-            } else {
-              when (val c = cItem.content) {
-                is CIContent.SndMsgContent -> ContentItem()
-                is CIContent.RcvMsgContent -> ContentItem()
-                is CIContent.SndDeleted -> LegacyDeletedItem()
-                is CIContent.RcvDeleted -> LegacyDeletedItem()
-                is CIContent.SndCall -> CallItem(c.status, c.duration)
-                is CIContent.RcvCall -> CallItem(c.status, c.duration)
-                is CIContent.RcvIntegrityError -> if (developerTools) {
-                  IntegrityErrorItemView(c.msgError, cItem, showTimestamp, cInfo.timedMessagesTTL)
-                  DeleteItemMenu()
+                return if (count <= 1) {
+                  null
+                } else if (ns.isEmpty()) {
+                  generalGetString(if (cInfo.isChannel) MR.strings.rcv_channel_events_count else MR.strings.rcv_group_events_count).format(count)
+                } else if (count > ns.size) {
+                  members + " " + generalGetString(MR.strings.rcv_group_and_other_events).format(count - ns.size)
                 } else {
-                  Box(Modifier.size(0.dp)) {}
+                  members
                 }
-                is CIContent.RcvMsgErrorContent -> {
-                  RcvMsgErrorItemView(c.rcvMsgError, cItem, showTimestamp, cInfo.timedMessagesTTL)
+              }
+
+              fun eventItemViewText(reversedChatItems: List<ChatItem>): AnnotatedString {
+                val memberDisplayName = cItem.memberDisplayName
+                val t = mergedGroupEventText(cItem, reversedChatItems)
+                return if (!revealed.value && t != null) {
+                  chatEventText(t, cItem.timestampText)
+                } else if (memberDisplayName != null) {
+                  buildAnnotatedString {
+                    withStyle(chatEventStyle) { append(memberDisplayName) }
+                    append(" ")
+                  }.plus(chatEventText(cItem, cInfo.isChannel))
+                } else {
+                  chatEventText(cItem, cInfo.isChannel)
                 }
-                is CIContent.RcvDecryptionError -> {
-                  CIRcvDecryptionError(c.msgDecryptError, c.msgCount, cInfo, cItem, updateContactStats = updateContactStats, updateMemberStats = updateMemberStats, syncContactConnection = syncContactConnection, syncMemberConnection = syncMemberConnection, findModelChat = findModelChat, findModelMember = findModelMember)
-                  DeleteItemMenu()
-                }
-                is CIContent.RcvGroupInvitation -> {
-                  CIGroupInvitationView(cItem, c.groupInvitation, c.memberRole, joinGroup = joinGroup, chatIncognito = cInfo.incognito, showTimestamp = showTimestamp, timedMessagesTTL = cInfo.timedMessagesTTL)
-                  DeleteItemMenu()
-                }
-                is CIContent.SndGroupInvitation -> {
-                  CIGroupInvitationView(cItem, c.groupInvitation, c.memberRole, joinGroup = joinGroup, chatIncognito = cInfo.incognito, showTimestamp = showTimestamp, timedMessagesTTL = cInfo.timedMessagesTTL)
-                  DeleteItemMenu()
-                }
-                is CIContent.RcvDirectEventContent -> {
-                  EventItemView()
-                  MsgContentItemDropdownMenu()
-                }
-                is CIContent.RcvGroupEventContent -> {
-                  when (c.rcvGroupEvent) {
-                    is RcvGroupEvent.MemberCreatedContact -> CIMemberCreatedContactView(cItem, openDirectChat)
-                    is RcvGroupEvent.NewMemberPendingReview -> PendingReviewEventItemView()
-                    else -> EventItemView()
+              }
+
+              @Composable fun EventItemView() {
+                val reversedChatItems = chatsCtx.chatItems.value.asReversed()
+                CIEventView(eventItemViewText(reversedChatItems))
+              }
+
+              @Composable fun PendingReviewEventItemView() {
+                Text(
+                  buildAnnotatedString {
+                    withStyle(chatEventStyle.copy(fontWeight = FontWeight.Bold)) { append(cItem.content.text(cInfo.isChannel)) }
+                  },
+                  Modifier.padding(horizontal = 6.dp, vertical = 6.dp)
+                )
+              }
+
+              @Composable
+              fun DeletedItem() {
+                MarkedDeletedItemView(chatsCtx, cItem, cInfo, cInfo.timedMessagesTTL, revealed, showViaProxy = showViaProxy, showTimestamp = showTimestamp)
+                DefaultDropdownMenu(showMenu) {
+                  if (revealed.value) {
+                    HideItemAction(revealed, showMenu, reveal)
+                  } else if (!cItem.isDeletedContent) {
+                    RevealItemAction(revealed, showMenu, reveal)
+                  } else if (range.value != null) {
+                    ExpandItemAction(revealed, showMenu, reveal)
                   }
-                  MsgContentItemDropdownMenu()
-                }
-                is CIContent.SndGroupEventContent -> {
-                  when (c.sndGroupEvent) {
-                    is SndGroupEvent.UserPendingReview -> PendingReviewEventItemView()
-                    else -> EventItemView()
+                  ItemInfoAction(cInfo, cItem, showItemDetails, showMenu)
+                  DeleteItemAction(chatsCtx, cInfo, cItem, revealed, showMenu, questionText = generalGetString(MR.strings.delete_message_cannot_be_undone_warning), deleteMessage, deleteMessages)
+                  if (cItem.canBeDeletedForSelf) {
+                    Divider()
+                    SelectItemAction(showMenu, selectChatItem)
                   }
-                  MsgContentItemDropdownMenu()
                 }
-                is CIContent.RcvConnEventContent -> {
-                  EventItemView()
-                  MsgContentItemDropdownMenu()
-                }
-                is CIContent.SndConnEventContent -> {
-                  EventItemView()
-                  MsgContentItemDropdownMenu()
-                }
-                is CIContent.RcvChatFeature -> {
-                  CIChatFeatureView(chatsCtx, cInfo, cItem, c.feature, c.enabled.iconColor, revealed = revealed, showMenu = showMenu)
-                  MsgContentItemDropdownMenu()
-                }
-                is CIContent.SndChatFeature -> {
-                  CIChatFeatureView(chatsCtx, cInfo, cItem, c.feature, c.enabled.iconColor, revealed = revealed, showMenu = showMenu)
-                  MsgContentItemDropdownMenu()
-                }
-                is CIContent.RcvChatPreference -> {
-                  val ct = if (cInfo is ChatInfo.Direct) cInfo.contact else null
-                  CIFeaturePreferenceView(cItem, ct, c.feature, c.allowed, acceptFeature)
-                  DeleteItemMenu()
-                }
-                is CIContent.SndChatPreference -> {
-                  CIChatFeatureView(chatsCtx, cInfo, cItem, c.feature, MaterialTheme.colors.secondary, icon = c.feature.icon, revealed, showMenu = showMenu)
-                  MsgContentItemDropdownMenu()
-                }
-                is CIContent.RcvGroupFeature -> {
-                  CIChatFeatureView(chatsCtx, cInfo, cItem, c.groupFeature, c.preference.enabled(c.memberRole_, (cInfo as? ChatInfo.Group)?.groupInfo?.membership).iconColor, revealed = revealed, showMenu = showMenu)
-                  MsgContentItemDropdownMenu()
-                }
-                is CIContent.SndGroupFeature -> {
-                  CIChatFeatureView(chatsCtx, cInfo, cItem, c.groupFeature, c.preference.enabled(c.memberRole_, (cInfo as? ChatInfo.Group)?.groupInfo?.membership).iconColor, revealed = revealed, showMenu = showMenu)
-                  MsgContentItemDropdownMenu()
-                }
-                is CIContent.RcvChatFeatureRejected -> {
-                  CIChatFeatureView(chatsCtx, cInfo, cItem, c.feature, Color.Red, revealed = revealed, showMenu = showMenu)
-                  MsgContentItemDropdownMenu()
-                }
-                is CIContent.RcvGroupFeatureRejected -> {
-                  CIChatFeatureView(chatsCtx, cInfo, cItem, c.groupFeature, Color.Red, revealed = revealed, showMenu = showMenu)
-                  MsgContentItemDropdownMenu()
-                }
-                is CIContent.SndModerated -> DeletedItem()
-                is CIContent.RcvModerated -> DeletedItem()
-                is CIContent.RcvBlocked -> DeletedItem()
-                is CIContent.SndDirectE2EEInfo -> DirectE2EEInfoText(c.e2eeInfo)
-                is CIContent.RcvDirectE2EEInfo -> DirectE2EEInfoText(c.e2eeInfo)
-                is CIContent.SndGroupE2EEInfo -> GroupE2EEInfoText(c.e2eeInfo)
-                is CIContent.RcvGroupE2EEInfo -> GroupE2EEInfoText(c.e2eeInfo)
-                is CIContent.ChatBanner -> Spacer(modifier = Modifier.size(0.dp))
-                is CIContent.InvalidJSON -> {
-                  CIInvalidJSONView(c.json)
-                  DeleteItemMenu()
+              }
+
+              @Composable
+              fun e2eeInfoText(sId: StringResource) {
+                Text(
+                  buildAnnotatedString {
+                    withStyle(chatEventStyle) { append(annotatedStringResource(sId)) }
+                  },
+                  Modifier.padding(horizontal = 6.dp, vertical = 6.dp)
+                )
+              }
+
+              @Composable
+              fun DirectE2EEInfoText(e2EEInfo: E2EEInfo) {
+                e2eeInfoText(when (e2EEInfo.pqEnabled) {
+                  true -> MR.strings.e2ee_info_pq
+                  false -> MR.strings.e2ee_info_no_pq
+                  null -> MR.strings.e2ee_info_e2ee
+                })
+              }
+
+              @Composable
+              fun GroupE2EEInfoText(e2EEInfo: E2EEInfo) {
+                e2eeInfoText(if (e2EEInfo.public == true) MR.strings.e2ee_info_no_e2ee else MR.strings.e2ee_info_no_pq)
+              }
+
+              if (cItem.meta.itemDeleted != null && (!revealed.value || cItem.isDeletedContent)) {
+                MarkedDeletedItemView(chatsCtx, cItem, cInfo, cInfo.timedMessagesTTL, revealed, showViaProxy = showViaProxy, showTimestamp = showTimestamp)
+                MarkedDeletedItemDropdownMenu()
+              } else {
+                when (val c = cItem.content) {
+                  is CIContent.SndMsgContent -> ContentItem()
+                  is CIContent.RcvMsgContent -> ContentItem()
+                  is CIContent.SndDeleted -> LegacyDeletedItem()
+                  is CIContent.RcvDeleted -> LegacyDeletedItem()
+                  is CIContent.SndCall -> CallItem(c.status, c.duration)
+                  is CIContent.RcvCall -> CallItem(c.status, c.duration)
+                  is CIContent.RcvIntegrityError -> if (developerTools) {
+                    IntegrityErrorItemView(c.msgError, cItem, showTimestamp, cInfo.timedMessagesTTL)
+                    DeleteItemMenu()
+                  } else {
+                    Box(Modifier.size(0.dp)) {}
+                  }
+                  is CIContent.RcvMsgErrorContent -> {
+                    RcvMsgErrorItemView(c.rcvMsgError, cItem, showTimestamp, cInfo.timedMessagesTTL)
+                  }
+                  is CIContent.RcvDecryptionError -> {
+                    CIRcvDecryptionError(c.msgDecryptError, c.msgCount, cInfo, cItem, updateContactStats = updateContactStats, updateMemberStats = updateMemberStats, syncContactConnection = syncContactConnection, syncMemberConnection = syncMemberConnection, findModelChat = findModelChat, findModelMember = findModelMember)
+                    DeleteItemMenu()
+                  }
+                  is CIContent.RcvGroupInvitation -> {
+                    CIGroupInvitationView(cItem, c.groupInvitation, c.memberRole, joinGroup = joinGroup, chatIncognito = cInfo.incognito, showTimestamp = showTimestamp, timedMessagesTTL = cInfo.timedMessagesTTL)
+                    DeleteItemMenu()
+                  }
+                  is CIContent.SndGroupInvitation -> {
+                    CIGroupInvitationView(cItem, c.groupInvitation, c.memberRole, joinGroup = joinGroup, chatIncognito = cInfo.incognito, showTimestamp = showTimestamp, timedMessagesTTL = cInfo.timedMessagesTTL)
+                    DeleteItemMenu()
+                  }
+                  is CIContent.RcvDirectEventContent -> {
+                    EventItemView()
+                    MsgContentItemDropdownMenu()
+                  }
+                  is CIContent.RcvGroupEventContent -> {
+                    when (c.rcvGroupEvent) {
+                      is RcvGroupEvent.MemberCreatedContact -> CIMemberCreatedContactView(cItem, openDirectChat)
+                      is RcvGroupEvent.NewMemberPendingReview -> PendingReviewEventItemView()
+                      else -> EventItemView()
+                    }
+                    MsgContentItemDropdownMenu()
+                  }
+                  is CIContent.SndGroupEventContent -> {
+                    when (c.sndGroupEvent) {
+                      is SndGroupEvent.UserPendingReview -> PendingReviewEventItemView()
+                      else -> EventItemView()
+                    }
+                    MsgContentItemDropdownMenu()
+                  }
+                  is CIContent.RcvConnEventContent -> {
+                    EventItemView()
+                    MsgContentItemDropdownMenu()
+                  }
+                  is CIContent.SndConnEventContent -> {
+                    EventItemView()
+                    MsgContentItemDropdownMenu()
+                  }
+                  is CIContent.RcvChatFeature -> {
+                    CIChatFeatureView(chatsCtx, cInfo, cItem, c.feature, c.enabled.iconColor, revealed = revealed, showMenu = showMenu)
+                    MsgContentItemDropdownMenu()
+                  }
+                  is CIContent.SndChatFeature -> {
+                    CIChatFeatureView(chatsCtx, cInfo, cItem, c.feature, c.enabled.iconColor, revealed = revealed, showMenu = showMenu)
+                    MsgContentItemDropdownMenu()
+                  }
+                  is CIContent.RcvChatPreference -> {
+                    val ct = if (cInfo is ChatInfo.Direct) cInfo.contact else null
+                    CIFeaturePreferenceView(cItem, ct, c.feature, c.allowed, acceptFeature)
+                    DeleteItemMenu()
+                  }
+                  is CIContent.SndChatPreference -> {
+                    CIChatFeatureView(chatsCtx, cInfo, cItem, c.feature, MaterialTheme.colors.secondary, icon = c.feature.icon, revealed, showMenu = showMenu)
+                    MsgContentItemDropdownMenu()
+                  }
+                  is CIContent.RcvGroupFeature -> {
+                    CIChatFeatureView(chatsCtx, cInfo, cItem, c.groupFeature, c.preference.enabled(c.memberRole_, (cInfo as? ChatInfo.Group)?.groupInfo?.membership).iconColor, revealed = revealed, showMenu = showMenu)
+                    MsgContentItemDropdownMenu()
+                  }
+                  is CIContent.SndGroupFeature -> {
+                    CIChatFeatureView(chatsCtx, cInfo, cItem, c.groupFeature, c.preference.enabled(c.memberRole_, (cInfo as? ChatInfo.Group)?.groupInfo?.membership).iconColor, revealed = revealed, showMenu = showMenu)
+                    MsgContentItemDropdownMenu()
+                  }
+                  is CIContent.RcvChatFeatureRejected -> {
+                    CIChatFeatureView(chatsCtx, cInfo, cItem, c.feature, Color.Red, revealed = revealed, showMenu = showMenu)
+                    MsgContentItemDropdownMenu()
+                  }
+                  is CIContent.RcvGroupFeatureRejected -> {
+                    CIChatFeatureView(chatsCtx, cInfo, cItem, c.groupFeature, Color.Red, revealed = revealed, showMenu = showMenu)
+                    MsgContentItemDropdownMenu()
+                  }
+                  is CIContent.SndModerated -> DeletedItem()
+                  is CIContent.RcvModerated -> DeletedItem()
+                  is CIContent.RcvBlocked -> DeletedItem()
+                  is CIContent.SndDirectE2EEInfo -> DirectE2EEInfoText(c.e2eeInfo)
+                  is CIContent.RcvDirectE2EEInfo -> DirectE2EEInfoText(c.e2eeInfo)
+                  is CIContent.SndGroupE2EEInfo -> GroupE2EEInfoText(c.e2eeInfo)
+                  is CIContent.RcvGroupE2EEInfo -> GroupE2EEInfoText(c.e2eeInfo)
+                  is CIContent.ChatBanner -> Spacer(modifier = Modifier.size(0.dp))
+                  is CIContent.InvalidJSON -> {
+                    CIInvalidJSONView(c.json)
+                    DeleteItemMenu()
+                  }
                 }
               }
             }
           }
-        }
-        if (!cItem.chatDir.sent) {
-          GoToItemButton(false, bubbleHovered)
-        }
+          if (!cItem.chatDir.sent) {
+            GoToItemButton(false, bubbleHovered)
+          }
         }
         if (canReply && swipeOffset < 0) {
           Icon(
@@ -849,6 +885,7 @@ fun CancelFileItemAction(
     stringResource(cancelAction.uiActionId),
     painterResource(MR.images.ic_close),
     onClick = {
+      RichHaptics.perform(HapticPattern.WARNING)
       showMenu.value = false
       cancelFileAlertDialog(fileId, cancelFile = cancelFile, cancelAction = cancelAction)
     },
@@ -867,12 +904,12 @@ fun ItemInfoAction(
     stringResource(MR.strings.info_menu),
     painterResource(MR.images.ic_info),
     onClick = {
+      RichHaptics.perform(HapticPattern.CLICK)
       showItemDetails(cInfo, cItem)
       showMenu.value = false
     }
   )
 }
-
 
 @Composable
 fun DeleteItemAction(
@@ -890,6 +927,7 @@ fun DeleteItemAction(
     buttonText,
     painterResource(MR.images.ic_delete),
     onClick = {
+      RichHaptics.perform(HapticPattern.WARNING)
       showMenu.value = false
       if (!revealed.value) {
         val reversedChatItems = chatsCtx.chatItems.value.asReversed()
@@ -934,6 +972,7 @@ fun ModerateItemAction(
     stringResource(MR.strings.moderate_verb),
     painterResource(MR.images.ic_flag),
     onClick = {
+      RichHaptics.perform(HapticPattern.WARNING)
       showMenu.value = false
       moderateMessageAlertDialog(cItem, questionText, deleteMessage = deleteMessage)
     },
@@ -950,6 +989,7 @@ fun SelectItemAction(
     stringResource(MR.strings.select_verb),
     painterResource(MR.images.ic_check_circle),
     onClick = {
+      RichHaptics.perform(HapticPattern.SELECTION_CHANGE)
       showMenu.value = false
       selectItem()
     }
@@ -962,6 +1002,7 @@ private fun RevealItemAction(revealed: State<Boolean>, showMenu: MutableState<Bo
     stringResource(MR.strings.reveal_verb),
     painterResource(MR.images.ic_visibility),
     onClick = {
+      RichHaptics.perform(HapticPattern.CLICK)
       reveal(true)
       showMenu.value = false
     }
@@ -974,6 +1015,7 @@ private fun HideItemAction(revealed: State<Boolean>, showMenu: MutableState<Bool
     stringResource(MR.strings.hide_verb),
     painterResource(MR.images.ic_visibility_off),
     onClick = {
+      RichHaptics.perform(HapticPattern.CLICK)
       reveal(false)
       showMenu.value = false
     }
@@ -986,6 +1028,7 @@ private fun ExpandItemAction(revealed: State<Boolean>, showMenu: MutableState<Bo
     stringResource(MR.strings.expand_verb),
     painterResource(MR.images.ic_expand_all),
     onClick = {
+      RichHaptics.perform(HapticPattern.CLICK)
       reveal(true)
       showMenu.value = false
     },
@@ -998,6 +1041,7 @@ private fun ShrinkItemAction(revealed: State<Boolean>, showMenu: MutableState<Bo
     stringResource(MR.strings.hide_verb),
     painterResource(MR.images.ic_collapse_all),
     onClick = {
+      RichHaptics.perform(HapticPattern.CLICK)
       reveal(false)
       showMenu.value = false
     },
@@ -1014,6 +1058,7 @@ private fun ReportItemAction(
     stringResource(MR.strings.report_verb),
     painterResource(MR.images.ic_flag),
     onClick = {
+      RichHaptics.perform(HapticPattern.WARNING)
       AlertManager.shared.showAlertDialogButtons(
         title = generalGetString(MR.strings.report_reason_alert_title),
         buttons = {
@@ -1056,6 +1101,7 @@ private fun ArchiveReportItemAction(id: Long, allowForAll: Boolean, showMenu: Mu
     stringResource(MR.strings.archive_report),
     painterResource(MR.images.ic_inventory_2),
     onClick = {
+      RichHaptics.perform(HapticPattern.WARNING)
       showArchiveReportsAlert(listOf(id), allowForAll, archiveReports)
       showMenu.value = false
     }
@@ -1071,7 +1117,6 @@ fun showArchiveReportsAlert(ids: List<Long>, allowForAll: Boolean, archiveReport
     },
     text = null,
     buttons = {
-      // Archive for me
       SectionItemView({
         AlertManager.shared.hideAlert()
         archiveReports(ids, false)
@@ -1084,7 +1129,6 @@ fun showArchiveReportsAlert(ids: List<Long>, allowForAll: Boolean, archiveReport
         )
       }
       if (allowForAll) {
-        // Archive for all moderators
         SectionItemView({
           AlertManager.shared.hideAlert()
           archiveReports(ids, true)
@@ -1237,10 +1281,6 @@ fun Modifier.clipChatItem(chatItem: ChatItem? = null, tailVisible: Boolean = fal
 
   return when (style) {
     is ShapeStyle.Bubble -> {
-      // Modifier.clip of the bubble GenericShape mis-hit-tests its path on very tall
-      // items, dropping long-press on the lower part of the bubble (issue #6991). Clip
-      // in the draw pass instead — drawing is clipped identically (the press ripple
-      // included), with no effect on hit-test.
       val shape = chatItemShape(cornerRoundness, LocalDensity.current, style.tailVisible, chatItem?.chatDir?.sent == true)
       this.drawWithCache {
         val path = Path().apply {
@@ -1251,7 +1291,6 @@ fun Modifier.clipChatItem(chatItem: ChatItem? = null, tailVisible: Boolean = fal
         }
       }
     }
-    // RoundRect hit-tests correctly — no bug here, keep the antialiased Modifier.clip.
     is ShapeStyle.RoundRect -> this.clip(RoundedCornerShape(style.radius * cornerRoundness))
   }
 }
@@ -1271,18 +1310,18 @@ private fun chatItemShape(roundness: Float, density: Density, tailVisible: Boole
     )
   }
   moveTo(rx, 0f)
-  lineTo(width - rx, 0f) // Top Line
+  lineTo(width - rx, 0f)
   if (roundness > 0) {
-    quadraticBezierTo(width, 0f, width, ry) // Top-right corner
+    quadraticBezierTo(width, 0f, width, ry)
   }
   if (height > 2 * ry) {
-    lineTo(width, height - ry) // Right side
+    lineTo(width, height - ry)
   }
   if (roundness > 0) {
-    quadraticBezierTo(width, height, width - rx, height) // Bottom-right corner
+    quadraticBezierTo(width, height, width - rx, height)
   }
   if (tailVisible) {
-    lineTo(0f, height) // Bottom line
+    lineTo(0f, height)
     if (roundness > 0) {
       val d = tailHeight - msgTailWidth * msgTailWidth / tailHeight
       val controlPoint = Offset(msgTailWidth, height - tailHeight + d * sqrt(roundness))
@@ -1295,17 +1334,17 @@ private fun chatItemShape(roundness: Float, density: Density, tailVisible: Boole
       lineTo(msgTailWidth, ry)
     }
   } else {
-    lineTo(rx, height) // Bottom line
+    lineTo(rx, height)
     if (roundness > 0) {
-      quadraticBezierTo(0f, height, 0f, height - ry) // Bottom-left corner
+      quadraticBezierTo(0f, height, 0f, height - ry)
     }
     if (height > 2 * ry) {
-      lineTo(0f, ry) // Left side
+      lineTo(0f, ry)
     }
   }
   if (roundness > 0) {
     val bubbleInitialX = if (tailVisible) msgTailWidth else 0f
-    quadraticBezierTo(bubbleInitialX, 0f, bubbleInitialX + rx, 0f) // Top-left corner
+    quadraticBezierTo(bubbleInitialX, 0f, bubbleInitialX + rx, 0f)
   }
 
   if (sent) {
