@@ -40,9 +40,12 @@ actual object UsbPanicDetector {
     if (isRegistered) return
 
     val filter = IntentFilter("android.hardware.usb.action.USB_STATE")
-    context.registerReceiver(receiver, filter)
-    isRegistered = true
-  }
+if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+  context.registerReceiver(receiver, filter, Context.RECEIVER_EXPORTED)
+} else {
+  context.registerReceiver(receiver, filter)
+}
+isRegistered = true
 
   fun stopMonitoring(context: Context) {
     if (!isRegistered) return
