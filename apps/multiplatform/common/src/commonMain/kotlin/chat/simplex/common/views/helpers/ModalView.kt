@@ -4,11 +4,13 @@ import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.dp
 import chat.simplex.common.model.ChatController.appPrefs
 import chat.simplex.common.model.ChatModel
 import chat.simplex.common.platform.*
@@ -44,32 +46,66 @@ fun ModalView(
   Surface(Modifier.fillMaxSize(), contentColor = LocalContentColor.current) {
     val bgOverride = if (cardScreen) canvasColorForCurrentTheme() else if (background != Color.Unspecified) background else null
     CompositionLocalProvider(LocalCardScreen provides cardScreen) {
-    Box(Modifier.themedBackground(bgLayerSize = LocalAppBarHandler.current?.backgroundGraphicsLayerSize, bgLayer = LocalAppBarHandler.current?.backgroundGraphicsLayer, overrideColor = bgOverride)) {
-      Box(modifier = modifier) {
-        content()
-      }
-      if (showAppBar) {
-        if (oneHandUI.value) {
-          StatusBarBackground()
+      Box(Modifier.themedBackground(bgLayerSize = LocalAppBarHandler.current?.backgroundGraphicsLayerSize, bgLayer = LocalAppBarHandler.current?.backgroundGraphicsLayer, overrideColor = bgOverride)) {
+        Box(modifier = modifier) {
+          content()
         }
-        Box(Modifier.align(if (oneHandUI.value) Alignment.BottomStart else Alignment.TopStart)) {
-          if (appBar != null) {
-            appBar()
+        if (showAppBar) {
+          if (oneHandUI.value) {
+            StatusBarBackground()
+          }
+
+          // Для One-Hand UI: если нет поиска и кастомного бара, убираем размытую полосу на весь экран
+          // и оставляем только чистую плавающую круглую кнопку "Назад" в стиле Material 3
+          if (oneHandUI.value && !showSearch && appBar == null) {
+            Row(
+              modifier = Modifier
+                .align(Alignment.BottomStart)
+                .fillMaxWidth()
+                .navigationBarsPadding()
+                .padding(horizontal = 16.dp, vertical = 12.dp),
+              horizontalArrangement = Arrangement.SpaceBetween,
+              verticalAlignment = Alignment.CenterVertically
+            ) {
+              if (showClose) {
+                NavigationButtonBack(
+                  onButtonClicked = if (enableClose) {
+                    {
+                      RichHaptics.perform(HapticPattern.CLICK)
+                      close()
+                    }
+                  } else null
+                )
+              } else {
+                Spacer(Modifier.width(1.dp))
+              }
+              Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
+              ) {
+                endButtons()
+              }
+            }
           } else {
-            DefaultAppBar(
-              navigationButton = if (showClose) {
-                { NavigationButtonBack(onButtonClicked = if (enableClose) close else null) }
-              } else null,
-              onTop = !oneHandUI.value,
-              showSearch = showSearch,
-              searchAlwaysVisible = searchAlwaysVisible,
-              onSearchValueChanged = onSearchValueChanged,
-              buttons = endButtons
-            )
+            Box(Modifier.align(if (oneHandUI.value) Alignment.BottomStart else Alignment.TopStart)) {
+              if (appBar != null) {
+                appBar()
+              } else {
+                DefaultAppBar(
+                  navigationButton = if (showClose) {
+                    { NavigationButtonBack(onButtonClicked = if (enableClose) close else null) }
+                  } else null,
+                  onTop = !oneHandUI.value,
+                  showSearch = showSearch,
+                  searchAlwaysVisible = searchAlwaysVisible,
+                  onSearchValueChanged = onSearchValueChanged,
+                  buttons = endButtons
+                )
+              }
+            }
           }
         }
       }
-    }
     }
   }
 }
@@ -107,8 +143,6 @@ class ModalManager(private val placement: ModalPlacement? = null) {
   val modalCount: State<Int> = _modalCount
   private val toRemove = mutableSetOf<Int>()
   private var oldViewChanging = AtomicBoolean(false)
-  // Don't use mutableStateOf() here, because it produces this if showing from SimpleXAPI.startChat():
-  // java.lang.IllegalStateException: Reading a state that was created after the snapshot was taken or in a snapshot that has not yet been applied
   private var passcodeView: MutableStateFlow<(@Composable (close: () -> Unit) -> Unit)?> = MutableStateFlow(null)
   private var onTimePasscodeView: MutableStateFlow<(@Composable (close: () -> Unit) -> Unit)?> = MutableStateFlow(null)
 
@@ -131,13 +165,9 @@ class ModalManager(private val placement: ModalPlacement? = null) {
   fun showCustomModal(animated: Boolean = true, keyboardCoversBar: Boolean = true, id: ModalViewId? = null, forceAnimated: Boolean = false, modal: @Composable ModalData.(close: () -> Unit) -> Unit) {
     Log.d(TAG, "ModalManager.showCustomModal")
     val data = ModalData(keyboardCoversBar = keyboardCoversBar)
-    // Means, animation is in progress or not started yet. Do not wait until animation finishes, just remove all from screen.
-    // This is useful when invoking close() and ShowCustomModal one after another without delay. Otherwise, screen will hold prev view
     if (toRemove.isNotEmpty()) {
       runAtomically { toRemove.removeIf { elem -> modalViews.removeAt(elem); true } }
     }
-    // Make animated appearance only on Android (everytime) and on Desktop (when it's on the start part of the screen or modals > 0)
-    // to prevent unneeded animation on different situations
     val anim = if (appPlatform.isAndroid) animated else (animated && (modalCount.value > 0 || placement == ModalPlacement.START)) || forceAnimated
     modalViews.add(ModalViewHolder(id, anim, data, modal))
     _modalCount.value = modalViews.size - toRemove.size
@@ -195,7 +225,6 @@ class ModalManager(private val placement: ModalPlacement? = null) {
   @OptIn(ExperimentalAnimationApi::class)
   @Composable
   fun showInView() {
-    // Without animation
     if (modalCount.value > 0 && modalViews.lastOrNull()?.animated == false) {
       modalViews.lastOrNull()?.let {
         CompositionLocalProvider(LocalAppBarHandler provides adjustAppBarHandler(it.data.appBarHandler)) {
@@ -218,7 +247,6 @@ class ModalManager(private val placement: ModalPlacement? = null) {
           it.modal(it.data, ::closeModal)
         }
       }
-      // This is needed because if we delete from modalViews immediately on request, animation will be bad
       if (toRemove.isNotEmpty() && it == modalCount.value && transition.currentState == EnterExitState.Visible && !transition.isRunning) {
         runAtomically { toRemove.removeIf { elem -> modalViews.removeAt(elem); true } }
       }
@@ -235,9 +263,6 @@ class ModalManager(private val placement: ModalPlacement? = null) {
     onTimePasscodeView.collectAsState().value?.invoke { onTimePasscodeView.value = null }
   }
 
-  /**
-  * Allows to modify a list without getting [ConcurrentModificationException]
-  * */
   private fun runAtomically(atomicBoolean: AtomicBoolean = oldViewChanging, block: () -> Unit) {
     while (!atomicBoolean.compareAndSet(false, true)) {
       Thread.sleep(10)
@@ -245,8 +270,6 @@ class ModalManager(private val placement: ModalPlacement? = null) {
     block()
     atomicBoolean.set(false)
   }
-//  private fun <T> animationSpecFromStart() = tween<T>(durationMillis = 150, easing = FastOutLinearInEasing)
-//  private fun <T> animationSpecFromEnd() = tween<T>(durationMillis = 100, easing = FastOutSlowInEasing)
 
   companion object {
     private val shared = ModalManager()
