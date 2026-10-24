@@ -60,8 +60,9 @@ actual object UsbPanicDetector {
    * Проверка при запуске:
    * Если функция включена И кабель USB подключен — приложение мгновенно уничтожается.
    */
-  fun checkStartupUsbBlock(activity: Activity): Boolean {
-    if (isEnabled() && isUsbConnectedNow(activity)) {
+ actual fun checkStartupUsbBlock(activity: Any): Boolean {
+    val act = activity as? Activity ?: return false
+    if (isEnabled() && isUsbConnectedNow(act)) {
       EmergencyKill.purgeAndKill(chatModel = null, wipeTempMedia = true, clearClipboard = true)
       return true
     }
