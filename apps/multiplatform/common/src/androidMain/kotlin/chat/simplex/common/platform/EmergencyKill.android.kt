@@ -4,6 +4,7 @@ import android.app.Activity
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
+import android.os.Build
 import android.os.Process
 import chat.simplex.common.model.ChatModel
 import kotlin.system.exitProcess
@@ -31,7 +32,7 @@ actual object EmergencyKill {
       try {
         val clipboard = ctx.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
         if (clipboard != null) {
-          if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
+          if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
             clipboard.clearPrimaryClip()
           } else {
             clipboard.setPrimaryClip(ClipData.newPlainText("", ""))
@@ -50,12 +51,7 @@ actual object EmergencyKill {
       } catch (_: Exception) {}
     }
 
-    // 3. Закрытие шифрованных сокетов ядра
-    try {
-      chatModel.controller.stopChat()
-    } catch (_: Exception) {}
-
-    // 4. Удаление задачи из списка недавних приложений (Recents)
+    // 3. Удаление задачи из списка недавних приложений (Recents)
     try {
       val atClass = Class.forName("android.app.ActivityThread")
       val currentActivityThread = atClass.getMethod("currentActivityThread").invoke(null)
@@ -71,7 +67,7 @@ actual object EmergencyKill {
       }
     } catch (_: Exception) {}
 
-    // 5. Моментальное завершение процесса Linux (SIGKILL)
+    // 4. Моментальное завершение процесса на уровне ядра Linux (SIGKILL)
     Process.killProcess(Process.myPid())
     exitProcess(0)
   }
