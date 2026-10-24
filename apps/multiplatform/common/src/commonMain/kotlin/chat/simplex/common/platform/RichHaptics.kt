@@ -18,7 +18,15 @@ enum class HapticPattern {
 }
 
 expect object RichHaptics {
-  var isAdvancedHapticsEnabled: () -> Boolean
+  fun isEnabled(): Boolean
+  fun setEnabled(enabled: Boolean)
+  fun perform(pattern: HapticPattern)
+}
 
+expect object RichHaptics {
+  var isAdvancedHapticsEnabled: () -> Boolean
+  
+  fun isEnabled(): Boolean
+  fun setEnabled(enabled: Boolean)
   fun perform(pattern: HapticPattern)
 }
