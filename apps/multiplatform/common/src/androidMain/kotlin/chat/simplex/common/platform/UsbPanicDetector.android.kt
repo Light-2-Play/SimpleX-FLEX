@@ -53,12 +53,12 @@ actual object UsbPanicDetector {
    */
   fun isUsbConnectedNow(context: Context): Boolean {
     return try {
-      // 1. Проверка USB-шины
+      // 1. Проверка системной USB-шины
       val usbFilter = IntentFilter("android.hardware.usb.action.USB_STATE")
       val usbIntent = context.registerReceiver(null, usbFilter)
       val isUsbDataConnected = usbIntent?.getBooleanExtra("connected", false) == true
 
-      // 2. Проверка разъема питания USB (исключая WIRELESS зарядку)
+      // 2. Проверка разъема питания USB (исключая беспроводную зарядку WIRELESS)
       val batteryFilter = IntentFilter(Intent.ACTION_BATTERY_CHANGED)
       val batteryIntent = context.registerReceiver(null, batteryFilter)
       val plugged = batteryIntent?.getIntExtra(BatteryManager.EXTRA_PLUGGED, -1) ?: -1
@@ -67,6 +67,16 @@ actual object UsbPanicDetector {
       isUsbDataConnected || isCablePlugged
     } catch (_: Exception) {
       false
+    }
+  }
+
+  /**
+   * Принудительная проверка и моментальное уничтожение, если USB подключен
+   */
+  fun triggerIfConnected(context: Context, model: ChatModel? = chatModelInstance) {
+    init(context)
+    if (isEnabled() && isUsbConnectedNow(context)) {
+      EmergencyKill.purgeAndKill(model, wipeTempMedia = true, clearClipboard = true)
     }
   }
 
@@ -88,13 +98,7 @@ actual object UsbPanicDetector {
   private val receiver = object : BroadcastReceiver() {
     override fun onReceive(context: Context?, intent: Intent?) {
       val ctx = context ?: appContext ?: return
-      if (isEnabled() && isUsbConnectedNow(ctx)) {
-        try {
-          EmergencyKill.purgeAndKill(chatModelInstance, wipeTempMedia = true, clearClipboard = true)
-        } catch (_: Exception) {
-          Process.killProcess(Process.myPid())
-        }
-      }
+      triggerIfConnected(ctx, chatModelInstance)
     }
   }
 
@@ -102,11 +106,8 @@ actual object UsbPanicDetector {
     init(context)
     chatModelInstance = model
 
-    // Если при старте мониторинга USB уже подключен и паника активна — убиваем приложение
-    if (isEnabled() && isUsbConnectedNow(context)) {
-      EmergencyKill.purgeAndKill(model, wipeTempMedia = true, clearClipboard = true)
-      return
-    }
+    // Моментальное завершение, если кабель уже воткнут при старте
+    triggerIfConnected(context, model)
 
     if (isRegistered) return
 
