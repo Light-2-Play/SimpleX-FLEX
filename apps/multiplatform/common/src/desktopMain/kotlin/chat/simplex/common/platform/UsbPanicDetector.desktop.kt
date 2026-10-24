@@ -7,4 +7,5 @@ actual object UsbPanicDetector {
   actual fun setEnabled(enabled: Boolean) {
     this.enabled = enabled
   }
+  actual fun checkStartupUsbBlock(activity: Any): Boolean = false
 }
