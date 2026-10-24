@@ -34,6 +34,9 @@ import chat.simplex.common.views.onboarding.ReadableText
 import chat.simplex.common.model.ChatModel
 import chat.simplex.common.platform.*
 import kotlinx.coroutines.*
+import chat.simplex.common.platform.HapticPattern
+import chat.simplex.common.platform.RichHaptics
+import chat.simplex.common.platform.UsbPanicDetector
 
 enum class LAMode {
   SYSTEM,
@@ -62,6 +65,27 @@ fun PrivacySettingsView(
     PrivacyDeviceSection(showSettingsModal, setPerformLA)
     SectionDividerSpaced()
 
+    // Секция экстренной защиты (Panic on USB)
+    SectionView("Emergency Security") {
+      var killOnUsbEnabled by remember { mutableStateOf(UsbPanicDetector.isEnabled()) }
+      PreferenceToggleWithIcon(
+        text = "Panic on USB connect",
+        icon = painterResource(MR.images.ic_bolt),
+        iconColor = Color.Red,
+        checked = killOnUsbEnabled,
+        onChange = { enabled ->
+          killOnUsbEnabled = enabled
+          UsbPanicDetector.isEnabled = { enabled }
+          if (enabled) {
+            RichHaptics.perform(HapticPattern.WARNING)
+          } else {
+            RichHaptics.perform(HapticPattern.TOGGLE_OFF)
+          }
+        }
+      )
+    }
+    SectionDividerSpaced()
+
     SectionView(stringResource(MR.strings.settings_section_title_chats)) {
       SettingsPreferenceItem(
         painterResource(MR.images.ic_travel_explore),
@@ -83,6 +107,7 @@ fun PrivacySettingsView(
         appPrefs.privacyMediaBlurRadius.set(it)
       }
     }
+    // ... далее идёт остальной код файла без изменений
 
     val currentUser = chatModel.currentUser.value
     if (currentUser != null && !chatModel.desktopNoUserNoRemote) {
