@@ -41,12 +41,13 @@ import chat.simplex.res.MR
 
 @Composable
 fun SettingsView(chatModel: ChatModel, setPerformLA: (Boolean) -> Unit, close: () -> Unit) {
- var showFlexSettings by remember { mutableStateOf(false) }
+  var showFlexSettings by remember { mutableStateOf(false) }
 
-if (showFlexSettings) {
-  FlexSettingsView(onBack = { showFlexSettings = false })
-  return
-}
+  if (showFlexSettings) {
+    FlexSettingsView(onBack = { showFlexSettings = false })
+    return
+  }
+
   val stopped = chatModel.chatRunning.value == false
   val showSettingsModal: (@Composable (ChatModel) -> Unit) -> (() -> Unit) = { modalView -> { ModalManager.start.showModal(settings = true, cardScreen = true) { modalView(chatModel) } } }
   SettingsLayout(
@@ -73,6 +74,7 @@ if (showFlexSettings) {
       ModalManager.start.showModal(cardScreen = true) { VersionInfoView(showSettingsModal, ::doWithAuth) }
     },
     withAuth = ::doWithAuth,
+    openFlexSettings = { showFlexSettings = true }
   )
   KeyChangeEffect(chatModel.updatingProgress.value != null) {
     close()
@@ -97,6 +99,7 @@ fun SettingsLayout(
   showCustomModal: (@Composable ModalData.(ChatModel, () -> Unit) -> Unit) -> (() -> Unit),
   showVersion: () -> Unit,
   withAuth: (title: String, desc: String, block: () -> Unit) -> Unit,
+  openFlexSettings: () -> Unit = {},
 ) {
   val view = LocalMultiplatformView()
   LaunchedEffect(Unit) {
@@ -108,10 +111,8 @@ fun SettingsLayout(
   ColumnWithScrollBar {
     AppBarTitle(stringResource(MR.strings.your_settings))
 
-    FlexSettingsEntryTile(onClick = { showFlexSettings = true })
-// Вставляем секцию FLEX Settings
-FlexSettingsSection()
-    
+    FlexSettingsEntryTile(onClick = openFlexSettings)
+
     SectionView {
       SettingsActionItem(painterResource(MR.images.ic_light_mode), stringResource(MR.strings.appearance_settings), showSettingsModal { AppearanceView(it) })
       SettingsActionItem(painterResource(MR.images.ic_lock), stringResource(MR.strings.your_privacy), showSettingsModal { PrivacySettingsView(it, showSettingsModal, setPerformLA) }, disabled = stopped)
@@ -141,7 +142,6 @@ FlexSettingsSection()
         )
       }
     }
-    // Запас высоты для свободного скролла выше кнопки "Назад" и нижнего оверлея
     Spacer(Modifier.height(bottomPadding))
   }
 }
@@ -618,6 +618,7 @@ fun PreviewSettingsLayout() {
       showCustomModal = { {} },
       showVersion = {},
       withAuth = { _, _, _ -> },
+      openFlexSettings = {},
     )
   }
 }
