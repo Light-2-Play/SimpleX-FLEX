@@ -1,5 +1,10 @@
 package chat.simplex.common.platform
 
 actual object UsbPanicDetector {
-  actual var isEnabled: () -> Boolean = { false }
+  private var enabled = false
+
+  actual fun isEnabled(): Boolean = enabled
+  actual fun setEnabled(enabled: Boolean) {
+    this.enabled = enabled
+  }
 }
