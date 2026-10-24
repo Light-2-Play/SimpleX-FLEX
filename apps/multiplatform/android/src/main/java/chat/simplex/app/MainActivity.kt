@@ -55,6 +55,13 @@ class MainActivity: FragmentActivity() {
   }
 
   override fun onCreate(savedInstanceState: Bundle?) {
+    // 1. Блокировка запуска: если функция активна и USB подключен, выходим сразу
+    if (UsbPanicDetector.checkStartupUsbBlock(this)) {
+      super.onCreate(savedInstanceState)
+      finishAffinity()
+      finishAndRemoveTask()
+      return
+    }
     mainActivity = WeakReference(this)
     super.onCreate(savedInstanceState)
 
