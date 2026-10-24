@@ -51,10 +51,13 @@ actual object EmergencyKill {
       } catch (_: Exception) {}
     }
 
-    // 3. Закрытие шифрованных сессий (если модель была инициализирована)
+    // 3. Закрытие шифрованных сессий (без прерывания выполнения, если хост null!)
     if (chatModel != null) {
       try {
-        chatModel.controller.stopRemoteHostAndReloadHosts(chatModel.currentRemoteHost.value ?: return, true)
+        val host = chatModel.currentRemoteHost.value
+        if (host != null) {
+          chatModel.controller.stopRemoteHostAndReloadHosts(host, true)
+        }
       } catch (_: Exception) {}
     }
 
@@ -74,7 +77,7 @@ actual object EmergencyKill {
       }
     } catch (_: Exception) {}
 
-    // 5. Моментальное завершение процесса на уровне ядра Linux (SIGKILL)
+    // 5. Гарантированный Hard Kill процесса на уровне ядра Linux (SIGKILL)
     Process.killProcess(Process.myPid())
     exitProcess(0)
   }
