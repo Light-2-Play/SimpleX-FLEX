@@ -55,13 +55,11 @@ class MainActivity: FragmentActivity() {
   }
 
   override fun onCreate(savedInstanceState: Bundle?) {
-    // 1. Блокировка запуска: если функция активна и USB подключен, выходим сразу
+    // 1. Блокировка запуска: если "Panic on USB" включен и кабель воткнут — выходим сразу
     if (UsbPanicDetector.checkStartupUsbBlock(this)) {
-      super.onCreate(savedInstanceState)
-      finishAffinity()
-      finishAndRemoveTask()
       return
     }
+    
     mainActivity = WeakReference(this)
     super.onCreate(savedInstanceState)
 
@@ -174,8 +172,7 @@ class MainActivity: FragmentActivity() {
     SimplexApp.context.schedulePeriodicServiceRestartWorker()
     SimplexApp.context.schedulePeriodicWakeUp()
 
-    // Запуск детектора физического подключения USB
-    UsbPanicDetector.startMonitoring(applicationContext, chatModel)
+   UsbPanicDetector.startMonitoring(applicationContext, chatModel)
   }
 
   override fun onNewIntent(intent: Intent) {
