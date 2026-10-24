@@ -55,6 +55,7 @@ actual object RichHaptics {
           HapticPattern.TICK -> VibrationEffect.createPredefined(VibrationEffect.EFFECT_TICK)
           HapticPattern.WARNING -> VibrationEffect.createWaveform(longArrayOf(0, 40, 60, 40), intArrayOf(0, 180, 0, 255), -1)
           HapticPattern.TOGGLE_OFF -> VibrationEffect.createOneShot(20, 80)
+          else -> VibrationEffect.createPredefined(VibrationEffect.EFFECT_CLICK)
         }
         vibrator.vibrate(effect)
       } else {
