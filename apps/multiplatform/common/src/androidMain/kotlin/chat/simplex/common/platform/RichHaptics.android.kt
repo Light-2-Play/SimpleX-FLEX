@@ -31,7 +31,7 @@ actual object RichHaptics {
     }
   }
 
-  private fun isSystemHapticsEnabled(): Boolean {
+  private fun isHapticFeedbackEnabled(): Boolean {
     val ctx = context ?: return true
     return try {
       Settings.System.getInt(
@@ -45,10 +45,10 @@ actual object RichHaptics {
   }
 
   actual fun perform(pattern: HapticPattern) {
+    if (!isAdvancedHapticsEnabled()) return
     val vib = vibrator ?: return
     if (!vib.hasVibrator() || !isHapticFeedbackEnabled()) return
 
-    // 1. Android 11+ (API 30+) — Аппаратные примитивы LRA
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
       val effect = when (pattern) {
         HapticPattern.TICK -> createPrimitive(vib, VibrationEffect.Composition.PRIMITIVE_TICK, 0.4f)
@@ -93,22 +93,18 @@ actual object RichHaptics {
             .addPrimitive(VibrationEffect.Composition.PRIMITIVE_CLICK, 1.0f, 70)
             .compose()
         }
-        // Новые композиции:
         HapticPattern.SEND_MESSAGE -> {
-          // Выстреливающий нарастающий отклик: микротик + плотный клик
           VibrationEffect.startComposition()
             .addPrimitive(VibrationEffect.Composition.PRIMITIVE_TICK, 0.5f, 0)
             .addPrimitive(VibrationEffect.Composition.PRIMITIVE_CLICK, 0.85f, 30)
             .compose()
         }
         HapticPattern.RECORD_START -> {
-          // Плавный подъем при старте удержания кнопки микрофона
           VibrationEffect.startComposition()
             .addPrimitive(VibrationEffect.Composition.PRIMITIVE_QUICK_RISE, 0.8f, 0)
             .compose()
         }
         HapticPattern.RECORD_STOP -> {
-          // Затухающий клик при отпускании микрофона
           VibrationEffect.startComposition()
             .addPrimitive(VibrationEffect.Composition.PRIMITIVE_CLICK, 0.75f, 0)
             .addPrimitive(VibrationEffect.Composition.PRIMITIVE_TICK, 0.3f, 40)
@@ -128,7 +124,6 @@ actual object RichHaptics {
       }
     }
 
-    // 2. Android 10 (API 29) — Predefined Effects
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
       val predefined = when (pattern) {
         HapticPattern.TICK, HapticPattern.SELECTION_CHANGE, HapticPattern.SWIPE_ACTION -> VibrationEffect.EFFECT_TICK
@@ -141,7 +136,6 @@ actual object RichHaptics {
       return
     }
 
-    // 3. Fallback для старых версий (API 26–28)
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
       val duration = when (pattern) {
         HapticPattern.TICK, HapticPattern.SELECTION_CHANGE -> 8L
