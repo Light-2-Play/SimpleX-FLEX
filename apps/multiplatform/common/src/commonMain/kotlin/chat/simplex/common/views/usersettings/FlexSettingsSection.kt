@@ -9,6 +9,7 @@ import androidx.compose.material.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.text.font.FontWeight
@@ -76,12 +77,17 @@ fun FlexSettingsEntryTile(onClick: () -> Unit) {
   }
 }
 
+// Псевдоним на случай старых вызовов
+@Composable
+fun FlexSettingsSection(onClick: () -> Unit = {}) {
+  FlexSettingsEntryTile(onClick = onClick)
+}
+
 // =====================================================================
-// 2. ЭКРАН НАСТРОЕК FLEX (СЮДА ДОБАВЛЯЕМ НОВЫЕ ПУНКТЫ)
+// 2. ЭКРАН НАСТРОЕК FLEX
 // =====================================================================
 @Composable
 fun FlexSettingsView(onBack: () -> Unit) {
-  // --- Состояния существующих настроек ---
   var usbPanicEnabled by remember { mutableStateOf(UsbPanicDetector.isEnabled()) }
   var advancedHapticsEnabled by remember { mutableStateOf(RichHaptics.isEnabled()) }
 
@@ -99,8 +105,9 @@ fun FlexSettingsView(onBack: () -> Unit) {
         navigationIcon = {
           IconButton(onClick = onBack) {
             Icon(
-              painter = painterResource(MR.images.ic_arrow_back),
+              painter = painterResource(MR.images.ic_arrow_forward),
               contentDescription = "Back",
+              modifier = Modifier.rotate(180f),
               tint = MaterialTheme.colors.onSurface
             )
           }
@@ -141,8 +148,6 @@ fun FlexSettingsView(onBack: () -> Unit) {
             }
           }
         )
-
-        // <<--- В БУДУЩЕМ НОВУЮ НАСТРОЙКУ БЕЗОПАСНОСТИ МОЖНО ВСТАВИТЬ СЮДА ---
       }
 
       Spacer(modifier = Modifier.height(20.dp))
@@ -168,17 +173,13 @@ fun FlexSettingsView(onBack: () -> Unit) {
             }
           }
         )
-
-        // <<--- В БУДУЩЕМ НОВУЮ НАСТРОЙКУ ИНТЕРФЕЙСА МОЖНО ВСТАВИТЬ СЮДА ---
       }
-
-      // <<--- СЮДА МОЖНО ДОБАВИТЬ ЕЩЁ ОДНУ СЕКЦИЮ, НАПРИМЕР "NETWORK & PROXY" ---
     }
   }
 }
 
 // =====================================================================
-// 3. ПЕРЕИСПОЛЬЗУЕМЫЕ КОМПОНЕНТЫ ДЛЯ БЫСТРОГО ДОБАВЛЕНИЯ НАСТРОЕК
+// 3. ВСПОМОГАТЕЛЬНЫЕ КОМПОНЕНТЫ
 // =====================================================================
 
 @Composable
@@ -207,9 +208,6 @@ fun FlexSettingCard(content: @Composable ColumnScope.() -> Unit) {
   }
 }
 
-/**
- * Универсальный элемент с переключателем (Switch)
- */
 @Composable
 fun FlexToggleItem(
   title: String,
@@ -263,63 +261,6 @@ fun FlexToggleItem(
         checkedThumbColor = activeTrackColor,
         checkedTrackColor = activeTrackColor.copy(alpha = 0.5f)
       )
-    )
-  }
-}
-
-/**
- * Универсальный кликабельный элемент (для диалогов или перехода дальше)
- */
-@Composable
-fun FlexActionItem(
-  title: String,
-  subtitle: String? = null,
-  icon: Painter? = null,
-  iconTint: Color = MaterialTheme.colors.onSurface.copy(alpha = 0.7f),
-  onClick: () -> Unit
-) {
-  Row(
-    modifier = Modifier
-      .fillMaxWidth()
-      .clickable(onClick = onClick)
-      .padding(horizontal = 16.dp, vertical = 14.dp),
-    verticalAlignment = Alignment.CenterVertically,
-    horizontalArrangement = Arrangement.SpaceBetween
-  ) {
-    Row(
-      verticalAlignment = Alignment.CenterVertically,
-      modifier = Modifier.weight(1f)
-    ) {
-      if (icon != null) {
-        Icon(
-          painter = icon,
-          contentDescription = null,
-          tint = iconTint,
-          modifier = Modifier.size(24.dp)
-        )
-        Spacer(modifier = Modifier.width(16.dp))
-      }
-      Column {
-        Text(
-          text = title,
-          fontSize = 16.sp,
-          fontWeight = FontWeight.Medium,
-          color = MaterialTheme.colors.onSurface
-        )
-        if (subtitle != null) {
-          Text(
-            text = subtitle,
-            fontSize = 12.sp,
-            color = MaterialTheme.colors.onSurface.copy(alpha = 0.6f)
-          )
-        }
-      }
-    }
-    Icon(
-      painter = painterResource(MR.images.ic_arrow_forward),
-      contentDescription = null,
-      tint = MaterialTheme.colors.onSurface.copy(alpha = 0.4f),
-      modifier = Modifier.size(18.dp)
     )
   }
 }
