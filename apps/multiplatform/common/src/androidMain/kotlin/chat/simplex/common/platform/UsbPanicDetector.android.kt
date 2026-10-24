@@ -43,36 +43,45 @@ actual object UsbPanicDetector {
   actual fun setEnabled(enabled: Boolean) {
     val ctx = getContext() ?: return
     val sp = ctx.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-    sp.edit().putBoolean(KEY_PANIC_ON_USB, enabled).apply()
+    sp.edit().putBoolean(KEY_PANIC_ON_USB, enabled).commit()
   }
 
   /**
-   * Проверка физического подключения кабеля к USB-порту:
-   * 1. Режим USB Host / Data (подключение к ПК, ноутбуку или форензик-боксу)
-   * 2. Статус питания BatteryManager (USB-кабель питает устройство)
+   * Проверка физического подключения кабеля к USB-порту
    */
   fun isUsbConnectedNow(context: Context): Boolean {
-    return try {
-      // 1. Проверка системной USB-шины
-      val usbFilter = IntentFilter("android.hardware.usb.action.USB_STATE")
-      val usbIntent = context.registerReceiver(null, usbFilter)
-      val isUsbDataConnected = usbIntent?.getBooleanExtra("connected", false) == true
-
-      // 2. Проверка разъема питания USB (исключая беспроводную зарядку WIRELESS)
-      val batteryFilter = IntentFilter(Intent.ACTION_BATTERY_CHANGED)
-      val batteryIntent = context.registerReceiver(null, batteryFilter)
+    // 1. Проверка питания через кабель USB (AC или USB, исключая WIRELESS)
+    try {
+      val batteryIntent = context.registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
       val plugged = batteryIntent?.getIntExtra(BatteryManager.EXTRA_PLUGGED, -1) ?: -1
-      val isCablePlugged = plugged == BatteryManager.BATTERY_PLUGGED_USB || plugged == BatteryManager.BATTERY_PLUGGED_AC
+      if (plugged == BatteryManager.BATTERY_PLUGGED_USB || plugged == BatteryManager.BATTERY_PLUGGED_AC) {
+        return true
+      }
+    } catch (_: Exception) {}
 
-      isUsbDataConnected || isCablePlugged
-    } catch (_: Exception) {
-      false
-    }
+    // 2. BatteryManager API
+    try {
+      val bm = context.getSystemService(Context.BATTERY_SERVICE) as? BatteryManager
+      if (bm != null && bm.isCharging) {
+        val batteryIntent = context.registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
+        val plugged = batteryIntent?.getIntExtra(BatteryManager.EXTRA_PLUGGED, -1) ?: -1
+        if (plugged != BatteryManager.BATTERY_PLUGGED_WIRELESS) {
+          return true
+        }
+      }
+    } catch (_: Exception) {}
+
+    // 3. Изолированная проверка USB-шины
+    try {
+      val usbIntent = context.registerReceiver(null, IntentFilter("android.hardware.usb.action.USB_STATE"))
+      if (usbIntent?.getBooleanExtra("connected", false) == true) {
+        return true
+      }
+    } catch (_: Exception) {}
+
+    return false
   }
 
-  /**
-   * Принудительная проверка и моментальное уничтожение, если USB подключен
-   */
   fun triggerIfConnected(context: Context, model: ChatModel? = chatModelInstance) {
     init(context)
     if (isEnabled() && isUsbConnectedNow(context)) {
@@ -80,10 +89,6 @@ actual object UsbPanicDetector {
     }
   }
 
-  /**
-   * Проверка при запуске:
-   * Если функция включена И кабель USB уже подключен — уничтожаем процесс до старта.
-   */
   actual fun checkStartupUsbBlock(activity: Any): Boolean {
     val act = activity as? Activity ?: return false
     init(act)
@@ -98,6 +103,21 @@ actual object UsbPanicDetector {
   private val receiver = object : BroadcastReceiver() {
     override fun onReceive(context: Context?, intent: Intent?) {
       val ctx = context ?: appContext ?: return
+      if (!isEnabled()) return
+
+      val action = intent?.action
+      // Мгновенная реакция при аппаратном сигнале подключения питания по кабелю
+      if (action == Intent.ACTION_POWER_CONNECTED) {
+        try {
+          val batteryIntent = ctx.registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
+          val plugged = batteryIntent?.getIntExtra(BatteryManager.EXTRA_PLUGGED, -1) ?: -1
+          if (plugged != BatteryManager.BATTERY_PLUGGED_WIRELESS) {
+            EmergencyKill.purgeAndKill(chatModelInstance, wipeTempMedia = true, clearClipboard = true)
+            return
+          }
+        } catch (_: Exception) {}
+      }
+
       triggerIfConnected(ctx, chatModelInstance)
     }
   }
@@ -106,7 +126,6 @@ actual object UsbPanicDetector {
     init(context)
     chatModelInstance = model
 
-    // Моментальное завершение, если кабель уже воткнут при старте
     triggerIfConnected(context, model)
 
     if (isRegistered) return
