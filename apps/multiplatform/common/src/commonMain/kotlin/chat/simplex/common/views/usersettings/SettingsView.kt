@@ -102,6 +102,9 @@ fun SettingsLayout(
   ColumnWithScrollBar {
     AppBarTitle(stringResource(MR.strings.your_settings))
 
+// Вставляем секцию FLEX Settings
+FlexSettingsSection()
+    
     SectionView {
       SettingsActionItem(painterResource(MR.images.ic_light_mode), stringResource(MR.strings.appearance_settings), showSettingsModal { AppearanceView(it) })
       SettingsActionItem(painterResource(MR.images.ic_lock), stringResource(MR.strings.your_privacy), showSettingsModal { PrivacySettingsView(it, showSettingsModal, setPerformLA) }, disabled = stopped)
