@@ -44,6 +44,7 @@ import chat.simplex.app.SingBoxService
 import chat.simplex.common.views.chat.item.LocalVoiceTranscriptionWidget
 import chat.simplex.app.ai.VoiceTranscriptionBox
 import androidx.compose.runtime.CompositionLocalProvider
+import chat.simplex.common.platform.UsbPanicDetector
 
 var showSingBoxDialogState = mutableStateOf(false)
 var openByeDpiDialog: (() -> Unit)? = null
@@ -102,7 +103,7 @@ class MainActivity: FragmentActivity() {
         }
       }
     }
-    
+
     platform.androidSetNightModeIfSupported()
     val c = CurrentColors.value.colors
     platform.androidSetStatusAndNavigationBarAppearance(c.isLight, c.isLight)
@@ -165,7 +166,10 @@ class MainActivity: FragmentActivity() {
 
     SimplexApp.context.schedulePeriodicServiceRestartWorker()
     SimplexApp.context.schedulePeriodicWakeUp()
-  } 
+
+    // Запуск детектора физического подключения USB
+    UsbPanicDetector.startMonitoring(applicationContext, chatModel)
+  }
 
   override fun onNewIntent(intent: Intent) {
     super.onNewIntent(intent)
@@ -192,6 +196,8 @@ class MainActivity: FragmentActivity() {
 
   override fun onDestroy() {
     super.onDestroy()
+    // Остановка детектора USB и сервисов
+    UsbPanicDetector.stopMonitoring(applicationContext)
     SingBoxService.stop()
   }
 
