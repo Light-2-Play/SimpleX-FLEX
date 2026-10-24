@@ -13,7 +13,8 @@ enum class HapticPattern {
   SEND_MESSAGE,
   RECORD_START,
   RECORD_STOP,
-  SWIPE_ACTION
+  SWIPE_ACTION,
+  SELECTION_CHANGE
 }
 
 expect object RichHaptics {
