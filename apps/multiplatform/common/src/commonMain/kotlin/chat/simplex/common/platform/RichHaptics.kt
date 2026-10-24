@@ -1,29 +1,24 @@
 package chat.simplex.common.platform
 
 enum class HapticPattern {
-  // Базовые системные клики
-  TICK,             // Лёгкий микро-щелчок (скролл списков, движение ползунка)
-  CLICK,            // Стандартный тап (нажатие кнопок, переключение табов)
-  HEAVY_CLICK,      // Плотный клик (долгое нажатие, открытие контекстного меню)
-  DOUBLE_CLICK,     // Двойной быстрый отклик
-
-  // Состояния тумблеров и переключателей
-  TOGGLE_ON,        // Включение свитча (нарастающий импульс)
-  TOGGLE_OFF,       // Выключение свитча (затухающий импульс)
-
-  // Статусы операций
-  SUCCESS,          // Успех (соединение установлено, фид синхронизирован)
-  WARNING,          // Предупреждение (достигнут лимит, подтверждение удаления)
-  ERROR,            // Ошибка (сбой сети, неверный ввод)
-
-  // Новые специализированные действия чата:
-  SEND_MESSAGE,     // Выстреливающий импульс при нажатии кнопки отправки сообщения
-  RECORD_START,     // Плавное нарастание при начале записи голосового сообщения
-  RECORD_STOP,      // Чёткий отсекающий щелчок при отпускании микрофона
-  SWIPE_ACTION,     // Отклик при свайпе сообщения для ответа (swipe-to-reply)
-  SELECTION_CHANGE  // Микро-отдача при выборе фото/файла в галерее или смене фильтра
+  TICK,
+  CLICK,
+  HEAVY_CLICK,
+  DOUBLE_CLICK,
+  TOGGLE_ON,
+  TOGGLE_OFF,
+  SUCCESS,
+  WARNING,
+  ERROR,
+  SEND_MESSAGE,
+  RECORD_START,
+  RECORD_STOP,
+  SWIPE_ACTION,
+  SELECTION_CHANGE
 }
 
 expect object RichHaptics {
+  var isAdvancedHapticsEnabled: () -> Boolean
+
   fun perform(pattern: HapticPattern)
 }
