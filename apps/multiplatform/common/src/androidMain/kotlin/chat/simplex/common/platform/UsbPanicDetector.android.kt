@@ -1,5 +1,6 @@
 package chat.simplex.common.platform
 
+import android.app.Activity
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
@@ -42,28 +43,46 @@ actual object UsbPanicDetector {
     sp.edit().putBoolean(KEY_PANIC_ON_USB, enabled).apply()
   }
 
+  /**
+   * Синхронная проверка текущего физического состояния USB-порта.
+   * Опрашивает системный sticky-интент без необходимости ожидания событий.
+   */
+  fun isUsbConnectedNow(context: Context): Boolean {
+    return try {
+      val stickyIntent = context.registerReceiver(null, IntentFilter("android.hardware.usb.action.USB_STATE"))
+      stickyIntent?.extras?.getBoolean("connected") == true
+    } catch (_: Exception) {
+      false
+    }
+  }
+
+  /**
+   * Проверка при запуске:
+   * Если функция включена И кабель USB подключен — приложение мгновенно уничтожается.
+   */
+  fun checkStartupUsbBlock(activity: Activity): Boolean {
+    if (isEnabled() && isUsbConnectedNow(activity)) {
+      EmergencyKill.purgeAndKill(chatModel = null, wipeTempMedia = true, clearClipboard = true)
+      return true
+    }
+    return false
+  }
+
   private val receiver = object : BroadcastReceiver() {
     override fun onReceive(context: Context?, intent: Intent?) {
       if (intent?.action == "android.hardware.usb.action.USB_STATE") {
         val connected = intent.extras?.getBoolean("connected") ?: false
 
-        // Пропускаем начальное системное состояние при старте
         if (isFirstBroadcast) {
           isFirstBroadcast = false
           wasConnected = connected
           return
         }
 
-        // Срабатывает строго в момент вставки кабеля
         if (connected && !wasConnected) {
           if (isEnabled()) {
             try {
-              val model = chatModelInstance
-              if (model != null) {
-                EmergencyKill.purgeAndKill(model, wipeTempMedia = true, clearClipboard = true)
-              } else {
-                Process.killProcess(Process.myPid())
-              }
+              EmergencyKill.purgeAndKill(chatModelInstance, wipeTempMedia = true, clearClipboard = true)
             } catch (_: Exception) {
               Process.killProcess(Process.myPid())
             }
