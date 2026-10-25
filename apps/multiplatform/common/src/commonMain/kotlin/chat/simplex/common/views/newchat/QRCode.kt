@@ -3,12 +3,18 @@ package chat.simplex.common.views.newchat
 import androidx.compose.desktop.ui.tooling.preview.Preview
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.*
-import androidx.compose.ui.platform.*
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import dev.icerock.moko.resources.compose.stringResource
 import boofcv.alg.drawing.FiducialImageEngine
 import boofcv.alg.fiducial.qrcode.*
@@ -18,6 +24,11 @@ import chat.simplex.common.ui.theme.*
 import chat.simplex.common.views.helpers.*
 import chat.simplex.res.MR
 import kotlinx.coroutines.launch
+
+enum class QrDesignStyle {
+  MODERN,
+  CLASSIC
+}
 
 @Composable
 fun SimpleXCreatedLinkQRCode(
@@ -73,48 +84,143 @@ fun QRCode(
   val scope = rememberCoroutineScope()
   val qrSize = if (small) 210.dp else 260.dp
 
-  Box(
+  // Состояние переключения стиля отображения
+  var qrStyle by rememberSaveable { mutableStateOf(QrDesignStyle.MODERN) }
+
+  val errorLevel = if (small) QrCode.ErrorLevel.M else QrCode.ErrorLevel.L
+  val logoSize = if (small) 0.21f else 0.16f
+
+  // Генерация классического битмапа (используется для Classic-режима и для экспорта/шаринга)
+  val classicImage = remember(connReq, errorLevel, tintColor, withLogo) {
+    qrCodeBitmap(connReq, 1024, errorLevel)
+      .replaceColor(Color.Black.toArgb(), tintColor.toArgb())
+      .let { if (withLogo) it.addLogo(logoSize) else it }
+  }
+
+  val shareAction: () -> Unit = {
+    scope.launch {
+      val file = saveTempImageUncompressed(classicImage, true)
+      if (file != null) {
+        shareFile("", CryptoFile.plain(file.absolutePath))
+        onShare?.invoke()
+      }
+    }
+  }
+
+  Column(
     modifier = Modifier
       .fillMaxWidth()
       .padding(padding),
-    contentAlignment = Alignment.Center
+    horizontalAlignment = Alignment.CenterHorizontally
   ) {
-    Material3ExpressiveQRCode(
-      content = connReq,
-      size = qrSize,
-      primaryColor = Color(0xFF191C1E),
-      containerColor = Color.White,
-      modifier = modifier.clickable {
-        scope.launch {
-          val errorLevel = if (small) QrCode.ErrorLevel.M else QrCode.ErrorLevel.L
-          val logoSize = if (small) 0.21f else 0.16f
-          val image = qrCodeBitmap(connReq, 1024, errorLevel)
-            .replaceColor(Color.Black.toArgb(), tintColor.toArgb())
-            .let { if (withLogo) it.addLogo(logoSize) else it }
-          val file = saveTempImageUncompressed(image, true)
-          if (file != null) {
-            shareFile("", CryptoFile.plain(file.absolutePath))
-            onShare?.invoke()
+    // 1. Отображение QR-кода в выбранном стиле
+    Box(
+      modifier = Modifier.size(qrSize),
+      contentAlignment = Alignment.Center
+    ) {
+      if (qrStyle == QrDesignStyle.MODERN) {
+        Material3ExpressiveQRCode(
+          content = connReq,
+          size = qrSize,
+          primaryColor = Color(0xFF191C1E),
+          containerColor = Color.White,
+          modifier = modifier.clickable { shareAction() }
+        )
+      } else {
+        Surface(
+          shape = RoundedCornerShape(24.dp),
+          color = Color.White,
+          elevation = 2.dp,
+          modifier = modifier
+            .size(qrSize)
+            .clip(RoundedCornerShape(24.dp))
+            .clickable { shareAction() }
+        ) {
+          Box(
+            modifier = Modifier
+              .fillMaxSize()
+              .padding(12.dp),
+            contentAlignment = Alignment.Center
+          ) {
+            Image(
+              bitmap = classicImage,
+              contentDescription = stringResource(MR.strings.scan_qr_code),
+              modifier = Modifier.fillMaxSize()
+            )
           }
         }
       }
+    }
+
+    Spacer(Modifier.height(14.dp))
+
+    // 2. Селектор стиля (Modern / Classic)
+    Surface(
+      shape = RoundedCornerShape(percent = 50),
+      color = MaterialTheme.colors.primary.copy(alpha = 0.12f),
+      border = BorderStroke(1.dp, MaterialTheme.colors.primary.copy(alpha = 0.22f))
+    ) {
+      Row(
+        modifier = Modifier.padding(3.dp),
+        verticalAlignment = Alignment.CenterVertically
+      ) {
+        QrStyleChip(
+          text = "Modern",
+          selected = qrStyle == QrDesignStyle.MODERN,
+          onClick = {
+            if (qrStyle != QrDesignStyle.MODERN) {
+              RichHaptics.perform(HapticPattern.SELECTION_CHANGE)
+              qrStyle = QrDesignStyle.MODERN
+            }
+          }
+        )
+
+        QrStyleChip(
+          text = "Classic",
+          selected = qrStyle == QrDesignStyle.CLASSIC,
+          onClick = {
+            if (qrStyle != QrDesignStyle.CLASSIC) {
+              RichHaptics.perform(HapticPattern.SELECTION_CHANGE)
+              qrStyle = QrDesignStyle.CLASSIC
+            }
+          }
+        )
+      }
+    }
+  }
+}
+
+@Composable
+private fun QrStyleChip(
+  text: String,
+  selected: Boolean,
+  onClick: () -> Unit
+) {
+  val primaryColor = MaterialTheme.colors.primary
+  val onSurfaceColor = MaterialTheme.colors.onSurface
+
+  Surface(
+    shape = CircleShape,
+    color = if (selected) primaryColor else Color.Transparent,
+    modifier = Modifier
+      .clip(CircleShape)
+      .clickable(onClick = onClick)
+  ) {
+    Text(
+      text = text,
+      fontSize = 12.5.sp,
+      fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+      color = if (selected) MaterialTheme.colors.onPrimary else onSurfaceColor.copy(alpha = 0.7f),
+      modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp)
     )
   }
 }
 
 fun qrCodeBitmap(content: String, size: Int = 1024, errorLevel: QrCode.ErrorLevel): ImageBitmap {
   val qrCode = QrCodeEncoder().addAutomatic(content).setError(errorLevel).fixate()
-  /** See [QrCodeGeneratorImage.initialize] and [FiducialImageEngine.configure] for size calculation */
   val numModules = QrCode.totalModules(qrCode.version)
-  // Hide border on light themes to make it fit to the same place as camera in QRCodeScanner.
-  // On dark themes better to show the border
   val borderModule = if (CurrentColors.value.colors.isLight) 0 else 1
-  // val calculatedFinalWidth = (pixelsPerModule * numModules) + 2 * (borderModule * pixelsPerModule)
-  // size = (x * numModules) + 2 * (borderModule * x)
-  // size / x = numModules + 2 * borderModule
-  // x = size / (numModules + 2 * borderModule)
   val pixelsPerModule = size / (numModules + 2 * borderModule)
-  // + 1 to make it with better quality
   val renderer = QrCodeGeneratorImage(pixelsPerModule + 1)
   renderer.borderModule = borderModule
   renderer.render(qrCode)
