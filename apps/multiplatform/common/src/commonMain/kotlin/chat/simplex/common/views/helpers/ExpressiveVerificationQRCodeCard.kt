@@ -13,6 +13,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -22,7 +23,6 @@ import androidx.compose.ui.unit.sp
 import dev.icerock.moko.resources.compose.painterResource
 import chat.simplex.common.platform.HapticPattern
 import chat.simplex.common.platform.RichHaptics
-import chat.simplex.common.platform.copyText
 import chat.simplex.res.MR
 
 private val SecurityGreen = Color(0xFF2E7D32)
@@ -117,7 +117,7 @@ fun ExpressiveVerificationQRCodeCard(
             .clip(RoundedCornerShape(12.dp))
             .clickable {
               RichHaptics.perform(HapticPattern.CLICK)
-              clipboard.copyText(verificationUri)
+              clipboard.setText(AnnotatedString(verificationUri))
             }
             .padding(horizontal = 8.dp, vertical = 4.dp)
         ) {
