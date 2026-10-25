@@ -542,6 +542,12 @@ fun ChatInfoLayout(
   val cStats = connStats.value
   val scrollState = rememberScrollState()
   val scope = rememberCoroutineScope()
+
+  // Запрашиваем актуальные истории контакта при входе в его профиль
+  LaunchedEffect(contact.contactId) {
+    StorySyncManager.requestContactStories(contact.contactId)
+  }
+
   KeyChangeEffect(chat.id) {
     scope.launch { scrollState.scrollTo(0) }
   }
