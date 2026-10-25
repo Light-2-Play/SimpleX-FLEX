@@ -29,7 +29,7 @@ android {
         // !!!
         // skip version code after release to F-Droid, as it uses two version codes
         versionCode = (extra["android.version_code"] as String).toInt()
-        versionName = extra["android.version_name"] as String
+        versionName = "7.0.4-Caramel Donut"
 
         testInstrumentationRunner = "android.support.test.runner.AndroidJUnitRunner"
         vectorDrawables {
