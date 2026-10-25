@@ -3,6 +3,7 @@ package chat.simplex.app
 import chat.simplex.common.ui.theme.MonetPalette
 import chat.simplex.common.ui.theme.getMonetPalette
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.lerp
 import android.os.Build
 import android.content.Intent
 import android.net.Uri
@@ -96,37 +97,54 @@ class MainActivity: FragmentActivity() {
 
     MediaQualityManager.init(applicationContext)
 
+    // 2. Палитра Material 3 Expressive: используем чистые тона accent1/accent2 вместо тусклых серых neutral1/neutral2
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
       getMonetPalette = { isDark ->
         if (isDark) {
+          val accentPrimary = Color(getColor(android.R.color.system_accent1_200))
+          val accentSecondary = Color(getColor(android.R.color.system_accent2_200))
+          val baseDark = Color(getColor(android.R.color.system_neutral1_900))
+          val surfaceDark = Color(getColor(android.R.color.system_neutral1_800))
+
           MonetPalette(
-            primary = androidx.compose.ui.graphics.Color(getColor(android.R.color.system_accent1_200)),
-            primaryVariant = androidx.compose.ui.graphics.Color(getColor(android.R.color.system_accent1_300)),
-            background = androidx.compose.ui.graphics.Color(getColor(android.R.color.system_neutral1_900)),
-            surface = androidx.compose.ui.graphics.Color(getColor(android.R.color.system_neutral1_800)),
-            onPrimary = androidx.compose.ui.graphics.Color(getColor(android.R.color.system_accent1_900)),
-            onBackground = androidx.compose.ui.graphics.Color(getColor(android.R.color.system_neutral1_100)),
-            onSurface = androidx.compose.ui.graphics.Color(getColor(android.R.color.system_neutral1_100)),
-            sentMessage = androidx.compose.ui.graphics.Color(getColor(android.R.color.system_accent2_800)),
-            sentQuote = androidx.compose.ui.graphics.Color(getColor(android.R.color.system_accent2_700)),
-            receivedMessage = androidx.compose.ui.graphics.Color(getColor(android.R.color.system_neutral2_800)),
-            receivedQuote = androidx.compose.ui.graphics.Color(getColor(android.R.color.system_neutral2_700)),
-            primaryVariant2 = androidx.compose.ui.graphics.Color(getColor(android.R.color.system_accent1_200))
+            primary = accentPrimary,
+            primaryVariant = Color(getColor(android.R.color.system_accent1_300)),
+            // Глубокий фон с мягким бархатным оттенком основного тона
+            background = lerp(baseDark, accentPrimary, 0.045f),
+            // Выразительная тонированная поверхность без серой пыли
+            surface = lerp(surfaceDark, accentPrimary, 0.12f),
+            onPrimary = Color(getColor(android.R.color.system_accent1_900)),
+            onBackground = Color(getColor(android.R.color.system_neutral1_50)),
+            onSurface = Color(getColor(android.R.color.system_neutral1_50)),
+            // Сочные, но комфортные для глаз пузыри сообщений в темной теме
+            sentMessage = lerp(Color(getColor(android.R.color.system_accent1_800)), accentPrimary, 0.18f),
+            sentQuote = Color(getColor(android.R.color.system_accent1_700)),
+            receivedMessage = lerp(surfaceDark, accentSecondary, 0.14f),
+            receivedQuote = lerp(surfaceDark, accentSecondary, 0.24f),
+            primaryVariant2 = Color(getColor(android.R.color.system_accent2_700))
           )
         } else {
+          val accentPrimary = Color(getColor(android.R.color.system_accent1_600))
+          val accentSoft = Color(getColor(android.R.color.system_accent1_100))
+          val accent2Soft = Color(getColor(android.R.color.system_accent2_100))
+
           MonetPalette(
-            primary = androidx.compose.ui.graphics.Color(getColor(android.R.color.system_accent1_600)),
-            primaryVariant = androidx.compose.ui.graphics.Color(getColor(android.R.color.system_accent1_100)),
-            background = androidx.compose.ui.graphics.Color(getColor(android.R.color.system_neutral1_50)),
-            surface = androidx.compose.ui.graphics.Color(getColor(android.R.color.system_neutral1_100)),
-            onPrimary = androidx.compose.ui.graphics.Color(getColor(android.R.color.system_accent1_0)),
-            onBackground = androidx.compose.ui.graphics.Color(getColor(android.R.color.system_neutral1_900)),
-            onSurface = androidx.compose.ui.graphics.Color(getColor(android.R.color.system_neutral1_900)),
-            sentMessage = androidx.compose.ui.graphics.Color(getColor(android.R.color.system_accent1_100)),
-            sentQuote = androidx.compose.ui.graphics.Color(getColor(android.R.color.system_accent1_200)),
-            receivedMessage = androidx.compose.ui.graphics.Color(getColor(android.R.color.system_neutral2_100)),
-            receivedQuote = androidx.compose.ui.graphics.Color(getColor(android.R.color.system_neutral2_200)),
-            primaryVariant2 = androidx.compose.ui.graphics.Color(getColor(android.R.color.system_accent1_900))
+            primary = accentPrimary,
+            primaryVariant = Color(getColor(android.R.color.system_accent1_500)),
+            // Чистый сливочно-пастельный холст вместо серого neutral1_50
+            background = lerp(Color.White, accentSoft, 0.35f),
+            // Мягкая пастельная карточка M3 Expressive
+            surface = lerp(Color.White, accentSoft, 0.65f),
+            onPrimary = Color.White,
+            onBackground = Color(getColor(android.R.color.system_neutral1_900)),
+            onSurface = Color(getColor(android.R.color.system_neutral1_900)),
+            // Чистые пастельные облачка сообщений без серого оттенка
+            sentMessage = lerp(Color.White, accentSoft, 0.85f),
+            sentQuote = Color(getColor(android.R.color.system_accent1_200)),
+            receivedMessage = lerp(Color.White, accent2Soft, 0.55f),
+            receivedQuote = lerp(Color.White, accent2Soft, 0.85f),
+            // Исправлено: светлый пастельный контейнер вместо черного accent1_900
+            primaryVariant2 = accentSoft
           )
         }
       }
@@ -263,7 +281,7 @@ class MainActivity: FragmentActivity() {
 }
 
 // =====================================================================
-// MONET COLORS FOR SINGBOX DIALOG
+// MONET COLORS FOR SINGBOX DIALOG (M3 EXPRESSIVE)
 // =====================================================================
 data class DirectMonetColors(
   val surface: Color,
@@ -283,54 +301,59 @@ fun rememberDirectMonetColors(context: android.content.Context = androidx.compos
   return remember(isLight) {
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
       if (isLight) {
+        val primary = Color(ContextCompat.getColor(context, android.R.color.system_accent1_600))
+        val accentSoft = Color(ContextCompat.getColor(context, android.R.color.system_accent1_100))
         DirectMonetColors(
-          surface = Color(ContextCompat.getColor(context, android.R.color.system_neutral1_50)),
-          background = Color(ContextCompat.getColor(context, android.R.color.system_neutral1_100)),
+          surface = lerp(Color.White, accentSoft, 0.28f),
+          background = lerp(Color.White, accentSoft, 0.55f),
           onSurface = Color(ContextCompat.getColor(context, android.R.color.system_neutral1_900)),
-          onSurfaceVariant = Color(ContextCompat.getColor(context, android.R.color.system_neutral2_700)),
-          primary = Color(ContextCompat.getColor(context, android.R.color.system_accent1_600)),
-          onPrimary = Color(ContextCompat.getColor(context, android.R.color.system_accent1_0)),
-          primaryContainer = Color(ContextCompat.getColor(context, android.R.color.system_accent1_100)),
+          onSurfaceVariant = Color(ContextCompat.getColor(context, android.R.color.system_accent2_700)),
+          primary = primary,
+          onPrimary = Color.White,
+          primaryContainer = accentSoft,
           onPrimaryContainer = Color(ContextCompat.getColor(context, android.R.color.system_accent1_900)),
-          outline = Color(ContextCompat.getColor(context, android.R.color.system_neutral2_500)).copy(alpha = 0.5f)
+          outline = primary.copy(alpha = 0.22f)
         )
       } else {
+        val primary = Color(ContextCompat.getColor(context, android.R.color.system_accent1_200))
+        val baseSurface = Color(ContextCompat.getColor(context, android.R.color.system_neutral1_800))
+        val baseBg = Color(ContextCompat.getColor(context, android.R.color.system_neutral1_900))
         DirectMonetColors(
-          surface = Color(ContextCompat.getColor(context, android.R.color.system_neutral1_800)),
-          background = Color(ContextCompat.getColor(context, android.R.color.system_neutral1_900)),
-          onSurface = Color(ContextCompat.getColor(context, android.R.color.system_neutral1_100)),
-          onSurfaceVariant = Color(ContextCompat.getColor(context, android.R.color.system_neutral2_200)),
-          primary = Color(ContextCompat.getColor(context, android.R.color.system_accent1_200)),
+          surface = lerp(baseSurface, primary, 0.12f),
+          background = lerp(baseBg, primary, 0.05f),
+          onSurface = Color(ContextCompat.getColor(context, android.R.color.system_neutral1_50)),
+          onSurfaceVariant = Color(ContextCompat.getColor(context, android.R.color.system_accent2_200)),
+          primary = primary,
           onPrimary = Color(ContextCompat.getColor(context, android.R.color.system_accent1_900)),
-          primaryContainer = Color(ContextCompat.getColor(context, android.R.color.system_accent1_700)).copy(alpha = 0.45f),
+          primaryContainer = Color(ContextCompat.getColor(context, android.R.color.system_accent1_700)).copy(alpha = 0.55f),
           onPrimaryContainer = Color(ContextCompat.getColor(context, android.R.color.system_accent1_100)),
-          outline = Color(ContextCompat.getColor(context, android.R.color.system_neutral2_400)).copy(alpha = 0.5f)
+          outline = primary.copy(alpha = 0.25f)
         )
       }
     } else {
       if (isLight) {
         DirectMonetColors(
           surface = Color.White,
-          background = Color(0xFFF5F5F5),
-          onSurface = Color.Black,
-          onSurfaceVariant = Color.DarkGray,
+          background = Color(0xFFF6F2FA),
+          onSurface = Color(0xFF1C1B1F),
+          onSurfaceVariant = Color(0xFF49454F),
           primary = Color(0xFF6750A4),
           onPrimary = Color.White,
           primaryContainer = Color(0xFFEADDFF),
           onPrimaryContainer = Color(0xFF21005D),
-          outline = Color.Gray
+          outline = Color(0xFF79747E).copy(alpha = 0.3f)
         )
       } else {
         DirectMonetColors(
-          surface = Color(0xFF1E1E1E),
-          background = Color(0xFF121212),
-          onSurface = Color.White,
-          onSurfaceVariant = Color.LightGray,
-          primary = Color(0xFFA8C7FA),
-          onPrimary = Color.Black,
-          primaryContainer = Color(0xFF004A77),
-          onPrimaryContainer = Color(0xFFC2E7FF),
-          outline = Color.Gray
+          surface = Color(0xFF211F26),
+          background = Color(0xFF141218),
+          onSurface = Color(0xFFE6E1E5),
+          onSurfaceVariant = Color(0xFFCAC4D0),
+          primary = Color(0xFFD0BCFF),
+          onPrimary = Color(0xFF381E72),
+          primaryContainer = Color(0xFF4F378B),
+          onPrimaryContainer = Color(0xFFEADDFF),
+          outline = Color(0xFF938F99).copy(alpha = 0.3f)
         )
       }
     }
@@ -355,7 +378,7 @@ fun SingBoxComposeDialogs(activity: MainActivity) {
         elevation = 6.dp,
         modifier = Modifier
           .fillMaxWidth()
-          .border(1.dp, monet.outline.copy(alpha = 0.15f), RoundedCornerShape(28.dp))
+          .border(1.dp, monet.outline, RoundedCornerShape(28.dp))
       ) {
         Column(modifier = Modifier.padding(24.dp)) {
           val modeLabel = if (SingBoxService.isCustomMode(activity)) "Custom VLESS" else "Auto Selection"
@@ -494,7 +517,7 @@ fun SingBoxComposeDialogs(activity: MainActivity) {
         elevation = 6.dp,
         modifier = Modifier
           .fillMaxWidth()
-          .border(1.dp, monet.outline.copy(alpha = 0.15f), RoundedCornerShape(28.dp))
+          .border(1.dp, monet.outline, RoundedCornerShape(28.dp))
       ) {
         Column(modifier = Modifier.padding(24.dp)) {
           Text(
@@ -523,7 +546,7 @@ fun SingBoxComposeDialogs(activity: MainActivity) {
               .fillMaxWidth()
               .height(120.dp)
               .clip(RoundedCornerShape(16.dp))
-              .border(1.dp, monet.outline.copy(alpha = 0.3f), RoundedCornerShape(16.dp)),
+              .border(1.dp, monet.outline, RoundedCornerShape(16.dp)),
             maxLines = 5
           )
 
