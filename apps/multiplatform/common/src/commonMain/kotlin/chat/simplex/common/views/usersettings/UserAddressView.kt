@@ -325,18 +325,8 @@ fun ExpressiveQRCodeCard(
         }
       }
 
-      Surface(
-        shape = RoundedCornerShape(24.dp),
-        color = Color.White,
-        elevation = 0.dp
-      ) {
-        Box(
-          modifier = Modifier.padding(14.dp),
-          contentAlignment = Alignment.Center
-        ) {
-          content()
-        }
-      }
+      // Непосредственный вызов Expressive QR-кода без лишней промежуточной подложки
+      content()
 
       if (onShareClick != null || onShareViaChatClick != null) {
         Row(
@@ -469,7 +459,12 @@ private fun UserAddressLayout(
             style = MaterialTheme.typography.body1
           )
           ExpressiveQRCodeCard {
-            SimpleXCreatedLinkQRCode(userAddress.connLinkContact, short = showShortLink.value)
+            Material3ExpressiveQRCode(
+              content = userAddress.connLinkContact.simplexChatUri(short = showShortLink.value),
+              size = 250.dp,
+              primaryColor = Color(0xFF191C1E),
+              containerColor = Color.White
+            )
           }
         } else {
           val addressSettingsState = remember { mutableStateOf(AddressSettingsState(settings = userAddress.addressSettings)) }
@@ -496,7 +491,12 @@ private fun UserAddressLayout(
               if (userAddress.shouldBeUpgraded) showAddShortLinkAlert { shareViaChat() } else shareViaChat()
             }
           ) {
-            SimpleXCreatedLinkQRCode(userAddress.connLinkContact, short = showShortLink.value)
+            Material3ExpressiveQRCode(
+              content = userAddress.connLinkContact.simplexChatUri(short = showShortLink.value),
+              size = 250.dp,
+              primaryColor = Color(0xFF191C1E),
+              containerColor = Color.White
+            )
           }
 
           if (userAddress.shouldBeUpgraded) {
