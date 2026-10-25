@@ -183,7 +183,12 @@ fun UserProfileLayout(
           ) {
             Box(contentAlignment = Alignment.TopEnd) {
               Box(contentAlignment = Alignment.Center) {
-                ProfileImage(108.dp, profileImage.value, color = MaterialTheme.colors.secondary.copy(alpha = 0.1f))
+               StoryAvatarContainer(
+  contactId = null, // null = свои истории
+  avatarSize = 108.dp
+) {
+  ProfileImage(108.dp, profileImage.value, color = MaterialTheme.colors.secondary.copy(alpha = 0.1f))
+}
                 EditImageButton { scope.launch { bottomSheetModalState.show() } }
               }
               if (profileImage.value != null) {
