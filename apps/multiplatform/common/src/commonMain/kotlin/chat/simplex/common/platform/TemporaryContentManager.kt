@@ -108,6 +108,44 @@ object TemporaryContentManager {
     }
   }
 
+/**
+   * Добавление нового Фото или Видео напрямую из массива байтов (для системного галерейного пикера)
+   */
+  fun addContentFromBytes(
+    bytes: ByteArray,
+    mediaType: TemporaryMediaType,
+    duration: TemporaryDuration,
+    caption: String = ""
+  ): TemporaryContentItem? {
+    if (storageDir == null) initStorage()
+    val dir = storageDir ?: return null
+
+    return try {
+      val ext = if (mediaType == TemporaryMediaType.VIDEO) "mp4" else "jpg"
+      val id = UUID.randomUUID().toString()
+      val destFile = File(dir, "temp_${id}.$ext")
+      destFile.writeBytes(bytes)
+
+      val now = System.currentTimeMillis()
+      val newItem = TemporaryContentItem(
+        id = id,
+        filePath = destFile.absolutePath,
+        mediaType = mediaType,
+        createdAtMillis = now,
+        expiresAtMillis = now + duration.durationMillis,
+        durationHours = duration.hours,
+        caption = caption
+      )
+
+      val updated = (_items.value + newItem).sortedByDescending { it.createdAtMillis }
+      _items.value = updated
+      saveToDisk(updated)
+      newItem
+    } catch (e: Exception) {
+      Log.e(TAG, "Failed to add temporary content from bytes: ${e.message}")
+      null
+    }
+  }
   /**
    * Добавление нового Фото или Видео в Temporary Content
    */
