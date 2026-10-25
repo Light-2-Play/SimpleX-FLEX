@@ -1,8 +1,11 @@
 package chat.simplex.common.views.chat
 
+import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.desktop.ui.tooling.preview.Preview
 import androidx.compose.foundation.*
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.*
@@ -12,9 +15,13 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.*
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.graphics.*
 import androidx.compose.ui.graphics.painter.Painter
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.positionChange
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.*
@@ -29,6 +36,10 @@ import dev.icerock.moko.resources.compose.stringResource
 import dev.icerock.moko.resources.compose.painterResource
 import kotlinx.coroutines.*
 import java.net.URI
+
+enum class RecordMediaMode {
+  VOICE, VIDEO
+}
 
 // Spec: spec/client/compose.md#SendMsgView
 @Composable
@@ -63,7 +74,7 @@ fun SendMsgView(
   onMessageChange: (ComposeMessage) -> Unit,
   textStyle: MutableState<TextStyle>,
   focusRequester: FocusRequester? = null,
-  ) {
+) {
   val showCustomDisappearingMessageDialog = remember { mutableStateOf(false) }
   val padding = if (appPlatform.isAndroid) PaddingValues(vertical = 8.dp) else PaddingValues(top = 3.dp, bottom = 4.dp)
   Box(Modifier.padding(padding)) {
@@ -125,7 +136,6 @@ fun SendMsgView(
       val sendButtonAlpha = remember { Animatable(1f) }
       val scope = rememberCoroutineScope()
       LaunchedEffect(Unit) {
-        // Making LiveMessage alive when screen orientation was changed
         if (cs.liveMessage != null && sendLiveMessage != null && updateLiveMessage != null) {
           startLiveMessage(scope, sendLiveMessage, updateLiveMessage, sendButtonSize, sendButtonAlpha, composeState, liveMessageAlertShown)
         }
@@ -210,31 +220,6 @@ fun SendMsgView(
                   )
                 }
               }
-              // hidden until message signing is user-facing (recipient-only stage)
-//              if (showSign && !cs.editing) {
-//                menuItems.add {
-//                  ItemAction(
-//                    generalGetString(MR.strings.sign_message),
-//                    painterResource(MR.images.ic_verified),
-//                    onClick = {
-//                      if (signMessageAlertShown.state.value) {
-//                        sendSignedMessage()
-//                      } else {
-//                        AlertManager.shared.showAlertDialog(
-//                          title = generalGetString(MR.strings.sign_message),
-//                          text = generalGetString(MR.strings.sign_message_desc),
-//                          confirmText = generalGetString(MR.strings.send_verb),
-//                          onConfirm = {
-//                            signMessageAlertShown.set(true)
-//                            sendSignedMessage()
-//                          }
-//                        )
-//                      }
-//                      showDropdown.value = false
-//                    }
-//                  )
-//                }
-//              }
             }
 
             return menuItems
@@ -322,52 +307,237 @@ private fun BoxScope.DeleteTextButton(composeState: MutableState<ComposeState>) 
 }
 
 @Composable
-private fun RecordVoiceView(recState: MutableState<RecordingState>, stopRecOnNextClick: MutableState<Boolean>) {
+private fun RecordVoiceView(
+  recState: MutableState<RecordingState>,
+  stopRecOnNextClick: MutableState<Boolean>
+) {
   val rec: RecorderInterface = remember { RecorderNative() }
   DisposableEffect(Unit) { onDispose { rec.stop() } }
+
+  var recordMode by rememberSaveable { mutableStateOf(RecordMediaMode.VOICE) }
+  var isHoldingToRecord by remember { mutableStateOf(false) }
+  var dragOffsetY by remember { mutableStateOf(0f) }
+  var dragOffsetX by remember { mutableStateOf(0f) }
+
   val stopRecordingAndAddAudio: () -> Unit = {
     recState.value.filePathNullable?.let {
       recState.value = RecordingState.Finished(it, rec.stop())
     }
   }
-  if (stopRecOnNextClick.value) {
-    LaunchedEffect(recState.value) {
-      if (recState.value is RecordingState.NotStarted) {
-        stopRecOnNextClick.value = false
+
+  val cancelRecording: () -> Unit = {
+    rec.stop()
+    recState.value = RecordingState.NotStarted
+    stopRecOnNextClick.value = false
+    isHoldingToRecord = false
+  }
+
+  val startRecording: () -> Unit = {
+    val filePath = rec.start { progress: Int?, finished: Boolean ->
+      val state = recState.value
+      if (state is RecordingState.Started && progress != null) {
+        recState.value = if (!finished)
+          RecordingState.Started(state.filePath, progress)
+        else
+          RecordingState.Finished(state.filePath, progress)
       }
     }
-    // Lock orientation to current orientation because screen rotation will break the recording
+    if (filePath.isNotEmpty()) {
+      recState.value = RecordingState.Started(filePath = filePath)
+    }
+  }
+
+  val density = LocalDensity.current
+  val lockThresholdPx = with(density) { 56.dp.toPx() }
+  val cancelThresholdPx = with(density) { 70.dp.toPx() }
+  val lockProgress = (-dragOffsetY / lockThresholdPx).coerceIn(0f, 1f)
+
+  val isLocked = stopRecOnNextClick.value
+  val isRecordingActive = recState.value is RecordingState.Started
+
+  LaunchedEffect(recState.value) {
+    if (recState.value is RecordingState.NotStarted) {
+      stopRecOnNextClick.value = false
+      isHoldingToRecord = false
+      dragOffsetY = 0f
+      dragOffsetX = 0f
+    }
+  }
+
+  if (isLocked) {
     LockToCurrentOrientationUntilDispose()
-    StopRecordButton(stopRecordingAndAddAudio)
-  } else {
-    val startRecording: () -> Unit = {
-      val filePath = rec.start { progress: Int?, finished: Boolean ->
-        val state = recState.value
-        if (state is RecordingState.Started && progress != null) {
-          recState.value = if (!finished)
-            RecordingState.Started(state.filePath, progress)
-          else
-            RecordingState.Finished(state.filePath, progress)
+  }
+
+  Box(
+    modifier = Modifier.wrapContentSize(),
+    contentAlignment = Alignment.Center
+  ) {
+    // 1. FLOATING LOCK PILL (ПОЯВЛЯЕТСЯ НАД КНОПКОЙ ПРИ УДЕРЖАНИИ)
+    AnimatedVisibility(
+      visible = isHoldingToRecord && !isLocked && isRecordingActive,
+      enter = fadeIn(tween(140)) + slideInVertically(initialOffsetY = { it / 2 }),
+      exit = fadeOut(tween(140)) + scaleOut()
+    ) {
+      val lockOffsetPx = with(density) { (-64).dp.toPx() } + (dragOffsetY * 0.25f)
+      val lockScale = 1f + (lockProgress * 0.18f)
+
+      Surface(
+        modifier = Modifier
+          .offset { IntOffset(0, lockOffsetPx.toInt()) }
+          .scale(lockScale)
+          .width(36.dp)
+          .height(54.dp)
+          .border(
+            width = 1.dp,
+            color = MaterialTheme.colors.primary.copy(alpha = 0.25f + lockProgress * 0.5f),
+            shape = RoundedCornerShape(percent = 50)
+          ),
+        shape = RoundedCornerShape(percent = 50),
+        color = MaterialTheme.colors.surface,
+        elevation = 4.dp
+      ) {
+        Column(
+          modifier = Modifier.fillMaxSize().padding(vertical = 6.dp),
+          horizontalAlignment = Alignment.CenterHorizontally,
+          verticalArrangement = Arrangement.SpaceBetween
+        ) {
+          Icon(
+            painter = painterResource(
+              if (lockProgress >= 0.85f) MR.images.ic_lock_filled else MR.images.ic_lock
+            ),
+            contentDescription = null,
+            tint = if (lockProgress >= 0.85f) MaterialTheme.colors.primary else MaterialTheme.colors.onSurface.copy(alpha = 0.65f),
+            modifier = Modifier.size(16.dp)
+          )
+          Icon(
+            painter = painterResource(MR.images.ic_arrow_upward),
+            contentDescription = null,
+            tint = MaterialTheme.colors.primary.copy(alpha = (1f - lockProgress).coerceIn(0.25f, 0.85f)),
+            modifier = Modifier.size(12.dp)
+          )
         }
-      }
-      if (filePath.isNotEmpty()) {
-        recState.value = RecordingState.Started(filePath = filePath)
       }
     }
-    val interactionSource = interactionSourceWithTapDetection(
-      onPress = { if (recState.value is RecordingState.NotStarted) startRecording() },
-      onClick = {
-        if (stopRecOnNextClick.value) {
-          stopRecordingAndAddAudio()
-        } else {
-          // tapped and didn't hold a finger
-          stopRecOnNextClick.value = true
-        }
-      },
-      onCancel = stopRecordingAndAddAudio,
-      onRelease = stopRecordingAndAddAudio
+
+    // 2. ОСНОВНАЯ КНОПКА ЗАПИСИ
+    val buttonScale by animateFloatAsState(
+      targetValue = if (isHoldingToRecord && !isLocked) 1.25f else 1f,
+      animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessLow)
     )
-    RecordVoiceButton(interactionSource)
+
+    Box(
+      modifier = Modifier
+        .size(36.dp)
+        .scale(buttonScale)
+        .clip(CircleShape)
+        .background(
+          if (isLocked) MaterialTheme.colors.primary
+          else if (isHoldingToRecord) MaterialTheme.colors.primary.copy(alpha = 0.15f)
+          else Color.Transparent
+        )
+        .pointerInput(recordMode, isLocked) {
+          awaitEachGesture {
+            val down = awaitFirstDown(requireUnconsumed = false)
+
+            if (isLocked) {
+              do {
+                val event = awaitPointerEvent()
+              } while (event.changes.any { it.pressed })
+              RichHaptics.perform(HapticPattern.RECORD_STOP)
+              stopRecordingAndAddAudio()
+              return@awaitEachGesture
+            }
+
+            dragOffsetY = 0f
+            dragOffsetX = 0f
+
+            val upChange = withTimeoutOrNull(220L) {
+              do {
+                val event = awaitPointerEvent()
+                val change = event.changes.firstOrNull { it.id == down.id }
+                if (change == null || !change.pressed) return@withTimeoutOrNull change
+              } while (true)
+              null
+            }
+
+            if (upChange != null) {
+              // Короткий тап: переключение Микрофон <-> Камера
+              RichHaptics.perform(HapticPattern.SELECTION_CHANGE)
+              recordMode = if (recordMode == RecordMediaMode.VOICE) RecordMediaMode.VIDEO else RecordMediaMode.VOICE
+            } else {
+              // Удержание (>= 220 мс): запуск записи
+              isHoldingToRecord = true
+              RichHaptics.perform(HapticPattern.RECORD_START)
+              startRecording()
+
+              var lockedByDrag = false
+              var cancelledByDrag = false
+
+              do {
+                val event = awaitPointerEvent()
+                val change = event.changes.firstOrNull { it.id == down.id } ?: break
+
+                if (change.pressed) {
+                  val delta = change.positionChange()
+                  dragOffsetY = (dragOffsetY + delta.y).coerceAtMost(0f)
+                  dragOffsetX = (dragOffsetX + delta.x).coerceAtMost(0f)
+                  change.consume()
+
+                  // Свайп вверх к замочку (>= 56.dp) -> фиксация записи без удержания
+                  if (dragOffsetY <= -lockThresholdPx && !lockedByDrag) {
+                    lockedByDrag = true
+                    stopRecOnNextClick.value = true
+                    RichHaptics.perform(HapticPattern.TOGGLE_ON)
+                    break
+                  }
+
+                  // Свайп влево (>= 70.dp) -> отмена записи
+                  if (dragOffsetX <= -cancelThresholdPx && !cancelledByDrag) {
+                    cancelledByDrag = true
+                    RichHaptics.perform(HapticPattern.TOGGLE_OFF)
+                    cancelRecording()
+                    break
+                  }
+                }
+              } while (event.changes.any { it.pressed && it.id == down.id })
+
+              isHoldingToRecord = false
+              dragOffsetY = 0f
+              dragOffsetX = 0f
+
+              // Отпустили палец без фиксации замочка и без отмены -> отправить
+              if (!lockedByDrag && !cancelledByDrag) {
+                RichHaptics.perform(HapticPattern.RECORD_STOP)
+                stopRecordingAndAddAudio()
+              }
+            }
+          }
+        },
+      contentAlignment = Alignment.Center
+    ) {
+      if (isLocked) {
+        Icon(
+          painter = painterResource(MR.images.ic_stop_filled),
+          contentDescription = stringResource(MR.strings.icon_descr_record_voice_message),
+          tint = Color.White,
+          modifier = Modifier.size(36.dp).padding(6.dp)
+        )
+      } else {
+        Crossfade(targetState = recordMode, animationSpec = tween(150)) { mode ->
+          val iconPainter = if (mode == RecordMediaMode.VOICE) {
+            painterResource(MR.images.ic_keyboard_voice_filled)
+          } else {
+            painterResource(MR.images.ic_videocam)
+          }
+          Icon(
+            painter = iconPainter,
+            contentDescription = stringResource(MR.strings.icon_descr_record_voice_message),
+            tint = MaterialTheme.colors.primary,
+            modifier = Modifier.size(34.dp).padding(4.dp)
+          )
+        }
+      }
+    }
   }
 }
 
@@ -596,11 +766,7 @@ private fun showDisabledVoiceAlert(isDirectChat: Boolean) {
   )
 }
 
-@Preview/*(
-  uiMode = Configuration.UI_MODE_NIGHT_YES,
-  showBackground = true,
-  name = "Dark Mode"
-)*/
+@Preview
 @Composable
 fun PreviewSendMsgView() {
   val smallFont = MaterialTheme.typography.body1.copy(color = MaterialTheme.colors.onBackground)
@@ -630,11 +796,7 @@ fun PreviewSendMsgView() {
   }
 }
 
-@Preview/*(
-  uiMode = Configuration.UI_MODE_NIGHT_YES,
-  showBackground = true,
-  name = "Dark Mode"
-)*/
+@Preview
 @Composable
 fun PreviewSendMsgViewEditing() {
   val smallFont = MaterialTheme.typography.body1.copy(color = MaterialTheme.colors.onBackground)
@@ -665,11 +827,7 @@ fun PreviewSendMsgViewEditing() {
   }
 }
 
-@Preview/*(
-  uiMode = Configuration.UI_MODE_NIGHT_YES,
-  showBackground = true,
-  name = "Dark Mode"
-)*/
+@Preview
 @Composable
 fun PreviewSendMsgViewInProgress() {
   val smallFont = MaterialTheme.typography.body1.copy(color = MaterialTheme.colors.onBackground)
