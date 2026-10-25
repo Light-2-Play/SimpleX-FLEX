@@ -146,7 +146,7 @@ private fun ExpressiveVerificationQRCodeCard(
   onConfirmVerification: () -> Unit,
   onClearVerification: () -> Unit
 ) {
-  // Для верификации по умолчанию ставим CLASSIC (чтобы сканер считывал мгновенно)
+  // Для верификации по умолчанию ставим CLASSIC (для надежного считывания камерой)
   var qrStyle by rememberSaveable { mutableStateOf(QrDesignStyle.CLASSIC) }
   val clipboardManager = LocalClipboardManager.current
 
@@ -163,7 +163,6 @@ private fun ExpressiveVerificationQRCodeCard(
     if (isLight) 0.14f else 0.20f
   )
 
-  // Генерация 100% совместимого растрового изображения без центральных логотипов
   val classicQrBitmap = remember(verificationUri) {
     qrCodeBitmap(verificationUri, 1024, QrCode.ErrorLevel.M)
       .replaceColor(Color.Black.toArgb(), Color(0xFF191C1E).toArgb())
@@ -232,7 +231,7 @@ private fun ExpressiveVerificationQRCodeCard(
             Box(
               modifier = Modifier
                 .fillMaxSize()
-                .padding(14.dp), // Quiet Zone, критическая для работы сканера
+                .padding(14.dp), // Белая Quiet Zone для надежного сканирования
               contentAlignment = Alignment.Center
             ) {
               Image(
@@ -299,7 +298,7 @@ private fun ExpressiveVerificationQRCodeCard(
         }
       }
 
-      // 4. Текстовый отпечаток (Safety Number) с возможностью копирования по клику
+      // 4. Текстовый отпечаток с копированием по тапу
       Surface(
         shape = RoundedCornerShape(16.dp),
         color = primary.copy(alpha = 0.08f),
@@ -309,7 +308,6 @@ private fun ExpressiveVerificationQRCodeCard(
           .clickable {
             RichHaptics.perform(HapticPattern.CLICK)
             clipboardManager.setText(AnnotatedString(verificationUri))
-            AlertManager.shared.showNoticeMsg(generalGetString(MR.strings.copied_to_clipboard))
           }
       ) {
         Column(
@@ -333,7 +331,7 @@ private fun ExpressiveVerificationQRCodeCard(
         }
       }
 
-      // 5. Кнопки действий: Scan Contact QR / Mark Verified / Clear Verification
+      // 5. Кнопки действий
       Column(
         modifier = Modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(8.dp)
