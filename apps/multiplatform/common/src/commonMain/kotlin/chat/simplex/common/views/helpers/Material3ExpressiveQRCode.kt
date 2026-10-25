@@ -2,7 +2,6 @@ package chat.simplex.common.views.helpers
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.MaterialTheme
@@ -18,67 +17,80 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import com.google.zxing.BarcodeFormat
-import com.google.zxing.EncodeHintType
-import com.google.zxing.qrcode.QRCodeWriter
-import com.google.zxing.qrcode.decoder.ErrorCorrectionLevel
+import boofcv.alg.fiducial.qrcode.QrCode
+import boofcv.alg.fiducial.qrcode.QrCodeEncoder
+import boofcv.alg.fiducial.qrcode.QrCodeGeneratorImage
 
 @Composable
 fun Material3ExpressiveQRCode(
   content: String,
   modifier: Modifier = Modifier,
-  size: Dp = 260.dp,
-  primaryColor: Color = MaterialTheme.colors.primary,
-  backgroundColor: Color = MaterialTheme.colors.surface,
-  containerColor: Color = MaterialTheme.colors.background
+  size: Dp = 250.dp,
+  primaryColor: Color = Color(0xFF191C1E),
+  backgroundColor: Color = Color.White,
+  containerColor: Color = Color.White
 ) {
-  val bitMatrix = remember(content) {
-    if (content.isEmpty()) null
-    else {
-      val hints = mapOf(
-        EncodeHintType.ERROR_CORRECTION to ErrorCorrectionLevel.Q,
-        EncodeHintType.MARGIN to 0
-      )
-      try {
-        QRCodeWriter().encode(content, BarcodeFormat.QR_CODE, 0, 0, hints)
-      } catch (_: Exception) {
-        null
+  // Генерация битовой матрицы через встроенный в проект BoofCV
+  val matrixData = remember(content) {
+    if (content.isBlank()) return@remember null
+    try {
+      val qrCode = QrCodeEncoder().addAutomatic(content).setError(QrCode.ErrorLevel.M).fixate()
+      val numModules = QrCode.totalModules(qrCode.version)
+      val renderer = QrCodeGeneratorImage(1)
+      renderer.borderModule = 0
+      renderer.render(qrCode)
+      val gray = renderer.gray
+
+      val matrix = Array(numModules) { y ->
+        BooleanArray(numModules) { x ->
+          gray.get(x, y) < 128 // 0 — черный пиксель модуля, 255 — белый фон
+        }
       }
+      Pair(numModules, matrix)
+    } catch (_: Exception) {
+      null
     }
   }
 
-  if (bitMatrix == null) return
+  if (matrixData == null) {
+    Box(modifier = modifier.size(size))
+    return
+  }
 
-  val matrixWidth = bitMatrix.width
-  val matrixHeight = bitMatrix.height
+  val (numModules, matrix) = matrixData
 
+  // Expressive-контейнер со скруглением 28.dp и безопасной зоной отступов (Quiet Zone)
   Box(
     modifier = modifier
       .size(size)
-      .clip(RoundedCornerShape(32.dp))
+      .clip(RoundedCornerShape(28.dp))
       .background(containerColor)
-      .border(1.dp, MaterialTheme.colors.onSurface.copy(alpha = 0.08f), RoundedCornerShape(32.dp))
-      .padding(20.dp),
+      .padding(16.dp),
     contentAlignment = Alignment.Center
   ) {
-    Canvas(modifier = Modifier.fillMaxSize()) {
-      val cellSize = this.size.width / matrixWidth
+    Canvas(
+      modifier = Modifier
+        .fillMaxSize()
+        .aspectRatio(1f)
+    ) {
+      val cellSize = this.size.width / numModules.toFloat()
 
+      // Проверка принадлежности к трем угловым поисковым маркерам (7x7)
       fun isFinderPattern(x: Int, y: Int): Boolean {
         val inTopLeft = (x in 0..6) && (y in 0..6)
-        val inTopRight = (x in (matrixWidth - 7) until matrixWidth) && (y in 0..6)
-        val inBottomLeft = (x in 0..6) && (y in (matrixHeight - 7) until matrixHeight)
+        val inTopRight = (x in (numModules - 7) until numModules) && (y in 0..6)
+        val inBottomLeft = (x in 0..6) && (y in (numModules - 7) until numModules)
         return inTopLeft || inTopRight || inBottomLeft
       }
 
-      // 1. Точки данных (Data Dots) со скруглением
-      for (x in 0 until matrixWidth) {
-        for (y in 0 until matrixHeight) {
-          if (bitMatrix.get(x, y) && !isFinderPattern(x, y)) {
+      // 1. Отрисовка тела данных (мягкие скругленные сквирклы)
+      for (y in 0 until numModules) {
+        for (x in 0 until numModules) {
+          if (matrix[y][x] && !isFinderPattern(x, y)) {
             val left = x * cellSize
             val top = y * cellSize
             val dotPadding = cellSize * 0.08f
-            val dotSize = cellSize - (dotPadding * 2)
+            val dotSize = cellSize - (dotPadding * 2f)
 
             drawRoundRect(
               color = primaryColor,
@@ -90,32 +102,35 @@ fun Material3ExpressiveQRCode(
         }
       }
 
-      // 2. Угловые маркеры M3 Expressive (вложенные кольца со скруглением)
+      // 2. Отрисовка маркеров Finder Pattern в стиле Material 3 Expressive
       fun drawExpressiveFinder(startX: Float, startY: Float) {
-        val finderSize = 7 * cellSize
-        val strokeWidth = cellSize * 1.05f
+        val finderSize = 7f * cellSize
+        val strokeWidth = cellSize * 1.0f
 
+        // Внешнее кольцо со скругленными углами
         drawRoundRect(
           color = primaryColor,
-          topLeft = Offset(startX + strokeWidth / 2, startY + strokeWidth / 2),
+          topLeft = Offset(startX + strokeWidth / 2f, startY + strokeWidth / 2f),
           size = Size(finderSize - strokeWidth, finderSize - strokeWidth),
-          cornerRadius = CornerRadius(cellSize * 1.8f, cellSize * 1.8f),
+          cornerRadius = CornerRadius(cellSize * 1.7f, cellSize * 1.7f),
           style = Stroke(width = strokeWidth)
         )
 
-        val coreOffset = 2 * cellSize
-        val coreSize = 3 * cellSize
+        // Внутреннее скругленное ядро (3x3 модуля)
+        val coreOffset = 2f * cellSize
+        val coreSize = 3f * cellSize
         drawRoundRect(
           color = primaryColor,
           topLeft = Offset(startX + coreOffset, startY + coreOffset),
           size = Size(coreSize, coreSize),
-          cornerRadius = CornerRadius(cellSize * 0.9f, cellSize * 0.9f)
+          cornerRadius = CornerRadius(cellSize * 0.85f, cellSize * 0.85f)
         )
       }
 
-      drawExpressiveFinder(0f, 0f)
-      drawExpressiveFinder((matrixWidth - 7) * cellSize, 0f)
-      drawExpressiveFinder(0f, (matrixHeight - 7) * cellSize)
+      // Отрисовка трех угловых маркеров
+      drawExpressiveFinder(0f, 0f)                                  // Верхний левый
+      drawExpressiveFinder((numModules - 7) * cellSize, 0f)         // Верхний правый
+      drawExpressiveFinder(0f, (numModules - 7) * cellSize)         // Нижний левый
     }
   }
 }
