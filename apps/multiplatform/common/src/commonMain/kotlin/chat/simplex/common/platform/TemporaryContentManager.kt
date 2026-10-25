@@ -4,6 +4,7 @@ import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.map
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
@@ -11,9 +12,6 @@ import java.io.File
 import java.net.URI
 import java.util.UUID
 
-/**
- * Доступные интервалы авто-удаления Temporary Content
- */
 enum class TemporaryDuration(val hours: Int, val label: String) {
   HOURS_1(1, "1h"),
   HOURS_3(3, "3h"),
@@ -38,13 +36,12 @@ data class TemporaryContentItem(
   val createdAtMillis: Long,
   val expiresAtMillis: Long,
   val durationHours: Int,
-  val caption: String = ""
+  val caption: String = "",
+  val authorContactId: Long? = null, // null — собственный контент, иначе contactId собеседника
+  val authorDisplayName: String? = null
 ) {
   fun isExpired(now: Long = System.currentTimeMillis()): Boolean = now >= expiresAtMillis
 
-  /**
-   * Форматированный остаток времени (например: "5h 42m" или "18m")
-   */
   fun remainingTimeText(now: Long = System.currentTimeMillis()): String {
     val diff = (expiresAtMillis - now).coerceAtLeast(0L)
     val totalMinutes = diff / 60_000L
@@ -57,9 +54,6 @@ data class TemporaryContentItem(
     }
   }
 
-  /**
-   * Прогресс жизни контента от 1.0f (свежий) до 0.0f (истекает)
-   */
   fun remainingProgress(now: Long = System.currentTimeMillis()): Float {
     val total = (expiresAtMillis - createdAtMillis).coerceAtLeast(1L)
     val left = (expiresAtMillis - now).coerceAtLeast(0L)
@@ -85,7 +79,6 @@ object TemporaryContentManager {
 
   private fun initStorage() {
     try {
-      // Используем приватную директорию приложения
       val baseDir = File(getAppFilePath(""))
       val dir = File(baseDir, "temporary_content")
       if (!dir.exists()) dir.mkdirs()
@@ -103,19 +96,79 @@ object TemporaryContentManager {
     cleanupJob = scope.launch {
       while (isActive) {
         purgeExpired()
-        delay(30_000L) // Проверка каждые 30 секунд
+        delay(30_000L)
       }
     }
   }
 
-/**
-   * Добавление нового Фото или Видео напрямую из массива байтов (для системного галерейного пикера)
+  /**
+   * Проверка: есть ли у пользователя/контакта активный контент прямо сейчас
+   */
+  fun hasActiveContent(contactId: Long?): Boolean {
+    val now = System.currentTimeMillis()
+    return _items.value.any { it.authorContactId == contactId && !it.isExpired(now) }
+  }
+
+  /**
+   * Получить список активных историй для конкретного контакта (или своих при contactId = null)
+   */
+  fun getActiveItemsFor(contactId: Long?): List<TemporaryContentItem> {
+    val now = System.currentTimeMillis()
+    return _items.value
+      .filter { it.authorContactId == contactId && !it.isExpired(now) }
+      .sortedBy { it.createdAtMillis }
+  }
+
+  /**
+   * Добавление своего контента
    */
   fun addContentFromBytes(
     bytes: ByteArray,
     mediaType: TemporaryMediaType,
     duration: TemporaryDuration,
     caption: String = ""
+  ): TemporaryContentItem? {
+    return saveMediaItem(
+      bytes = bytes,
+      mediaType = mediaType,
+      durationHours = duration.hours,
+      caption = caption,
+      authorContactId = null,
+      authorDisplayName = null
+    )
+  }
+
+  /**
+   * Сохранение входящего контента от контакта
+   */
+  fun receiveContactTemporaryContent(
+    contactId: Long,
+    displayName: String,
+    bytes: ByteArray,
+    mediaType: TemporaryMediaType,
+    durationHours: Int,
+    caption: String = "",
+    createdAtMillis: Long = System.currentTimeMillis()
+  ): TemporaryContentItem? {
+    return saveMediaItem(
+      bytes = bytes,
+      mediaType = mediaType,
+      durationHours = durationHours,
+      caption = caption,
+      authorContactId = contactId,
+      authorDisplayName = displayName,
+      createdTimestamp = createdAtMillis
+    )
+  }
+
+  private fun saveMediaItem(
+    bytes: ByteArray,
+    mediaType: TemporaryMediaType,
+    durationHours: Int,
+    caption: String,
+    authorContactId: Long?,
+    authorDisplayName: String?,
+    createdTimestamp: Long = System.currentTimeMillis()
   ): TemporaryContentItem? {
     if (storageDir == null) initStorage()
     val dir = storageDir ?: return null
@@ -126,15 +179,17 @@ object TemporaryContentManager {
       val destFile = File(dir, "temp_${id}.$ext")
       destFile.writeBytes(bytes)
 
-      val now = System.currentTimeMillis()
+      val expiresAt = createdTimestamp + (durationHours * 3600_000L)
       val newItem = TemporaryContentItem(
         id = id,
         filePath = destFile.absolutePath,
         mediaType = mediaType,
-        createdAtMillis = now,
-        expiresAtMillis = now + duration.durationMillis,
-        durationHours = duration.hours,
-        caption = caption
+        createdAtMillis = createdTimestamp,
+        expiresAtMillis = expiresAt,
+        durationHours = durationHours,
+        caption = caption,
+        authorContactId = authorContactId,
+        authorDisplayName = authorDisplayName
       )
 
       val updated = (_items.value + newItem).sortedByDescending { it.createdAtMillis }
@@ -142,59 +197,11 @@ object TemporaryContentManager {
       saveToDisk(updated)
       newItem
     } catch (e: Exception) {
-      Log.e(TAG, "Failed to add temporary content from bytes: ${e.message}")
-      null
-    }
-  }
-  /**
-   * Добавление нового Фото или Видео в Temporary Content
-   */
-  fun addContent(
-    sourceUri: URI,
-    mediaType: TemporaryMediaType,
-    duration: TemporaryDuration,
-    caption: String = ""
-  ): TemporaryContentItem? {
-    if (storageDir == null) initStorage()
-    val dir = storageDir ?: return null
-
-    return try {
-      val ext = if (mediaType == TemporaryMediaType.VIDEO) "mp4" else "jpg"
-      val id = UUID.randomUUID().toString()
-      val destFile = File(dir, "temp_${id}.$ext")
-
-      // Копируем исходный файл в изолированное хранилище сторис
-      val sourceFile = File(sourceUri.path ?: return null)
-      if (sourceFile.exists()) {
-        sourceFile.copyTo(destFile, overwrite = true)
-      } else {
-        return null
-      }
-
-      val now = System.currentTimeMillis()
-      val newItem = TemporaryContentItem(
-        id = id,
-        filePath = destFile.absolutePath,
-        mediaType = mediaType,
-        createdAtMillis = now,
-        expiresAtMillis = now + duration.durationMillis,
-        durationHours = duration.hours,
-        caption = caption
-      )
-
-      val updated = (_items.value + newItem).sortedByDescending { it.createdAtMillis }
-      _items.value = updated
-      saveToDisk(updated)
-      newItem
-    } catch (e: Exception) {
-      Log.e(TAG, "Failed to add temporary content: ${e.message}")
+      Log.e(TAG, "Failed to save temporary content: ${e.message}")
       null
     }
   }
 
-  /**
-   * Ручное удаление элемента до истечения таймера
-   */
   fun removeContent(id: String) {
     val current = _items.value
     val target = current.find { it.id == id }
@@ -208,9 +215,6 @@ object TemporaryContentManager {
     saveToDisk(updated)
   }
 
-  /**
-   * Автоматическая очистка просроченных фото и видео
-   */
   fun purgeExpired() {
     val now = System.currentTimeMillis()
     val current = _items.value
@@ -234,10 +238,9 @@ object TemporaryContentManager {
     try {
       val content = file.readText()
       val parsed = json.decodeFromString<List<TemporaryContentItem>>(content)
-      // Оставляем только те записи, чьи файлы реально существуют
       _items.value = parsed.filter { File(it.filePath).exists() }
     } catch (e: Exception) {
-      Log.e(TAG, "Error loading temporary content metadata: ${e.message}")
+      Log.e(TAG, "Error loading metadata: ${e.message}")
     }
   }
 
@@ -246,7 +249,7 @@ object TemporaryContentManager {
     try {
       file.writeText(json.encodeToString(list))
     } catch (e: Exception) {
-      Log.e(TAG, "Error saving temporary content metadata: ${e.message}")
+      Log.e(TAG, "Error saving metadata: ${e.message}")
     }
   }
 }
