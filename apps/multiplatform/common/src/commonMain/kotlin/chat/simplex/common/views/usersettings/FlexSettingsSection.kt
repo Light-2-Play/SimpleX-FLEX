@@ -2,7 +2,9 @@ package chat.simplex.common.views.usersettings
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -18,11 +20,10 @@ import chat.simplex.common.model.ChatModel
 import chat.simplex.common.platform.HapticPattern
 import chat.simplex.common.platform.RichHaptics
 import chat.simplex.common.platform.UsbPanicDetector
-import chat.simplex.common.views.helpers.ColumnWithScrollBar
 import chat.simplex.res.MR
 
 // =====================================================================
-// 1. КЛИКАБЕЛЬНАЯ ПЛАШКА ДЛЯ ВХОДА (ДЛЯ SettingsView.kt)
+// 1. ENTRY TILE FOR SETTINGS MENU
 // =====================================================================
 @Composable
 fun FlexSettingsEntryTile(onClick: () -> Unit) {
@@ -78,7 +79,7 @@ fun FlexSettingsEntryTile(onClick: () -> Unit) {
 }
 
 // =====================================================================
-// 2. ЭКРАН НАСТРОЕК FLEX (БЕЗ СЕРОЙ ПЛАШКИ, С ЦЕНТРИРОВАННЫМ ЗАГОЛОВКОМ)
+// 2. FLEX SETTINGS SCREEN
 // =====================================================================
 @Composable
 fun FlexSettingsView(chatModel: ChatModel? = null) {
@@ -86,15 +87,14 @@ fun FlexSettingsView(chatModel: ChatModel? = null) {
   var advancedHapticsEnabled by remember { mutableStateOf(RichHaptics.isEnabled()) }
   val bottomPadding = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() + 90.dp
 
-  ColumnWithScrollBar(
+  Column(
     modifier = Modifier
       .fillMaxSize()
+      .verticalScroll(rememberScrollState())
       .padding(horizontal = 16.dp)
   ) {
-    // Отступ сверху от строки состояния
     Spacer(Modifier.height(18.dp))
 
-    // Заголовок ровно по центру экрана
     Text(
       text = "FLEX Settings",
       fontSize = 22.sp,
@@ -108,9 +108,7 @@ fun FlexSettingsView(chatModel: ChatModel? = null) {
 
     Spacer(Modifier.height(8.dp))
 
-    // -------------------------------------------------------------
-    // СЕКЦИЯ 1: SECURITY
-    // -------------------------------------------------------------
+    // SECTION 1: SECURITY
     FlexCategoryHeader("SECURITY")
 
     FlexSettingCard {
@@ -133,9 +131,7 @@ fun FlexSettingsView(chatModel: ChatModel? = null) {
 
     Spacer(modifier = Modifier.height(20.dp))
 
-    // -------------------------------------------------------------
-    // СЕКЦИЯ 2: INTERFACE & FEEDBACK
-    // -------------------------------------------------------------
+    // SECTION 2: INTERFACE & FEEDBACK
     FlexCategoryHeader("INTERFACE & FEEDBACK")
 
     FlexSettingCard {
@@ -155,13 +151,12 @@ fun FlexSettingsView(chatModel: ChatModel? = null) {
       )
     }
 
-    // Запас высоты над круглой кнопкой возврата SimpleX
     Spacer(Modifier.height(bottomPadding))
   }
 }
 
 // =====================================================================
-// 3. ВСПОМОГАТЕЛЬНЫЕ КОМПОНЕНТЫ
+// 3. REUSABLE COMPONENTS
 // =====================================================================
 
 @Composable
