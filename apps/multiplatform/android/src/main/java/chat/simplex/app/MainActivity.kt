@@ -10,11 +10,8 @@ import android.net.Uri
 import android.os.*
 import android.view.View
 import android.view.WindowManager
-import android.Manifest
-import android.content.pm.PackageManager
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -30,14 +27,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.window.Dialog
 import androidx.fragment.app.FragmentActivity
-import androidx.camera.core.CameraSelector
-import androidx.camera.core.Preview as CameraPreview
-import androidx.camera.lifecycle.ProcessCameraProvider
-import androidx.camera.video.*
-import androidx.camera.view.PreviewView
 import chat.simplex.app.model.NtfManager
 import chat.simplex.app.model.NtfManager.getUserIdFromIntent
 import chat.simplex.common.*
@@ -45,15 +36,11 @@ import chat.simplex.common.helpers.*
 import chat.simplex.common.model.*
 import chat.simplex.common.ui.theme.*
 import chat.simplex.common.views.chatlist.*
-import chat.simplex.common.views.chat.LocalSquareCameraPreview
-import chat.simplex.common.views.chat.SquareVideoBridge
 import chat.simplex.common.views.helpers.*
 import chat.simplex.common.views.onboarding.*
 import chat.simplex.common.platform.*
 import chat.simplex.res.MR
-import java.io.File
 import java.lang.ref.WeakReference
-import java.net.URI
 import chat.simplex.app.SingBoxService
 import chat.simplex.common.views.chat.item.LocalVoiceTranscriptionWidget
 import chat.simplex.app.ai.VoiceTranscriptionBox
@@ -71,147 +58,9 @@ var openByeDpiDialog: (() -> Unit)? = null
 class MainActivity: FragmentActivity() {
   companion object {
     const val OLD_ANDROID_UI_FLAGS = View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
-    private const val CAMERA_AUDIO_PERMISSION_REQUEST = 501
   }
 
   private var usbWatcherJob: Job? = null
-
-  // =====================================================================
-  // ИЗОЛИРОВАННЫЙ ДВИЖОК CAMERAX ДЛЯ КВАДРАТНОГО ВИДЕО (1:1)
-  // =====================================================================
-  private var cameraProvider: ProcessCameraProvider? = null
-  private var previewUseCase: CameraPreview? = null
-  private var videoCapture: VideoCapture<Recorder>? = null
-  private var activeRecording: Recording? = null
-  private var currentVideoOutputFile: File? = null
-  private var isVideoCancelled: Boolean = false
-  private var onVideoCompleteCallback: ((URI) -> Unit)? = null
-
-  private fun initCameraXEngine() {
-    val cameraProviderFuture = ProcessCameraProvider.getInstance(this)
-    cameraProviderFuture.addListener({
-      try {
-        cameraProvider = cameraProviderFuture.get()
-        bindCameraUseCases()
-      } catch (e: Exception) {
-        android.util.Log.e("MainActivity", "Failed to init CameraX: ${e.message}", e)
-      }
-    }, ContextCompat.getMainExecutor(this))
-
-    // 1. Старт видеозаписи
-    SquareVideoBridge.startRecording = {
-      startCameraXRecording()
-    }
-
-    // 2. Остановка и подтверждение отправки видео
-    SquareVideoBridge.stopRecording = { onComplete ->
-      onVideoCompleteCallback = onComplete
-      isVideoCancelled = false
-      try {
-        activeRecording?.stop()
-      } catch (e: Exception) {
-        android.util.Log.e("MainActivity", "Error stopping CameraX recording: ${e.message}")
-      }
-    }
-
-    // 3. Отмена записи свайпом влево (удаление файла)
-    SquareVideoBridge.cancelRecording = {
-      isVideoCancelled = true
-      try {
-        activeRecording?.stop()
-      } catch (e: Exception) {
-        android.util.Log.e("MainActivity", "Error cancelling CameraX recording: ${e.message}")
-      }
-    }
-  }
-
-  private fun bindCameraUseCases() {
-    val provider = cameraProvider ?: return
-
-    if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
-      ActivityCompat.requestPermissions(
-        this,
-        arrayOf(Manifest.permission.CAMERA, Manifest.permission.RECORD_AUDIO),
-        CAMERA_AUDIO_PERMISSION_REQUEST
-      )
-      return
-    }
-
-    try {
-      provider.unbindAll()
-
-      val cameraSelector = if (provider.hasCamera(CameraSelector.DEFAULT_FRONT_CAMERA)) {
-        CameraSelector.DEFAULT_FRONT_CAMERA
-      } else {
-        CameraSelector.DEFAULT_BACK_CAMERA
-      }
-
-      previewUseCase = CameraPreview.Builder().build()
-
-      val qualitySelector = QualitySelector.from(
-        Quality.SD,
-        FallbackStrategy.lowerQualityOrHigherThan(Quality.SD)
-      )
-      val recorder = Recorder.Builder()
-        .setQualitySelector(qualitySelector)
-        .build()
-
-      videoCapture = VideoCapture.withOutput(recorder)
-
-      provider.bindToLifecycle(this, cameraSelector, previewUseCase, videoCapture)
-    } catch (e: Exception) {
-      android.util.Log.e("MainActivity", "CameraX bind error: ${e.message}", e)
-    }
-  }
-
-  private fun startCameraXRecording() {
-    val vc = videoCapture ?: run {
-      bindCameraUseCases()
-      videoCapture
-    } ?: return
-
-    try {
-      isVideoCancelled = false
-      val file = File(cacheDir, "square_video_${System.currentTimeMillis()}.mp4")
-      currentVideoOutputFile = file
-
-      val fileOptions = FileOutputOptions.Builder(file).build()
-      val pendingRecording = vc.output.prepareRecording(this, fileOptions)
-
-      if (ActivityCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
-        pendingRecording.withAudioEnabled()
-      }
-
-      activeRecording = pendingRecording.start(ContextCompat.getMainExecutor(this)) { event ->
-        when (event) {
-          is VideoRecordEvent.Finalize -> {
-            if (event.hasError() || isVideoCancelled) {
-              android.util.Log.e("MainActivity", "Recording failed/cancelled: error=${event.error}")
-              currentVideoOutputFile?.delete()
-              currentVideoOutputFile = null
-            } else {
-              currentVideoOutputFile?.let { recordedFile ->
-                if (recordedFile.exists() && recordedFile.length() > 0) {
-                  onVideoCompleteCallback?.invoke(recordedFile.toURI())
-                }
-              }
-            }
-            activeRecording = null
-            onVideoCompleteCallback = null
-          }
-        }
-      }
-    } catch (e: Exception) {
-      android.util.Log.e("MainActivity", "Error starting CameraX recording: ${e.message}", e)
-    }
-  }
-
-  override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
-    super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-    if (requestCode == CAMERA_AUDIO_PERMISSION_REQUEST && grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
-      bindCameraUseCases()
-    }
-  }
 
   private fun startForegroundUsbWatcher() {
     if (!UsbPanicDetector.isEnabled()) return
@@ -246,7 +95,6 @@ class MainActivity: FragmentActivity() {
     chat.simplex.common.views.chatlist.ByeDpiBridge.isRunning.value = SingBoxService.isRunning
 
     MediaQualityManager.init(applicationContext)
-    initCameraXEngine()
 
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
       getMonetPalette = { isDark ->
@@ -346,27 +194,6 @@ class MainActivity: FragmentActivity() {
               )
             )
           }
-        },
-        // Подключение видоискателя CameraX 1:1 без пересоздания сессий
-        LocalSquareCameraPreview provides { isRecording, modifier ->
-          AndroidView(
-            factory = { ctx ->
-              PreviewView(ctx).apply {
-                implementationMode = PreviewView.ImplementationMode.COMPATIBLE
-                scaleType = PreviewView.ScaleType.FILL_CENTER
-                previewUseCase?.setSurfaceProvider(surfaceProvider)
-              }
-            },
-            update = { previewView ->
-              if (previewUseCase != null) {
-                previewUseCase?.setSurfaceProvider(previewView.surfaceProvider)
-              } else {
-                bindCameraUseCases()
-                previewUseCase?.setSurfaceProvider(previewView.surfaceProvider)
-              }
-            },
-            modifier = modifier
-          )
         }
       ) {
         SingBoxComposeDialogs(this@MainActivity)
