@@ -174,29 +174,29 @@ fun UserProfileLayout(
         Column(
           Modifier.fillMaxWidth()
         ) {
-          // 1. Аватарка профиля
-          Box(
-            Modifier
-              .fillMaxWidth()
-              .padding(bottom = 18.dp),
-            contentAlignment = Alignment.Center
-          ) {
-            Box(contentAlignment = Alignment.TopEnd) {
-              Box(contentAlignment = Alignment.Center) {
-               StoryAvatarContainer(
-  contactId = null, // null = свои истории
-  avatarSize = 108.dp
+         // В UserProfileView.kt вокруг аватарки профиля:
+Box(
+  Modifier
+    .fillMaxWidth()
+    .padding(bottom = 18.dp),
+  contentAlignment = Alignment.Center
 ) {
-  ProfileImage(108.dp, profileImage.value, color = MaterialTheme.colors.secondary.copy(alpha = 0.1f))
+  Box(contentAlignment = Alignment.TopEnd) {
+    Box(contentAlignment = Alignment.Center) {
+      // story-контейнер для собственного профиля (contactId = null)
+      StoryAvatarContainer(
+        contactId = null,
+        avatarSize = 108.dp
+      ) {
+        ProfileImage(108.dp, profileImage.value, color = MaterialTheme.colors.secondary.copy(alpha = 0.1f))
+      }
+      EditImageButton { scope.launch { bottomSheetModalState.show() } }
+    }
+    if (profileImage.value != null) {
+      DeleteImageButton { profileImage.value = null }
+    }
+  }
 }
-                EditImageButton { scope.launch { bottomSheetModalState.show() } }
-              }
-              if (profileImage.value != null) {
-                DeleteImageButton { profileImage.value = null }
-              }
-            }
-          }
-
           // =====================================================================
           // 2. РАЗДЕЛ TEMPORARY CONTENT (ФОТО И ВИДЕО СТОРИС 1h..24h)
           // =====================================================================
