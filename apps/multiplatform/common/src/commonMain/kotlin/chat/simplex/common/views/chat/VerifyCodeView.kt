@@ -1,26 +1,21 @@
 package chat.simplex.common.views.chat
 
 import SectionBottomSpacer
-import SectionView
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.text.selection.SelectionContainer
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalClipboardManager
-import dev.icerock.moko.resources.compose.painterResource
-import dev.icerock.moko.resources.StringResource
-import dev.icerock.moko.resources.compose.stringResource
-import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import dev.icerock.moko.resources.StringResource
+import dev.icerock.moko.resources.compose.painterResource
+import dev.icerock.moko.resources.compose.stringResource
 import chat.simplex.common.platform.*
 import chat.simplex.common.ui.theme.*
 import chat.simplex.common.views.helpers.*
-import chat.simplex.common.views.newchat.QRCode
 import chat.simplex.res.MR
 
 @Composable
@@ -62,70 +57,69 @@ private fun VerifyCodeLayout(
 ) {
   ColumnWithScrollBar(Modifier.padding(horizontal = DEFAULT_PADDING)) {
     AppBarTitle(stringResource(MR.strings.security_code), withPadding = false)
-    val splitCode = splitToParts(connectionCode, 24)
-    Row(Modifier.fillMaxWidth().padding(bottom = DEFAULT_PADDING_HALF), horizontalArrangement = Arrangement.Center) {
-      if (connectionVerified) {
-        Icon(painterResource(MR.images.ic_verified_user), null, Modifier.padding(end = 4.dp).size(22.dp), tint = MaterialTheme.colors.secondary)
-        Text(String.format(stringResource(MR.strings.is_verified), displayName))
-      } else {
-        Text(String.format(stringResource(MR.strings.is_not_verified), displayName))
-      }
-    }
 
-    QRCode(connectionCode, small = true, padding = PaddingValues(vertical = DEFAULT_PADDING_HALF))
-
-    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-      Spacer(Modifier.weight(2f))
-      SelectionContainer(Modifier.padding(vertical = DEFAULT_PADDING_HALF, horizontal = DEFAULT_PADDING_HALF)) {
-        Text(
-          splitCode,
-          fontFamily = FontFamily.Monospace,
-          fontSize = 18.sp,
-          maxLines = 20
-        )
-      }
-      Box(Modifier.weight(1f)) {
-        val clipboard = LocalClipboardManager.current
-        IconButton({ clipboard.shareText(connectionCode) }, Modifier.size(20.dp).align(Alignment.CenterStart)) {
-          Icon(painterResource(MR.images.ic_share_filled), null, tint = MaterialTheme.colors.primary)
-        }
-      }
-      Spacer(Modifier.weight(1f))
-    }
-
-    Text(
-      generalGetString(verifyDescription),
-      Modifier.padding(bottom = DEFAULT_PADDING)
-    )
-
+    // User status header in English
     Row(
-      Modifier.padding(bottom = DEFAULT_PADDING).align(Alignment.CenterHorizontally),
-      horizontalArrangement = Arrangement.spacedBy(10.dp)
+      modifier = Modifier
+        .fillMaxWidth()
+        .padding(bottom = DEFAULT_PADDING_HALF),
+      horizontalAlignment = Alignment.CenterHorizontally,
+      verticalAlignment = Alignment.CenterVertically
     ) {
       if (connectionVerified) {
-        SimpleButton(generalGetString(MR.strings.clear_verification), painterResource(MR.images.ic_shield)) {
-          withApi { verifyCode(null) }
-        }
-      } else {
-        if (appPlatform.isAndroid) {
-          SimpleButton(generalGetString(MR.strings.scan_code), painterResource(MR.images.ic_qr_code)) {
-            ModalManager.end.showModal {
-              ScanCodeView(verifyCode) { }
-            }
-          }
-        }
-        SimpleButton(generalGetString(MR.strings.mark_code_verified), painterResource(MR.images.ic_verified_user)) {
-          withApi {
-            val verified = verifyCode(connectionCode)
-            if (!verified) {
-              AlertManager.shared.showAlertMsg(
-                title = generalGetString(MR.strings.incorrect_code)
-              )
-            }
-          }
-        }
+        Icon(
+          painter = painterResource(MR.images.ic_verified_user),
+          contentDescription = null,
+          modifier = Modifier.padding(end = 6.dp).size(20.dp),
+          tint = MaterialTheme.colors.secondary
+        )
       }
+      Text(
+        text = if (connectionVerified) "$displayName is verified" else "$displayName is not verified",
+        style = MaterialTheme.typography.subtitle1,
+        fontWeight = FontWeight.Medium,
+        color = MaterialTheme.colors.onSurface
+      )
     }
+
+    // Material 3 Expressive Verification Card
+    ExpressiveVerificationQRCodeCard(
+      verificationUri = connectionCode,
+      safetyNumberShort = splitToParts(connectionCode, 18),
+      isVerified = connectionVerified,
+      onScanOtherClick = if (appPlatform.isAndroid) {
+        {
+          ModalManager.end.showModal {
+            ScanCodeView(verifyCode) { }
+          }
+        }
+      } else null,
+      onConfirmVerification = {
+        withApi {
+          val verified = verifyCode(connectionCode)
+          if (!verified) {
+            AlertManager.shared.showAlertMsg(
+              title = generalGetString(MR.strings.incorrect_code)
+            )
+          }
+        }
+      },
+      onClearVerification = {
+        withApi { verifyCode(null) }
+      }
+    )
+
+    // Explanatory note
+    Text(
+      text = generalGetString(verifyDescription),
+      style = MaterialTheme.typography.body2,
+      color = MaterialTheme.colors.onSurface.copy(alpha = 0.65f),
+      textAlign = TextAlign.Center,
+      modifier = Modifier
+        .fillMaxWidth()
+        .padding(horizontal = 8.dp, vertical = DEFAULT_PADDING)
+    )
+
     SectionBottomSpacer()
   }
 }
