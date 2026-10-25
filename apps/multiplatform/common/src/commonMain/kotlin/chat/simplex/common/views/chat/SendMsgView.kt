@@ -94,7 +94,6 @@ fun SendMsgView(
   val showCustomDisappearingMessageDialog = remember { mutableStateOf(false) }
   val padding = if (appPlatform.isAndroid) PaddingValues(vertical = 8.dp) else PaddingValues(top = 3.dp, bottom = 4.dp)
 
-  // Общие состояния записи для синхронизации панели таймера и кнопки
   var isRecordingActive by remember { mutableStateOf(false) }
   var recordingSeconds by remember { mutableStateOf(0) }
   var isLocked by remember { mutableStateOf(false) }
@@ -112,7 +111,6 @@ fun SendMsgView(
         !sendButtonEnabled
     val clicksOnTextFieldDisabled = !sendMsgEnabled || cs.preview is ComposePreview.VoicePreview || cs.inProgress
 
-    // 1. Обычное текстовое поле ввода
     PlatformTextField(
       composeState,
       sendMsgEnabled,
@@ -132,7 +130,24 @@ fun SendMsgView(
       }
     }
 
-    // 2. Панель записи (таймер + Slide to cancel): перекрывает поле ввода аккуратно поверх
+    if (clicksOnTextFieldDisabled) {
+      if (userCantSendReason != null) {
+        Box(
+          Modifier
+            .matchParentSize()
+            .clickable(indication = null, interactionSource = remember { MutableInteractionSource() }, onClick = {
+              AlertManager.shared.showAlertMsg(
+                title = generalGetString(MR.strings.cant_send_message_alert_title),
+                text = userCantSendReason.second
+              )
+            })
+        )
+      } else {
+        Box(Modifier.matchParentSize())
+      }
+    }
+
+    // Верхняя панель записи: аккуратно накладывается поверх поля ввода текста
     if (isRecordingActive) {
       val mins = (recordingSeconds / 60).toString().padStart(2, '0')
       val secs = (recordingSeconds % 60).toString().padStart(2, '0')
@@ -145,68 +160,76 @@ fun SendMsgView(
         animationSpec = infiniteRepeatable(animation = tween(650, easing = LinearEasing), repeatMode = RepeatMode.Reverse)
       )
 
-      Row(
+      Surface(
         modifier = Modifier
           .fillMaxWidth()
-          .padding(start = 12.dp, end = 52.dp)
+          .padding(end = 48.dp)
           .align(Alignment.CenterStart)
-          .height(44.dp)
-          .background(MaterialTheme.colors.surface),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.SpaceBetween
+          .height(44.dp),
+        shape = RoundedCornerShape(22.dp),
+        color = MaterialTheme.colors.surface,
+        elevation = 0.dp
       ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-          if (isLocked) {
-            IconButton(
-              onClick = {
-                RichHaptics.perform(HapticPattern.TOGGLE_OFF)
-                onCancelAction?.invoke()
-              },
-              modifier = Modifier.size(28.dp)
-            ) {
-              Icon(
-                painter = painterResource(MR.images.ic_close),
-                contentDescription = "Cancel",
-                tint = Color(0xFFE53935),
-                modifier = Modifier.size(20.dp)
-              )
+        Row(
+          modifier = Modifier
+            .fillMaxSize()
+            .padding(horizontal = 14.dp),
+          verticalAlignment = Alignment.CenterVertically,
+          horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+          Row(verticalAlignment = Alignment.CenterVertically) {
+            if (isLocked) {
+              IconButton(
+                onClick = {
+                  RichHaptics.perform(HapticPattern.TOGGLE_OFF)
+                  onCancelAction?.invoke()
+                },
+                modifier = Modifier.size(28.dp)
+              ) {
+                Icon(
+                  painter = painterResource(MR.images.ic_close),
+                  contentDescription = "Cancel",
+                  tint = Color(0xFFE53935),
+                  modifier = Modifier.size(20.dp)
+                )
+              }
+              Spacer(Modifier.width(8.dp))
             }
+
+            Box(
+              modifier = Modifier
+                .size(9.dp)
+                .clip(CircleShape)
+                .background(Color(0xFFE53935).copy(alpha = dotAlpha))
+            )
             Spacer(Modifier.width(8.dp))
+            Text(
+              text = timerText,
+              fontSize = 15.sp,
+              fontWeight = FontWeight.SemiBold,
+              fontFamily = FontFamily.Monospace,
+              color = MaterialTheme.colors.onSurface
+            )
           }
 
-          Box(
-            modifier = Modifier
-              .size(9.dp)
-              .clip(CircleShape)
-              .background(Color(0xFFE53935).copy(alpha = dotAlpha))
-          )
-          Spacer(Modifier.width(8.dp))
-          Text(
-            text = timerText,
-            fontSize = 15.sp,
-            fontWeight = FontWeight.SemiBold,
-            fontFamily = FontFamily.Monospace,
-            color = MaterialTheme.colors.onSurface
-          )
-        }
+          if (!isLocked) {
+            val cancelThresholdPx = with(LocalDensity.current) { 70.dp.toPx() }
+            val cancelProgress = (-dragOffsetX / cancelThresholdPx).coerceIn(0f, 1f)
+            val slideAlpha = (1f - cancelProgress * 1.3f).coerceIn(0f, 1f)
 
-        if (!isLocked) {
-          val cancelThresholdPx = with(LocalDensity.current) { 70.dp.toPx() }
-          val cancelProgress = (-dragOffsetX / cancelThresholdPx).coerceIn(0f, 1f)
-          val slideAlpha = (1f - cancelProgress * 1.3f).coerceIn(0f, 1f)
-
-          Row(
-            modifier = Modifier
-              .offset { IntOffset((dragOffsetX * 0.35f).toInt(), 0) }
-              .alpha(slideAlpha),
-            verticalAlignment = Alignment.CenterVertically
-          ) {
-            Text(
-              text = "‹   Slide to cancel",
-              fontSize = 13.5.sp,
-              fontWeight = FontWeight.Medium,
-              color = MaterialTheme.colors.onSurface.copy(alpha = 0.55f)
-            )
+            Row(
+              modifier = Modifier
+                .offset { IntOffset((dragOffsetX * 0.35f).toInt(), 0) }
+                .alpha(slideAlpha),
+              verticalAlignment = Alignment.CenterVertically
+            ) {
+              Text(
+                text = "‹   Slide to cancel",
+                fontSize = 13.5.sp,
+                fontWeight = FontWeight.Medium,
+                color = MaterialTheme.colors.onSurface.copy(alpha = 0.55f)
+              )
+            }
           }
         }
       }
@@ -216,11 +239,17 @@ fun SendMsgView(
       DeleteTextButton(composeState)
     }
 
-    // 3. Правый угол (кнопка микрофона/камеры)
+    // Правая кнопка действий
     Box(Modifier.align(Alignment.BottomEnd).padding(bottom = if (appPlatform.isAndroid) 0.dp else 5.sp.toDp() * fontSizeSqrtMultiplier)) {
       val sendButtonSize = remember { Animatable(36f) }
       val sendButtonAlpha = remember { Animatable(1f) }
       val scope = rememberCoroutineScope()
+
+      LaunchedEffect(Unit) {
+        if (cs.liveMessage != null && sendLiveMessage != null && updateLiveMessage != null) {
+          startLiveMessage(scope, sendLiveMessage, updateLiveMessage, sendButtonSize, sendButtonAlpha, composeState, liveMessageAlertShown)
+        }
+      }
 
       when {
         cs.progressByTimeout -> ComposeProgressIndicator()
@@ -230,23 +259,43 @@ fun SendMsgView(
         showVoiceButton && sendMsgEnabled -> {
           Row(verticalAlignment = Alignment.CenterVertically) {
             val stopRecOnNextClick = remember { mutableStateOf(false) }
-            RecordVoiceView(
-              recState = recState,
-              stopRecOnNextClick = stopRecOnNextClick,
-              onRecordingStateChange = { active, secs, locked, dragX, cancelBlock ->
-                isRecordingActive = active
-                recordingSeconds = secs
-                isLocked = locked
-                dragOffsetX = dragX
-                onCancelAction = cancelBlock
-              },
-              onVideoRecorded = { uri ->
-                // Прямое прикрепление видео к сообщению
-                composeState.value = composeState.value.copy(
-                  preview = ComposePreview.FilePreview(uri.path.substringAfterLast('/'), uri)
-                )
+            when {
+              needToAllowVoiceToContact || !allowedVoiceByPrefs -> {
+                DisallowedVoiceButton {
+                  if (needToAllowVoiceToContact) {
+                    showNeedToAllowVoiceAlert(allowVoiceToContact)
+                  } else {
+                    showDisabledVoiceAlert(isDirectChat)
+                  }
+                }
               }
-            )
+              !allowedToRecordVoiceByPlatform() ->
+                VoiceButtonWithoutPermissionByPlatform()
+              else ->
+                RecordVoiceView(
+                  recState = recState,
+                  stopRecOnNextClick = stopRecOnNextClick,
+                  onRecordingStateChange = { active, secs, locked, dragX, cancelBlock ->
+                    isRecordingActive = active
+                    recordingSeconds = secs
+                    isLocked = locked
+                    dragOffsetX = dragX
+                    onCancelAction = cancelBlock
+                  },
+                  onVideoRecorded = { uri ->
+                    val filename = uri.path?.substringAfterLast('/') ?: "square_video.mp4"
+                    composeState.value = composeState.value.copy(
+                      preview = ComposePreview.FilePreview(filename, uri)
+                    )
+                    sendMessage(null)
+                  }
+                )
+            }
+          }
+        }
+        cs.liveMessage?.sent == false && cs.message.text.isEmpty() -> {
+          CancelLiveMessageButton {
+            cancelLiveMessage?.invoke()
           }
         }
         else -> {
@@ -376,7 +425,6 @@ private fun RecordVoiceView(
     dragOffsetX = 0f
   }
 
-  // Обновление верхнего бара
   LaunchedEffect(isAnyRecording, isHoldingToRecord, recordingSeconds, isLocked, dragOffsetX) {
     onRecordingStateChange(
       isAnyRecording || isHoldingToRecord,
@@ -387,7 +435,6 @@ private fun RecordVoiceView(
     )
   }
 
-  // Таймер до 02:00
   LaunchedEffect(isAnyRecording) {
     if (isAnyRecording) {
       recordingSeconds = 0
@@ -404,7 +451,19 @@ private fun RecordVoiceView(
     }
   }
 
-  // Кнопка записи и замочек
+  LaunchedEffect(recState.value) {
+    if (recState.value is RecordingState.NotStarted && !isVideoRecordingActive) {
+      stopRecOnNextClick.value = false
+      isHoldingToRecord = false
+      dragOffsetY = 0f
+      dragOffsetX = 0f
+    }
+  }
+
+  if (isLocked) {
+    LockToCurrentOrientationUntilDispose()
+  }
+
   Box(contentAlignment = Alignment.Center) {
     AnimatedVisibility(
       visible = isHoldingToRecord && !isLocked && isAnyRecording,
@@ -484,11 +543,9 @@ private fun RecordVoiceView(
             }
 
             if (upChange != null) {
-              // Короткий клик: смена режима
               RichHaptics.perform(HapticPattern.SELECTION_CHANGE)
               recordMode = if (recordMode == RecordMediaMode.VOICE) RecordMediaMode.VIDEO else RecordMediaMode.VOICE
             } else {
-              // Удержание: раздельный старт
               isHoldingToRecord = true
               RichHaptics.perform(HapticPattern.RECORD_START)
 
@@ -567,7 +624,6 @@ private fun RecordVoiceView(
     }
   }
 
-  // Квадратное превью 1:1 по центру экрана
   val cameraPreviewProvider = LocalSquareCameraPreview.current
   SquareVideoRecordOverlay(
     isRecording = isVideoRecordingActive,
@@ -580,164 +636,6 @@ private fun RecordVoiceView(
   )
 }
 
-    val buttonScale by animateFloatAsState(
-      targetValue = if (isHoldingToRecord && !isLocked) 1.25f else 1f,
-      animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessLow)
-    )
-
-    Box(
-      modifier = Modifier
-        .size(36.dp)
-        .scale(buttonScale)
-        .clip(CircleShape)
-        .background(
-          if (isLocked) MaterialTheme.colors.primary
-          else if (isHoldingToRecord) MaterialTheme.colors.primary.copy(alpha = 0.15f)
-          else Color.Transparent
-        )
-        .pointerInput(recordMode, isLocked) {
-          awaitEachGesture {
-            val down = awaitFirstDown(requireUnconsumed = false)
-
-            if (isLocked) {
-              do {
-                val event = awaitPointerEvent()
-              } while (event.changes.any { it.pressed })
-              RichHaptics.perform(HapticPattern.RECORD_STOP)
-              if (recordMode == RecordMediaMode.VIDEO) stopVideoRecordingAndSend() else stopVoiceRecordingAndAddAudio()
-              return@awaitEachGesture
-            }
-
-            dragOffsetY = 0f
-            dragOffsetX = 0f
-
-            val upChange = withTimeoutOrNull(220L) {
-              do {
-                val event = awaitPointerEvent()
-                val change = event.changes.firstOrNull { it.id == down.id }
-                if (change == null || !change.pressed) return@withTimeoutOrNull change
-              } while (true)
-              null
-            }
-
-            if (upChange != null) {
-              // Короткий тап: переключение Микрофон <-> Камера
-              RichHaptics.perform(HapticPattern.SELECTION_CHANGE)
-              recordMode = if (recordMode == RecordMediaMode.VOICE) RecordMediaMode.VIDEO else RecordMediaMode.VOICE
-            } else {
-              // Зажатие (>= 220 мс): старт соответствующего движка
-              isHoldingToRecord = true
-              RichHaptics.perform(HapticPattern.RECORD_START)
-
-              if (recordMode == RecordMediaMode.VIDEO) {
-                startVideoRecording()
-              } else {
-                startVoiceRecording()
-              }
-
-              var lockedByDrag = false
-              var cancelledByDrag = false
-
-              do {
-                val event = awaitPointerEvent()
-                val change = event.changes.firstOrNull { it.id == down.id } ?: break
-
-                if (change.pressed) {
-                  val delta = change.positionChange()
-                  dragOffsetY = (dragOffsetY + delta.y).coerceAtMost(0f)
-                  dragOffsetX = (dragOffsetX + delta.x).coerceAtMost(0f)
-                  change.consume()
-
-                  // Свайп вверх к замочку (>= 56.dp)
-                  if (dragOffsetY <= -lockThresholdPx && !lockedByDrag) {
-                    lockedByDrag = true
-                    stopRecOnNextClick.value = true
-                    RichHaptics.perform(HapticPattern.TOGGLE_ON)
-                    break
-                  }
-
-                  // Свайп влево (>= 70.dp)
-                  if (dragOffsetX <= -cancelThresholdPx && !cancelledByDrag) {
-                    cancelledByDrag = true
-                    RichHaptics.perform(HapticPattern.TOGGLE_OFF)
-                    if (recordMode == RecordMediaMode.VIDEO) cancelVideoRecording() else cancelVoiceRecording()
-                    break
-                  }
-                }
-              } while (event.changes.any { it.pressed && it.id == down.id })
-
-              isHoldingToRecord = false
-              dragOffsetY = 0f
-              dragOffsetX = 0f
-
-              // Отпустили палец без фиксации замочка и без отмены -> завершить и отправить
-              if (!lockedByDrag && !cancelledByDrag) {
-                RichHaptics.perform(HapticPattern.RECORD_STOP)
-                if (recordMode == RecordMediaMode.VIDEO) stopVideoRecordingAndSend() else stopVoiceRecordingAndAddAudio()
-              }
-            }
-          }
-        },
-      contentAlignment = Alignment.Center
-    ) {
-      if (isLocked) {
-        Icon(
-          painter = painterResource(MR.images.ic_stop_filled),
-          contentDescription = stringResource(MR.strings.icon_descr_record_voice_message),
-          tint = Color.White,
-          modifier = Modifier.size(36.dp).padding(6.dp)
-        )
-      } else {
-        Crossfade(targetState = recordMode, animationSpec = tween(150)) { mode ->
-          val iconPainter = if (mode == RecordMediaMode.VOICE) {
-            painterResource(MR.images.ic_keyboard_voice_filled)
-          } else {
-            painterResource(MR.images.ic_videocam)
-          }
-          Icon(
-            painter = iconPainter,
-            contentDescription = stringResource(MR.strings.icon_descr_record_voice_message),
-            tint = MaterialTheme.colors.primary,
-            modifier = Modifier.size(34.dp).padding(4.dp)
-          )
-        }
-      }
-    }
-  }
-
-  // =====================================================================
-  // 3. КВАДРАТНЫЙ ВИДОИСКАТЕЛЬ CameraX 1:1 (ПО ЦЕНТРУ ЭКРАНА)
-  // =====================================================================
-  val cameraPreviewProvider = LocalSquareCameraPreview.current
-
-  SquareVideoRecordOverlay(
-    isRecording = isVideoRecordingActive,
-    recordingSeconds = recordingSeconds,
-    cameraPreview = {
-      if (cameraPreviewProvider != null) {
-        cameraPreviewProvider(isVideoRecordingActive, Modifier.fillMaxSize())
-      } else {
-        Box(
-          modifier = Modifier
-            .fillMaxSize()
-            .background(Color(0xFF1A1A1E)),
-          contentAlignment = Alignment.Center
-        ) {
-          Icon(
-            painter = painterResource(MR.images.ic_videocam),
-            contentDescription = null,
-            tint = Color.White.copy(alpha = 0.35f),
-            modifier = Modifier.size(54.dp)
-          )
-        }
-      }
-    }
-  )
-}
-
-// =====================================================================
-// КВАДРАТНЫЙ ОВЕРЛЕЙ ПРЕВЬЮ 1:1 С ТАЙМЕРОМ 02:00
-// =====================================================================
 @Composable
 private fun SquareVideoRecordOverlay(
   isRecording: Boolean,
@@ -760,50 +658,44 @@ private fun SquareVideoRecordOverlay(
       alignment = Alignment.Center,
       properties = PopupProperties(focusable = false, dismissOnBackPress = false, dismissOnClickOutside = false)
     ) {
-      Box(
-        modifier = Modifier.fillMaxSize(),
-        contentAlignment = Alignment.Center
+      Surface(
+        modifier = Modifier
+          .size(280.dp)
+          .clip(RoundedCornerShape(28.dp))
+          .border(2.dp, MaterialTheme.colors.primary.copy(alpha = 0.65f), RoundedCornerShape(28.dp)),
+        shape = RoundedCornerShape(28.dp),
+        color = Color.Black,
+        elevation = 12.dp
       ) {
-        Surface(
-          modifier = Modifier
-            .size(280.dp)
-            .aspectRatio(1f)
-            .clip(RoundedCornerShape(28.dp))
-            .border(2.dp, MaterialTheme.colors.primary.copy(alpha = 0.65f), RoundedCornerShape(28.dp)),
-          shape = RoundedCornerShape(28.dp),
-          color = Color.Black,
-          elevation = 12.dp
-        ) {
-          Box(modifier = Modifier.fillMaxSize()) {
-            cameraPreview()
+        Box(modifier = Modifier.fillMaxSize()) {
+          cameraPreview()
 
-            Row(
+          Row(
+            modifier = Modifier
+              .padding(14.dp)
+              .align(Alignment.TopStart)
+              .clip(RoundedCornerShape(percent = 50))
+              .background(Color.Black.copy(alpha = 0.58f))
+              .padding(horizontal = 10.dp, vertical = 5.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+          ) {
+            Box(
               modifier = Modifier
-                .padding(14.dp)
-                .align(Alignment.TopStart)
-                .clip(RoundedCornerShape(percent = 50))
-                .background(Color.Black.copy(alpha = 0.58f))
-                .padding(horizontal = 10.dp, vertical = 5.dp),
-              verticalAlignment = Alignment.CenterVertically,
-              horizontalArrangement = Arrangement.spacedBy(6.dp)
-            ) {
-              Box(
-                modifier = Modifier
-                  .size(8.dp)
-                  .clip(CircleShape)
-                  .background(Color(0xFFE53935).copy(alpha = dotAlpha))
-              )
+                .size(8.dp)
+                .clip(CircleShape)
+                .background(Color(0xFFE53935).copy(alpha = dotAlpha))
+            )
 
-              val mins = (recordingSeconds / 60).toString().padStart(2, '0')
-              val secs = (recordingSeconds % 60).toString().padStart(2, '0')
-              Text(
-                text = "$mins:$secs / 02:00",
-                fontSize = 12.5.sp,
-                fontWeight = FontWeight.SemiBold,
-                fontFamily = FontFamily.Monospace,
-                color = Color.White
-              )
-            }
+            val mins = (recordingSeconds / 60).toString().padStart(2, '0')
+            val secs = (recordingSeconds % 60).toString().padStart(2, '0')
+            Text(
+              text = "$mins:$secs / 02:00",
+              fontSize = 12.5.sp,
+              fontWeight = FontWeight.SemiBold,
+              fontFamily = FontFamily.Monospace,
+              color = Color.White
+            )
           }
         }
       }
