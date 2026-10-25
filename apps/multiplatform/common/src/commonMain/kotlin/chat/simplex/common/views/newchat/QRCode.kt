@@ -71,33 +71,33 @@ fun QRCode(
   onShare: (() -> Unit)? = null,
 ) {
   val scope = rememberCoroutineScope()
-  val logoSize = if (small) 0.21f else 0.16f
-  val errorLevel = if (small) QrCode.ErrorLevel.M else QrCode.ErrorLevel.L
-  val qr = remember(connReq, tintColor, withLogo) {
-    qrCodeBitmap(connReq, 1024, errorLevel).replaceColor(Color.Black.toArgb(), tintColor.toArgb())
-      .let { if (withLogo) it.addLogo(logoSize) else it }
-  }
-  Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-    Image(
-      bitmap = qr,
-      contentDescription = stringResource(MR.strings.image_descr_qr_code),
-      Modifier
-        .padding(padding)
-        .widthIn(max = 400.dp)
-        .fillMaxWidth(if (small) 0.63f else 1f)
-        .aspectRatio(1f)
-        .then(modifier)
-        .clickable {
-          scope.launch {
-            val image = qrCodeBitmap(connReq, 1024, errorLevel).replaceColor(Color.Black.toArgb(), tintColor.toArgb())
-              .let { if (withLogo) it.addLogo(logoSize) else it }
-            val file = saveTempImageUncompressed(image, true)
-            if (file != null) {
-              shareFile("", CryptoFile.plain(file.absolutePath))
-              onShare?.invoke()
-            }
+  val qrSize = if (small) 210.dp else 260.dp
+
+  Box(
+    modifier = Modifier
+      .fillMaxWidth()
+      .padding(padding),
+    contentAlignment = Alignment.Center
+  ) {
+    Material3ExpressiveQRCode(
+      content = connReq,
+      size = qrSize,
+      primaryColor = Color(0xFF191C1E),
+      containerColor = Color.White,
+      modifier = modifier.clickable {
+        scope.launch {
+          val errorLevel = if (small) QrCode.ErrorLevel.M else QrCode.ErrorLevel.L
+          val logoSize = if (small) 0.21f else 0.16f
+          val image = qrCodeBitmap(connReq, 1024, errorLevel)
+            .replaceColor(Color.Black.toArgb(), tintColor.toArgb())
+            .let { if (withLogo) it.addLogo(logoSize) else it }
+          val file = saveTempImageUncompressed(image, true)
+          if (file != null) {
+            shareFile("", CryptoFile.plain(file.absolutePath))
+            onShare?.invoke()
           }
         }
+      }
     )
   }
 }
