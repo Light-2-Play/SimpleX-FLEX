@@ -570,9 +570,9 @@ private fun AddTemporaryContentDialog(
 
 // =====================================================================
 // 4. ПОЛНОЭКРАННЫЙ ПРОСМОТРЩИК TEMPORARY CONTENT (КАК СТОРИС)
-// =====================================================================
+// ====================================================================
 @Composable
-private fun TemporaryContentStoryViewer(
+fun TemporaryContentStoryViewer(
   items: List<TemporaryContentItem>,
   initialIndex: Int,
   onDismiss: () -> Unit
