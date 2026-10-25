@@ -11,21 +11,30 @@ import SectionView
 import androidx.compose.desktop.ui.tooling.preview.Preview
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.*
 import androidx.compose.material.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.painter.Painter
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.*
 import chat.simplex.common.views.call.CallMediaType
 import chat.simplex.common.views.chatlist.*
 import androidx.compose.ui.text.*
 import dev.icerock.moko.resources.compose.painterResource
 import dev.icerock.moko.resources.compose.stringResource
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.intl.Locale
@@ -239,7 +248,7 @@ fun deleteContactDialog(chat: Chat, chatModel: ChatModel, close: (() -> Unit)? =
       contact.sndReady && contact.active && chatInfo.chatDeleted ->
         deleteContactWithoutConversation(chat, chatModel, close)
 
-      else -> // !(contact.sndReady && contact.active)
+      else ->
         deleteNotReadyContact(chat, chatModel, close)
     }
   }
@@ -252,7 +261,6 @@ private fun deleteContactOrConversationDialog(chat: Chat, contact: Contact, chat
     parseHtml = false,
     buttons = {
       Column {
-        // Only delete conversation
         SectionItemView({
           AlertManager.shared.hideAlert()
           deleteContact(chat, chatModel, close, chatDeleteMode = ChatDeleteMode.Messages())
@@ -262,14 +270,12 @@ private fun deleteContactOrConversationDialog(chat: Chat, contact: Contact, chat
         }) {
           Text(generalGetString(MR.strings.only_delete_conversation), Modifier.fillMaxWidth(), textAlign = TextAlign.Center, color = MaterialTheme.colors.error)
         }
-        // Delete contact
         SectionItemView({
           AlertManager.shared.hideAlert()
           deleteActiveContactDialog(chat, contact, chatModel, close)
         }) {
           Text(generalGetString(MR.strings.button_delete_contact), Modifier.fillMaxWidth(), textAlign = TextAlign.Center, color = MaterialTheme.colors.error)
         }
-        // Cancel
         SectionItemView({
           AlertManager.shared.hideAlert()
         }) {
@@ -312,7 +318,6 @@ private fun deleteActiveContactDialog(chat: Chat, contact: Contact, chatModel: C
     parseHtml = false,
     buttons = {
       Column {
-        // Keep conversation toggle
         SectionItemView {
           Row(
             Modifier.fillMaxWidth(),
@@ -330,7 +335,6 @@ private fun deleteActiveContactDialog(chat: Chat, contact: Contact, chatModel: C
             )
           }
         }
-        // Delete without notification
         SectionItemView({
           AlertManager.shared.hideAlert()
           deleteContact(chat, chatModel, close, chatDeleteMode = contactDeleteMode.value.toChatDeleteMode(notify = false))
@@ -340,7 +344,6 @@ private fun deleteActiveContactDialog(chat: Chat, contact: Contact, chatModel: C
         }) {
           Text(generalGetString(MR.strings.delete_without_notification), Modifier.fillMaxWidth(), textAlign = TextAlign.Center, color = MaterialTheme.colors.error)
         }
-        // Delete contact and notify
         SectionItemView({
           AlertManager.shared.hideAlert()
           deleteContact(chat, chatModel, close, chatDeleteMode = contactDeleteMode.value.toChatDeleteMode(notify = true))
@@ -350,7 +353,6 @@ private fun deleteActiveContactDialog(chat: Chat, contact: Contact, chatModel: C
         }) {
           Text(generalGetString(MR.strings.delete_and_notify_contact), Modifier.fillMaxWidth(), textAlign = TextAlign.Center, color = MaterialTheme.colors.error)
         }
-        // Cancel
         SectionItemView({
           AlertManager.shared.hideAlert()
         }) {
@@ -368,7 +370,6 @@ private fun deleteContactWithoutConversation(chat: Chat, chatModel: ChatModel, c
     parseHtml = false,
     buttons = {
       Column {
-        // Delete and notify contact
         SectionItemView({
           AlertManager.shared.hideAlert()
           deleteContact(
@@ -385,7 +386,6 @@ private fun deleteContactWithoutConversation(chat: Chat, chatModel: ChatModel, c
             color = MaterialTheme.colors.error
           )
         }
-        // Delete without notification
         SectionItemView({
           AlertManager.shared.hideAlert()
           deleteContact(
@@ -403,7 +403,6 @@ private fun deleteContactWithoutConversation(chat: Chat, chatModel: ChatModel, c
           )
         }
       }
-      // Cancel
       SectionItemView({
         AlertManager.shared.hideAlert()
       }) {
@@ -424,7 +423,6 @@ private fun deleteNotReadyContact(chat: Chat, chatModel: ChatModel, close: (() -
     text = "${chat.chatInfo.displayName}\n\n${generalGetString(MR.strings.delete_contact_cannot_undo_warning)}",
     parseHtml = false,
     buttons = {
-      // Confirm
       SectionItemView({
         AlertManager.shared.hideAlert()
         deleteContact(
@@ -441,7 +439,6 @@ private fun deleteNotReadyContact(chat: Chat, chatModel: ChatModel, close: (() -
           color = MaterialTheme.colors.error
         )
       }
-      // Cancel
       SectionItemView({
         AlertManager.shared.hideAlert()
       }) {
@@ -558,6 +555,9 @@ fun ChatInfoLayout(
 
     LocalAliasEditor(chat.id, localAlias, updateValue = onLocalAliasChanged)
 
+    // Раздел активных историй собеседника (если они есть)
+    ContactStoriesSection(contact.contactId, contact.displayName)
+
     SectionDividerSpaced()
 
     Box(
@@ -600,9 +600,6 @@ fun ChatInfoLayout(
         if (cStats != null && cStats.ratchetSyncAllowed) {
           SynchronizeConnectionButton(syncContactConnection)
         }
-        // } else if (developerTools) {
-        //   SynchronizeConnectionButtonForce(syncContactConnectionForce)
-        // }
       }
 
       WallpaperButton {
@@ -707,13 +704,21 @@ fun ChatInfoLayout(
   }
 }
 
+// =====================================================================
+// ЗАГОЛОВОК ПРОФИЛЯ СО СВЕТЯЩЕЙСЯ АВАТАРКОЙ STORYAVATARCONTAINER
+// =====================================================================
 @Composable
 fun ChatInfoHeader(cInfo: ChatInfo, contact: Contact) {
   Column(
     Modifier.padding(horizontal = DEFAULT_PADDING),
     horizontalAlignment = Alignment.CenterHorizontally
   ) {
-    ChatInfoImage(cInfo, size = 192.dp, iconColor = if (isInDarkTheme()) GroupDark else SettingsSecondaryLight)
+    StoryAvatarContainer(
+      contactId = contact.contactId,
+      avatarSize = 192.dp
+    ) {
+      ChatInfoImage(cInfo, size = 192.dp, iconColor = if (isInDarkTheme()) GroupDark else SettingsSecondaryLight)
+    }
     val displayName = contact.profile.displayName.trim()
     val badge = cInfo.nameBadge
     val text = buildAnnotatedString {
@@ -758,6 +763,208 @@ fun ChatInfoHeader(cInfo: ChatInfo, contact: Contact) {
     )
     ChatInfoDescription(cInfo, displayName, copyNameToClipboard)
     ContactSimplexNameView(contact)
+  }
+}
+
+// =====================================================================
+// РАЗДЕЛ TEMPORARY CONTENT КОНТАКТА В ПРОФИЛЕ
+// =====================================================================
+@Composable
+fun ContactStoriesSection(contactId: Long, contactDisplayName: String) {
+  val allItems by TemporaryContentManager.items.collectAsState()
+  var viewingStartIndex by remember { mutableStateOf<Int?>(null) }
+  var nowMillis by remember { mutableStateOf(System.currentTimeMillis()) }
+
+  val stories = remember(allItems, contactId) {
+    TemporaryContentManager.getActiveItemsFor(contactId)
+  }
+
+  if (stories.isEmpty()) return
+
+  LaunchedEffect(Unit) {
+    while (true) {
+      delay(15_000L)
+      nowMillis = System.currentTimeMillis()
+    }
+  }
+
+  val isLight = MaterialTheme.colors.isLight
+  val primary = MaterialTheme.colors.primary
+  val cardBg = if (isLight) lerp(Color.White, primary, 0.055f) else lerp(MaterialTheme.colors.surface, primary, 0.12f)
+  val borderColor = primary.copy(alpha = if (isLight) 0.16f else 0.24f)
+
+  Surface(
+    shape = RoundedCornerShape(26.dp),
+    color = cardBg,
+    elevation = 0.dp,
+    modifier = Modifier
+      .fillMaxWidth()
+      .padding(horizontal = 16.dp, vertical = 8.dp)
+      .border(0.75.dp, borderColor, RoundedCornerShape(26.dp))
+  ) {
+    Column(
+      modifier = Modifier
+        .fillMaxWidth()
+        .padding(vertical = 14.dp)
+    ) {
+      Row(
+        modifier = Modifier
+          .fillMaxWidth()
+          .padding(horizontal = 16.dp),
+        verticalAlignment = Alignment.CenterVertically
+      ) {
+        Box(
+          modifier = Modifier
+            .size(36.dp)
+            .clip(RoundedCornerShape(12.dp))
+            .background(primary.copy(alpha = 0.15f)),
+          contentAlignment = Alignment.Center
+        ) {
+          Icon(
+            painter = painterResource(MR.images.ic_timer),
+            contentDescription = null,
+            tint = primary,
+            modifier = Modifier.size(20.dp)
+          )
+        }
+        Spacer(Modifier.width(12.dp))
+        Column {
+          Text(
+            text = "Temporary Content",
+            fontSize = 16.sp,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colors.onSurface
+          )
+          Text(
+            text = "${stories.size} active • auto-delete enabled",
+            fontSize = 12.sp,
+            color = MaterialTheme.colors.onSurface.copy(alpha = 0.6f)
+          )
+        }
+      }
+
+      Spacer(Modifier.height(14.dp))
+
+      LazyRow(
+        contentPadding = PaddingValues(horizontal = 16.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalAlignment = Alignment.CenterVertically
+      ) {
+        itemsIndexed(stories, key = { _, item -> item.id }) { index, item ->
+          ContactStoryTile(
+            item = item,
+            nowMillis = nowMillis,
+            onClick = {
+              RichHaptics.perform(HapticPattern.CLICK)
+              viewingStartIndex = index
+            }
+          )
+        }
+      }
+    }
+  }
+
+  val startIdx = viewingStartIndex
+  if (startIdx != null) {
+    TemporaryContentStoryViewer(
+      items = stories,
+      initialIndex = startIdx.coerceIn(0, stories.lastIndex),
+      onDismiss = { viewingStartIndex = null }
+    )
+  }
+}
+
+@Composable
+private fun ContactStoryTile(
+  item: TemporaryContentItem,
+  nowMillis: Long,
+  onClick: () -> Unit
+) {
+  val primary = MaterialTheme.colors.primary
+  val ringBrush = Brush.linearGradient(
+    colors = listOf(primary, lerp(primary, Color(0xFFFF6D00), 0.35f))
+  )
+
+  val thumbnailBitmap = remember(item.filePath) {
+    loadContactStoryBitmapSafe(item.filePath, item.mediaType)
+  }
+
+  Column(
+    horizontalAlignment = Alignment.CenterHorizontally,
+    modifier = Modifier.width(78.dp)
+  ) {
+    Box(
+      modifier = Modifier
+        .size(74.dp)
+        .clip(RoundedCornerShape(22.dp))
+        .border(2.5.dp, ringBrush, RoundedCornerShape(22.dp))
+        .padding(3.5.dp)
+        .clip(RoundedCornerShape(18.5.dp))
+        .background(Color(0xFF1E1E24))
+        .clickable(onClick = onClick),
+      contentAlignment = Alignment.Center
+    ) {
+      if (thumbnailBitmap != null) {
+        Image(
+          bitmap = thumbnailBitmap,
+          contentDescription = null,
+          contentScale = ContentScale.Crop,
+          modifier = Modifier.fillMaxSize()
+        )
+      } else {
+        Icon(
+          painter = painterResource(
+            if (item.mediaType == TemporaryMediaType.VIDEO) MR.images.ic_videocam else MR.images.ic_image
+          ),
+          contentDescription = null,
+          tint = Color.White.copy(alpha = 0.85f),
+          modifier = Modifier.size(26.dp)
+        )
+      }
+
+      if (item.mediaType == TemporaryMediaType.VIDEO) {
+        Box(
+          modifier = Modifier
+            .align(Alignment.TopEnd)
+            .padding(4.dp)
+            .size(18.dp)
+            .clip(CircleShape)
+            .background(Color.Black.copy(alpha = 0.55f)),
+          contentAlignment = Alignment.Center
+        ) {
+          Icon(
+            painter = painterResource(MR.images.ic_play_arrow_filled),
+            contentDescription = null,
+            tint = Color.White,
+            modifier = Modifier.size(12.dp)
+          )
+        }
+      }
+    }
+
+    Spacer(Modifier.height(5.dp))
+
+    Text(
+      text = item.remainingTimeText(nowMillis),
+      fontSize = 11.sp,
+      fontWeight = FontWeight.SemiBold,
+      fontFamily = FontFamily.Monospace,
+      color = primary,
+      maxLines = 1
+    )
+  }
+}
+
+private fun loadContactStoryBitmapSafe(filePath: String, mediaType: TemporaryMediaType): ImageBitmap? {
+  if (mediaType != TemporaryMediaType.PHOTO) return null
+  return try {
+    val file = File(filePath)
+    if (file.exists()) {
+      val base64Str = java.util.Base64.getEncoder().encodeToString(file.readBytes())
+      base64ToBitmap(base64Str)
+    } else null
+  } catch (_: Exception) {
+    null
   }
 }
 
@@ -863,16 +1070,16 @@ fun LocalAliasEditor(
     var prevValue = state.value
     snapshotFlow { state.value }
       .distinctUntilChanged()
-      .onEach { delay(500) } // wait a little after every new character, don't emit until user stops typing
-      .conflate() // get the latest value
-      .filter { it == state.value && it != prevValue } // don't process old ones
+      .onEach { delay(500) }
+      .conflate()
+      .filter { it == state.value && it != prevValue }
       .collect {
         updateValue(it.text)
         prevValue = it
       }
   }
   DisposableEffect(chatId) {
-    onDispose { if (updatedValueAtLeastOnce) updateValue(state.value.text) } // just in case snapshotFlow will be canceled when user presses Back too fast
+    onDispose { if (updatedValueAtLeastOnce) updateValue(state.value.text) }
   }
 }
 
@@ -1316,7 +1523,6 @@ suspend fun save(applyToMode: DefaultThemeMode?, newTheme: ThemeModeOverride?, c
     val light = changedThemes.light
     val dark = changedThemes.dark
     val currentMode = CurrentColors.value.base.mode
-    // same image file for both modes, copy image to make them as different files
     if (light?.wallpaper?.imageFile != null && dark?.wallpaper?.imageFile != null && light.wallpaper.imageFile == dark.wallpaper.imageFile) {
       val imageFile = if (currentMode == DefaultThemeMode.LIGHT) {
         dark.wallpaper.imageFile
@@ -1455,7 +1661,6 @@ private suspend fun afterSetChatTTL(chatsCtx: ChatModel.ChatsContext, rhId: Long
     val pagination = ChatPagination.Initial(ChatPagination.INITIAL_COUNT)
     val (chat, navInfo) = controller.apiGetChat(rhId, chatInfo.chatType, chatInfo.apiId, scope = null, contentTag = null, pagination) ?: return
     if (chat.chatItems.isEmpty()) {
-      // replacing old chat with the same old chat but without items. Less intrusive way of clearing a preview
       withContext(Dispatchers.Main) {
         val oldChat = chatModel.chatsContext.getChat(chat.id)
         if (oldChat != null) {
