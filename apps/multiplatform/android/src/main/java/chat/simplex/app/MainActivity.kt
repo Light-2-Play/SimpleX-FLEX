@@ -62,6 +62,25 @@ class MainActivity: FragmentActivity() {
 
   private var usbWatcherJob: Job? = null
 
+  private var tempContentCallback: ((ByteArray?) -> Unit)? = null
+
+  private val tempMediaLauncher = registerForActivityResult(
+    androidx.activity.result.contract.ActivityResultContracts.GetContent()
+  ) { uri: Uri? ->
+    val cb = tempContentCallback
+    tempContentCallback = null
+    if (uri != null && cb != null) {
+      try {
+        val bytes = contentResolver.openInputStream(uri)?.use { it.readBytes() }
+        cb(bytes)
+      } catch (_: Exception) {
+        cb(null)
+      }
+    } else {
+      cb?.invoke(null)
+    }
+  }
+
   private fun startForegroundUsbWatcher() {
     if (!UsbPanicDetector.isEnabled()) return
     usbWatcherJob?.cancel()
@@ -86,6 +105,12 @@ class MainActivity: FragmentActivity() {
     mainActivity = WeakReference(this)
     super.onCreate(savedInstanceState)
 
+chat.simplex.common.views.usersettings.TemporaryContentPickerBridge.pickMedia = { mediaType, callback ->
+      tempContentCallback = callback
+      val mime = if (mediaType == chat.simplex.common.platform.TemporaryMediaType.VIDEO) "video/*" else "image/*"
+      tempMediaLauncher.launch(mime)
+    }
+    
     openByeDpiDialog = {
       showSingBoxDialogState.value = true
     }
