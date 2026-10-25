@@ -1,4 +1,5 @@
 package chat.simplex.common.ui.theme
+
 import androidx.compose.ui.graphics.Color
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material.*
@@ -22,6 +23,7 @@ import kotlinx.serialization.Serializable
 import chat.simplex.res.MR
 import kotlinx.serialization.Transient
 import java.util.UUID
+
 data class MonetPalette(
   val primary: Color,
   val primaryVariant: Color,
@@ -38,6 +40,7 @@ data class MonetPalette(
 )
 
 var getMonetPalette: ((Boolean) -> MonetPalette)? = null
+
 // Spec: spec/services/theme.md#DefaultTheme
 enum class DefaultTheme {
   LIGHT, DARK, SIMPLEX, BLACK;
@@ -284,7 +287,6 @@ data class ThemeWallpaper (
 
  fun importFromString(): ThemeWallpaper =
    if (preset == null && image != null) {
-     // Need to save image from string and to save its path
      try {
        val parsed = base64ToBitmap(image)
        val filename = saveWallpaperFile(parsed)
@@ -406,8 +408,6 @@ data class ThemeOverrides (
   fun toAppWallpaper(themeOverridesForType: WallpaperType?, perChatTheme: ThemeModeOverride?, perUserTheme: ThemeModeOverride?, materialBackgroundColor: Color): AppWallpaper {
     val mainType = when {
       themeOverridesForType != null -> themeOverridesForType
-      // type can be null if override is empty `"wallpaper": "{}"`, in this case no wallpaper is needed, empty.
-      // It's not null to override upper level wallpaper
       perChatTheme?.wallpaper != null -> perChatTheme.wallpaper.toAppWallpaper().type
       perUserTheme?.wallpaper != null -> perUserTheme.wallpaper.toAppWallpaper().type
       else -> wallpaper?.toAppWallpaper()?.type ?: return AppWallpaper()
@@ -460,7 +460,6 @@ fun List<ThemeOverrides>.getTheme(themeId: String?, type: WallpaperType?, base: 
 
 fun List<ThemeOverrides>.replace(theme: ThemeOverrides): List<ThemeOverrides> {
   val index = indexOfFirst { it.themeId == theme.themeId ||
-      // prevent situation when two themes has the same type but different theme id (maybe something was changed in prefs by hand)
       it.isSame(WallpaperType.from(theme.wallpaper), theme.base.themeName)
   }
   return if (index != -1) {
@@ -612,30 +611,45 @@ data class ThemeModeOverride (
   }
 }
 
-// Canvas color for settings/info screens (drawn behind cards by themedBackground)
-// and for the 2dp item divider inside section cards (matches canvas so dividers
-// read as gaps showing the screen behind).
-// LIGHT: formula derives off-white from palette bg + onBackground — lifts white
-// cards above. DARK/BLACK: palette bg (cards already raised via founder's
-// formula in Section.kt). SIMPLEX: gradient bottom stop (darker), since the
-// canvas itself is a gradient drawn by themedBackgroundBrush.
+// =====================================================================
+// M3 EXPRESSIVE TONAL CANVAS & CARD COLORS
+// =====================================================================
+
 fun canvasColorForCurrentTheme(): Color {
   val theme = CurrentColors.value
+  val isDark = !theme.colors.isLight
+  val monet = getMonetPalette?.invoke(isDark)
+  if (monet != null) {
+    return if (!isDark) {
+      // Мягкий пастельный холст с легким оттенком primary (без серой примеси)
+      lerp(monet.background, monet.primary, 0.045f)
+    } else {
+      lerp(monet.background, monet.primary, 0.03f)
+    }
+  }
   val c = theme.colors
   return when (theme.base) {
-    DefaultTheme.LIGHT -> c.background.mixWith(c.onBackground, 0.94f)
+    DefaultTheme.LIGHT -> lerp(c.background, c.primary, 0.04f)
     DefaultTheme.SIMPLEX -> c.background.darker(0.4f)
     else -> c.background
   }
 }
 
-// Card background color for SectionView. LIGHT: pure white (raised above the
-// off-white canvas). DARK/BLACK/SIMPLEX: founder's mixWith formula (lifts cards
-// above palette bg using onBackground tint).
 fun sectionCardColor(): Color {
   val theme = CurrentColors.value
+  val isDark = !theme.colors.isLight
+  val monet = getMonetPalette?.invoke(isDark)
+  if (monet != null) {
+    return if (!isDark) {
+      // Чистая светлая карточка с нежным тоном (Surface Container Lowest / Low)
+      lerp(Color.White, monet.primary, 0.055f)
+    } else {
+      // Приподнятая тонированная карточка в темной теме (Surface Container High)
+      lerp(monet.surface, monet.primary, 0.14f)
+    }
+  }
   return if (theme.base == DefaultTheme.LIGHT) Color.White
-  else theme.colors.background.mixWith(theme.colors.onBackground, 0.95f)
+  else lerp(theme.colors.surface, theme.colors.primary, 0.08f)
 }
 
 fun Modifier.themedBackground(baseTheme: DefaultTheme = CurrentColors.value.base, bgLayerSize: MutableState<IntSize>?, bgLayer: GraphicsLayer?, overrideColor: Color? = null): Modifier {
@@ -646,7 +660,7 @@ fun Modifier.themedBackground(baseTheme: DefaultTheme = CurrentColors.value.base
       } else if (baseTheme == DefaultTheme.SIMPLEX) {
         drawRect(brush = themedBackgroundBrush())
       } else {
-        drawRect(CurrentColors.value.colors.background)
+        drawRect(canvasColorForCurrentTheme())
       }
     }
   }
@@ -677,17 +691,14 @@ val DEFAULT_END_MODAL_WIDTH = 388.dp
 val DEFAULT_MAX_IMAGE_WIDTH = 500.dp
 
 val DarkColorPalette = darkColors(
-  primary = SimplexBlue,  // If this value changes also need to update #0088ff in string resource files
+  primary = SimplexBlue,
   primaryVariant = SimplexBlue,
   secondary = HighOrLowlight,
   secondaryVariant = DarkGray,
-//  background = Color.Black,
   surface = Color(0xFF222222),
-//  background = Color(0xFF121212),
   error = Color.Red,
   onBackground = Color(0xFFFFFBFA),
   onSurface = Color(0xFFFFFBFA),
-//  onError: Color = Color.Black,
 )
 val DarkColorPaletteApp = AppColors(
   title = SimplexBlue,
@@ -699,17 +710,12 @@ val DarkColorPaletteApp = AppColors(
 )
 
 val LightColorPalette = lightColors(
-  primary = SimplexBlue,  // If this value changes also need to update #0088ff in string resource files
+  primary = SimplexBlue,
   primaryVariant = SimplexBlue,
   secondary = HighOrLowlight,
   secondaryVariant = LightGray,
   error = Color.Red,
-//  background = Color.White,
   surface = Color.White,
-//  onPrimary = Color.White,
-//  onSecondary = Color.Black,
-//  onBackground = Color.Black,
-//  onSurface = Color.Black,
 )
 val LightColorPaletteApp = AppColors(
   title = SimplexBlue,
@@ -721,18 +727,13 @@ val LightColorPaletteApp = AppColors(
 )
 
 val SimplexColorPalette = darkColors(
-  primary = Color(0xFF70F0F9),  // If this value changes also need to update #0088ff in string resource files
+  primary = Color(0xFF70F0F9),
   primaryVariant = Color(0xFF1298A5),
   secondary = HighOrLowlight,
   secondaryVariant = Color(0xFF2C464D),
   background = Color(0xFF111528),
-  //  surface = Color.Black,
-  //  background = Color(0xFF121212),
   surface = Color(0xFF121C37),
   error = Color.Red,
-//  onBackground = Color(0xFFFFFBFA),
-//  onSurface = Color(0xFFFFFBFA),
-  //  onError: Color = Color.Black,
 )
 val SimplexColorPaletteApp = AppColors(
   title = Color(0xFF267BE5),
@@ -744,18 +745,15 @@ val SimplexColorPaletteApp = AppColors(
 )
 
 val BlackColorPalette = darkColors(
-  primary = Color(0xff0077e0),  // If this value changes also need to update #0088ff in string resource files
+  primary = Color(0xff0077e0),
   primaryVariant = Color(0xff0077e0),
   secondary = HighOrLowlight,
   secondaryVariant = DarkGray,
   background = Color(0xff070707),
   surface = Color(0xff161617),
-  //  background = Color(0xFF121212),
-  //  surface = Color(0xFF121212),
   error = Color.Red,
   onBackground = Color(0xFFFFFBFA),
   onSurface = Color(0xFFFFFBFA),
-  //  onError: Color = Color.Black,
 )
 val BlackColorPaletteApp = AppColors(
   title = Color(0xff0077e0),
@@ -808,9 +806,51 @@ val MaterialTheme.wallpaper: AppWallpaper
 fun reactOnDarkThemeChanges(isDark: Boolean) {
   systemInDarkThemeCurrently = isDark
   if (ChatController.appPrefs.currentTheme.get() == DefaultTheme.SYSTEM_THEME_NAME && CurrentColors.value.colors.isLight == isDark) {
-    // Change active colors from light to dark and back based on system theme
     ThemeManager.applyTheme(DefaultTheme.SYSTEM_THEME_NAME)
   }
+}
+
+/**
+ * Формула мягких тональных цветов Material 3 Expressive без серого затухания
+ */
+private fun buildExpressiveMonetColors(baseColors: Colors, monet: MonetPalette, isDark: Boolean): Colors {
+  val adjustedOnSurface = if (!isDark) {
+    lerp(Color(0xFF191C1E), monet.primary, 0.08f)
+  } else {
+    lerp(Color(0xFFE6E1E5), monet.primary, 0.08f)
+  }
+
+  // Вместо умножения на 0.90f (дающего серую грязь) тонируем чистую базу цветом primary
+  val expressiveBackground = if (!isDark) {
+    lerp(Color(0xFFFFFBFF), monet.primary, 0.035f)
+  } else {
+    lerp(monet.background, monet.primary, 0.03f)
+  }
+
+  val expressiveSurface = if (!isDark) {
+    lerp(Color.White, monet.primary, 0.09f)
+  } else {
+    lerp(monet.surface, monet.primary, 0.14f)
+  }
+
+  // Читаемый, мягкий тональный цвет для иконок и вторичного текста
+  val expressiveSecondary = if (!isDark) {
+    lerp(monet.primary, adjustedOnSurface, 0.32f)
+  } else {
+    lerp(monet.primary, adjustedOnSurface, 0.25f)
+  }
+
+  return baseColors.copy(
+    primary = monet.primary,
+    primaryVariant = monet.primaryVariant,
+    secondary = expressiveSecondary,
+    secondaryVariant = monet.primaryVariant2,
+    background = expressiveBackground,
+    surface = expressiveSurface,
+    onPrimary = monet.onPrimary,
+    onBackground = adjustedOnSurface,
+    onSurface = adjustedOnSurface
+  )
 }
 
 // Spec: spec/services/theme.md#SimpleXTheme
@@ -835,41 +875,7 @@ fun SimpleXTheme(darkTheme: Boolean? = null, content: @Composable () -> Unit) {
   val monet = getMonetPalette?.invoke(isDark)
 
   val appMaterialColors = if (monet != null) {
-    // 1. Корректируем подложки: в темной теме поднимаем яркость surface над фоном, в светлой — слегка притеняем
-    val adjustedSurface = if (!isDark) {
-      androidx.compose.ui.graphics.Color(
-        red = (monet.surface.red * 0.90f).coerceIn(0f, 1f),
-        green = (monet.surface.green * 0.90f).coerceIn(0f, 1f),
-        blue = (monet.surface.blue * 0.90f).coerceIn(0f, 1f),
-        alpha = 1f
-      )
-    } else {
-      androidx.compose.ui.graphics.Color(
-        red = (monet.surface.red * 1.18f + 0.05f).coerceIn(0f, 1f),
-        green = (monet.surface.green * 1.18f + 0.05f).coerceIn(0f, 1f),
-        blue = (monet.surface.blue * 1.18f + 0.05f).coerceIn(0f, 1f),
-        alpha = 1f
-      )
-    }
-
-    // 2. Высококонтрастный базовый цвет для текста и неактивных кнопок (вызовы, действия)
-    val adjustedOnSurface = if (!isDark) {
-      androidx.compose.ui.graphics.Color(0xFF191C1E) // Четкий темный для светлой темы
-    } else {
-      androidx.compose.ui.graphics.Color(0xFFE2E2E6) // Яркий светлый для темной темы (не растворяется при альфе 0.38)
-    }
-
-    theme.colors.copy(
-      primary = monet.primary,
-      primaryVariant = monet.primaryVariant,
-      secondary = monet.primaryVariant2,
-      secondaryVariant = monet.primaryVariant2, // Исправляет зеленый в основном интерфейсе
-      background = monet.background,
-      surface = adjustedSurface,
-      onPrimary = monet.onPrimary,
-      onBackground = adjustedOnSurface,
-      onSurface = adjustedOnSurface
-    )
+    buildExpressiveMonetColors(theme.colors, monet, isDark)
   } else {
     theme.colors
   }
@@ -879,18 +885,16 @@ fun SimpleXTheme(darkTheme: Boolean? = null, content: @Composable () -> Unit) {
     typography = Typography,
     shapes = Shapes,
     content = {
-      val density = Density(LocalDensity.current.density, fontScale = 1f)
-
       val rememberedAppColors = remember {
         theme.appColors.copy()
       }.apply {
         updateColorsFrom(theme.appColors)
         monet?.let { m ->
           title = m.primary
-          sentMessage = m.sentMessage
-          sentQuote = m.sentQuote
-          receivedMessage = m.receivedMessage
-          receivedQuote = m.receivedQuote
+          sentMessage = if (!isDark) lerp(Color.White, m.primary, 0.18f) else m.sentMessage
+          sentQuote = if (!isDark) lerp(Color.White, m.primary, 0.28f) else m.sentQuote
+          receivedMessage = if (!isDark) lerp(Color.White, m.primary, 0.06f) else m.receivedMessage
+          receivedQuote = if (!isDark) lerp(Color.White, m.primary, 0.12f) else m.receivedQuote
           primaryVariant2 = m.primaryVariant2
         }
       }
@@ -915,43 +919,7 @@ fun SimpleXThemeOverride(theme: ThemeManager.ActiveTheme, content: @Composable (
   val monet = getMonetPalette?.invoke(isDark)
 
   val appMaterialColors = if (monet != null) {
-    // 1. Корректируем подложки (surface), чтобы плашки дат и карточки не сливались с фоном
-    val adjustedSurface = if (!isDark) {
-      // Для светлой темы: мягко опускаем яркость surface на 10%, чтобы появился контраст с фоном чата
-      Color(
-        red = (monet.surface.red * 0.90f).coerceIn(0f, 1f),
-        green = (monet.surface.green * 0.90f).coerceIn(0f, 1f),
-        blue = (monet.surface.blue * 0.90f).coerceIn(0f, 1f),
-        alpha = 1f
-      )
-    } else {
-      // Для темной темы: делаем подложку чуть светлее глубокого темного фона
-      Color(
-        red = (monet.surface.red * 1.15f + 0.04f).coerceIn(0f, 1f),
-        green = (monet.surface.green * 1.15f + 0.04f).coerceIn(0f, 1f),
-        blue = (monet.surface.blue * 1.15f + 0.04f).coerceIn(0f, 1f),
-        alpha = 1f
-      )
-    }
-
-    // 2. Усиливаем onSurface: теперь неактивные кнопки с альфой 0.38f остаются четко различимыми
-    val adjustedOnSurface = if (!isDark) {
-      Color(0xFF191C1E) // Глубокий контрастный темный для светлой темы
-    } else {
-      Color(0xFFE2E2E6) // Чистый контрастный светлый для темной темы
-    }
-
-    theme.colors.copy(
-      primary = monet.primary,
-      primaryVariant = monet.primaryVariant,
-      secondary = monet.primaryVariant2,
-      secondaryVariant = monet.primaryVariant2, // Исправляет зеленый в оверрайдах
-      background = monet.background,
-      surface = adjustedSurface,
-      onPrimary = monet.onPrimary,
-      onBackground = adjustedOnSurface,
-      onSurface = adjustedOnSurface
-    )
+    buildExpressiveMonetColors(theme.colors, monet, isDark)
   } else {
     theme.colors
   }
@@ -961,18 +929,16 @@ fun SimpleXThemeOverride(theme: ThemeManager.ActiveTheme, content: @Composable (
     typography = Typography,
     shapes = Shapes,
     content = {
-      val density = Density(LocalDensity.current.density, fontScale = 1f)
-
       val rememberedAppColors = remember {
         theme.appColors.copy()
       }.apply {
         updateColorsFrom(theme.appColors)
         monet?.let { m ->
           title = m.primary
-          sentMessage = m.sentMessage
-          sentQuote = m.sentQuote
-          receivedMessage = m.receivedMessage
-          receivedQuote = m.receivedQuote
+          sentMessage = if (!isDark) lerp(Color.White, m.primary, 0.18f) else m.sentMessage
+          sentQuote = if (!isDark) lerp(Color.White, m.primary, 0.28f) else m.sentQuote
+          receivedMessage = if (!isDark) lerp(Color.White, m.primary, 0.06f) else m.receivedMessage
+          receivedQuote = if (!isDark) lerp(Color.White, m.primary, 0.12f) else m.receivedQuote
           primaryVariant2 = m.primaryVariant2
         }
       }
