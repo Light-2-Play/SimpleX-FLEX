@@ -761,7 +761,10 @@ private fun loadStoryBitmapSafe(filePath: String, mediaType: TemporaryMediaType)
   if (mediaType != TemporaryMediaType.PHOTO) return null
   return try {
     val file = File(filePath)
-    if (file.exists()) base64ToBitmap(android.util.Base64.encodeToString(file.readBytes(), android.util.Base64.DEFAULT)) else null
+    if (file.exists()) {
+      val base64Str = java.util.Base64.getEncoder().encodeToString(file.readBytes())
+      base64ToBitmap(base64Str)
+    } else null
   } catch (_: Exception) {
     null
   }
