@@ -2,6 +2,7 @@ package chat.simplex.common.views.helpers
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.*
@@ -11,14 +12,17 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.icerock.moko.resources.compose.painterResource
 import chat.simplex.common.platform.HapticPattern
 import chat.simplex.common.platform.RichHaptics
+import chat.simplex.common.platform.copyText
 import chat.simplex.res.MR
 
 private val SecurityGreen = Color(0xFF2E7D32)
@@ -32,8 +36,10 @@ fun ExpressiveVerificationQRCodeCard(
   isVerified: Boolean = false,
   onScanOtherClick: (() -> Unit)? = null,
   onConfirmVerification: (() -> Unit)? = null,
-  size: Dp = 240.dp
+  onClearVerification: (() -> Unit)? = null,
+  size: Dp = 230.dp
 ) {
+  val clipboard = LocalClipboardManager.current
   val isLight = MaterialTheme.colors.isLight
   val cardBg = lerp(
     MaterialTheme.colors.surface,
@@ -46,7 +52,7 @@ fun ExpressiveVerificationQRCodeCard(
   Surface(
     modifier = Modifier
       .fillMaxWidth()
-      .padding(horizontal = 16.dp, vertical = 8.dp),
+      .padding(horizontal = 4.dp, vertical = 6.dp),
     shape = RoundedCornerShape(32.dp),
     color = cardBg,
     elevation = 0.dp
@@ -54,9 +60,9 @@ fun ExpressiveVerificationQRCodeCard(
     Column(
       modifier = Modifier
         .fillMaxWidth()
-        .padding(20.dp),
+        .padding(18.dp),
       horizontalAlignment = Alignment.CenterHorizontally,
-      verticalArrangement = Arrangement.spacedBy(16.dp)
+      verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
       // 1. Expressive Security Badge
       Row(
@@ -92,7 +98,7 @@ fun ExpressiveVerificationQRCodeCard(
             shape = RoundedCornerShape(32.dp)
           )
           .background(Color.White)
-          .padding(8.dp),
+          .padding(6.dp),
         contentAlignment = Alignment.Center
       ) {
         Material3ExpressiveQRCode(
@@ -103,21 +109,31 @@ fun ExpressiveVerificationQRCodeCard(
         )
       }
 
-      // 3. Short safety number snippet
+      // 3. Short safety number snippet with tap-to-copy
       if (safetyNumberShort != null) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Column(
+          horizontalAlignment = Alignment.CenterHorizontally,
+          modifier = Modifier
+            .clip(RoundedCornerShape(12.dp))
+            .clickable {
+              RichHaptics.perform(HapticPattern.CLICK)
+              clipboard.copyText(verificationUri)
+            }
+            .padding(horizontal = 8.dp, vertical = 4.dp)
+        ) {
           Text(
-            text = "Session fingerprint",
-            fontSize = 12.sp,
-            color = MaterialTheme.colors.onSurface.copy(alpha = 0.6f)
+            text = "Session fingerprint (tap to copy)",
+            fontSize = 11.sp,
+            color = MaterialTheme.colors.onSurface.copy(alpha = 0.55f)
           )
           Spacer(Modifier.height(4.dp))
           Text(
             text = safetyNumberShort,
-            fontSize = 15.sp,
+            fontSize = 14.sp,
             fontWeight = FontWeight.SemiBold,
             fontFamily = FontFamily.Monospace,
-            letterSpacing = 1.5.sp,
+            letterSpacing = 1.2.sp,
+            textAlign = TextAlign.Center,
             color = MaterialTheme.colors.onSurface
           )
         }
@@ -186,6 +202,40 @@ fun ExpressiveVerificationQRCodeCard(
               text = "Scan Contact's QR",
               fontWeight = FontWeight.Medium,
               fontSize = 14.sp
+            )
+          }
+        }
+
+        if (isVerified && onClearVerification != null) {
+          OutlinedButton(
+            onClick = {
+              RichHaptics.perform(HapticPattern.TOGGLE_OFF)
+              onClearVerification()
+            },
+            modifier = Modifier
+              .fillMaxWidth()
+              .height(46.dp),
+            shape = RoundedCornerShape(percent = 50),
+            colors = ButtonDefaults.outlinedButtonColors(
+              backgroundColor = Color.Transparent,
+              contentColor = MaterialTheme.colors.error
+            ),
+            border = ButtonDefaults.outlinedBorder.copy(
+              brush = androidx.compose.ui.graphics.SolidColor(MaterialTheme.colors.error.copy(alpha = 0.4f))
+            )
+          ) {
+            Icon(
+              painter = painterResource(MR.images.ic_shield),
+              contentDescription = null,
+              tint = MaterialTheme.colors.error,
+              modifier = Modifier.size(18.dp)
+            )
+            Spacer(Modifier.width(8.dp))
+            Text(
+              text = "Clear Verification",
+              fontWeight = FontWeight.Medium,
+              fontSize = 14.sp,
+              color = MaterialTheme.colors.error
             )
           }
         }
