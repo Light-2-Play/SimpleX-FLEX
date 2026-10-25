@@ -19,6 +19,8 @@ import androidx.compose.ui.draw.scale
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.graphics.*
 import androidx.compose.ui.graphics.painter.Painter
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.graphics.vector.path
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.platform.LocalDensity
@@ -28,6 +30,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.*
 import androidx.compose.ui.window.Popup
+import androidx.compose.ui.window.PopupPositionProvider
 import androidx.compose.ui.window.PopupProperties
 import chat.simplex.common.model.*
 import chat.simplex.common.ui.theme.*
@@ -47,15 +50,55 @@ enum class RecordMediaMode {
 
 /**
  * Изолированный мост CameraX для квадратного видео (1:1).
- * Полностью независим от встроенного голосового RecorderNative.
  */
 object SquareVideoBridge {
   var startRecording: (() -> Unit)? = null
   var stopRecording: (((URI) -> Unit) -> Unit)? = null
   var cancelRecording: (() -> Unit)? = null
+  var flipCamera: (() -> Unit)? = null
 }
 
 val LocalSquareCameraPreview = compositionLocalOf<(@Composable (isRecording: Boolean, modifier: Modifier) -> Unit)?> { null }
+
+// Векторная иконка переключения камеры (не зависит от внешних ресурсов)
+private val FlipCameraIcon: ImageVector by lazy {
+  ImageVector.Builder(
+    name = "FlipCamera",
+    defaultWidth = 24.dp,
+    defaultHeight = 24.dp,
+    viewportWidth = 24f,
+    viewportHeight = 24f
+  ).path(
+    fill = SolidColor(Color.White)
+  ) {
+    moveTo(20f, 4f)
+    horizontalLineToRelative(-3.17f)
+    lineTo(15f, 2f)
+    horizontalLineTo(9f)
+    lineTo(7.17f, 4f)
+    horizontalLineTo(4f)
+    curveToRelative(-1.1f, 0f, -2f, 0.9f, -2f, 2f)
+    verticalLineToRelative(12f)
+    curveToRelative(0f, 1.1f, 0.9f, 2f, 2f, 2f)
+    horizontalLineToRelative(16f)
+    curveToRelative(1.1f, 0f, 2f, -0.9f, 2f, -2f)
+    verticalLineTo(6f)
+    curveToRelative(0f, -1.1f, -0.9f, -2f, -2f, -2f)
+    close()
+    moveTo(15f, 15.5f)
+    verticalLineTo(13f)
+    horizontalLineTo(9f)
+    verticalLineToRelative(2.5f)
+    lineTo(5.5f, 12f)
+    lineTo(9f, 8.5f)
+    verticalLineTo(11f)
+    horizontalLineToRelative(6f)
+    verticalLineTo(8.5f)
+    lineToRelative(3.5f, 3.5f)
+    lineToRelative(-3.5f, 3.5f)
+    close()
+  }.build()
+}
 
 // Spec: spec/client/compose.md#SendMsgView
 @Composable
@@ -147,7 +190,7 @@ fun SendMsgView(
       }
     }
 
-    // Верхняя панель записи: аккуратно накладывается поверх поля ввода текста
+    // Верхняя панель записи (таймер + Slide to cancel): аккуратно накладывается поверх поля ввода текста
     if (isRecordingActive) {
       val mins = (recordingSeconds / 60).toString().padStart(2, '0')
       val secs = (recordingSeconds % 60).toString().padStart(2, '0')
@@ -239,7 +282,7 @@ fun SendMsgView(
       DeleteTextButton(composeState)
     }
 
-    // Правая кнопка действий
+    // Правая панель кнопок: Live Messages (слева) + Микрофон/Камера (справа)
     Box(Modifier.align(Alignment.BottomEnd).padding(bottom = if (appPlatform.isAndroid) 0.dp else 5.sp.toDp() * fontSizeSqrtMultiplier)) {
       val sendButtonSize = remember { Animatable(36f) }
       val sendButtonAlpha = remember { Animatable(1f) }
@@ -259,6 +302,23 @@ fun SendMsgView(
         showVoiceButton && sendMsgEnabled -> {
           Row(verticalAlignment = Alignment.CenterVertically) {
             val stopRecOnNextClick = remember { mutableStateOf(false) }
+
+            // 1. Кнопка Live Messages (слева от кнопки записи)
+            if (sendLiveMessage != null
+              && updateLiveMessage != null
+              && (cs.preview !is ComposePreview.VoicePreview || !stopRecOnNextClick.value)
+              && cs.contextItem is ComposeContextItem.NoContextItem
+              && !isRecordingActive
+            ) {
+              StartLiveMessageButton {
+                if (composeState.value.preview is ComposePreview.NoPreview) {
+                  startLiveMessage(scope, sendLiveMessage, updateLiveMessage, sendButtonSize, sendButtonAlpha, composeState, liveMessageAlertShown)
+                }
+              }
+              Spacer(Modifier.width(8.dp))
+            }
+
+            // 2. Кнопка записи микрофон / камера (правее)
             when {
               needToAllowVoiceToContact || !allowedVoiceByPrefs -> {
                 DisallowedVoiceButton {
@@ -300,8 +360,61 @@ fun SendMsgView(
         }
         else -> {
           val icon = if (cs.editing || cs.liveMessage != null) painterResource(MR.images.ic_check_filled) else painterResource(MR.images.ic_arrow_upward)
+          val showDropdown = rememberSaveable { mutableStateOf(false) }
+
+          @Composable
+          fun MenuItems(): List<@Composable () -> Unit> {
+            val menuItems = mutableListOf<@Composable () -> Unit>()
+
+            if (cs.liveMessage == null && !cs.editing && !nextConnect || sendMsgEnabled) {
+              if (
+                cs.preview !is ComposePreview.VoicePreview &&
+                cs.contextItem is ComposeContextItem.NoContextItem &&
+                sendLiveMessage != null && updateLiveMessage != null
+              ) {
+                menuItems.add {
+                  ItemAction(
+                    generalGetString(MR.strings.send_live_message),
+                    BoltFilled,
+                    onClick = {
+                      startLiveMessage(scope, sendLiveMessage, updateLiveMessage, sendButtonSize, sendButtonAlpha, composeState, liveMessageAlertShown)
+                      showDropdown.value = false
+                    }
+                  )
+                }
+              }
+              if (timedMessageAllowed && !cs.editing) {
+                menuItems.add {
+                  ItemAction(
+                    generalGetString(MR.strings.disappearing_message),
+                    painterResource(MR.images.ic_timer),
+                    onClick = {
+                      showCustomDisappearingMessageDialog.value = true
+                      showDropdown.value = false
+                    }
+                  )
+                }
+              }
+            }
+
+            return menuItems
+          }
+
           if (!hideSendButton) {
-            SendMsgButton(icon, sendButtonSize, sendButtonAlpha, sendButtonColor, !sendMsgButtonDisabled, sendToConnect, sendMessage)
+            val menuItems = MenuItems()
+            if (menuItems.isNotEmpty()) {
+              SendMsgButton(icon, sendButtonSize, sendButtonAlpha, sendButtonColor, !sendMsgButtonDisabled, sendToConnect, sendMessage) { showDropdown.value = true }
+              DefaultDropdownMenu(showDropdown) {
+                menuItems.forEach { composable -> composable() }
+              }
+              CustomDisappearingMessageDialog(
+                showCustomDisappearingMessageDialog,
+                sendMessage = sendMessage,
+                customDisappearingMessageTimePref = customDisappearingMessageTimePref
+              )
+            } else {
+              SendMsgButton(icon, sendButtonSize, sendButtonAlpha, sendButtonColor, !sendMsgButtonDisabled, sendToConnect, sendMessage)
+            }
           }
         }
       }
@@ -624,6 +737,7 @@ private fun RecordVoiceView(
     }
   }
 
+  // Превью видеосообщения 1:1 ровно по центру экрана с таймером и кнопкой переключения камер
   val cameraPreviewProvider = LocalSquareCameraPreview.current
   SquareVideoRecordOverlay(
     isRecording = isVideoRecordingActive,
@@ -632,15 +746,22 @@ private fun RecordVoiceView(
       if (cameraPreviewProvider != null) {
         cameraPreviewProvider(isVideoRecordingActive, Modifier.fillMaxSize())
       }
+    },
+    onFlipCamera = {
+      SquareVideoBridge.flipCamera?.invoke()
     }
   )
 }
 
+// =====================================================================
+// ПРЕВЬЮ ПО ЦЕНТРУ ЭКРАНА С ТАЙМЕРОМ СЛЕВА-СВЕРХУ И КНОПКОЙ СМЕНЫ КАМЕРЫ
+// =====================================================================
 @Composable
 private fun SquareVideoRecordOverlay(
   isRecording: Boolean,
   recordingSeconds: Int,
-  cameraPreview: @Composable () -> Unit
+  cameraPreview: @Composable () -> Unit,
+  onFlipCamera: () -> Unit
 ) {
   val infiniteTransition = rememberInfiniteTransition()
   val dotAlpha by infiniteTransition.animateFloat(
@@ -649,54 +770,110 @@ private fun SquareVideoRecordOverlay(
     animationSpec = infiniteRepeatable(animation = tween(650, easing = LinearEasing), repeatMode = RepeatMode.Reverse)
   )
 
+  // Провайдер точного геометрического центра экрана
+  val centerPositionProvider = remember {
+    object : PopupPositionProvider {
+      override fun calculatePosition(
+        anchorBounds: IntRect,
+        windowSize: IntSize,
+        layoutDirection: LayoutDirection,
+        popupContentSize: IntSize
+      ): IntOffset {
+        return IntOffset(
+          x = (windowSize.width - popupContentSize.width) / 2,
+          y = (windowSize.height - popupContentSize.height) / 2
+        )
+      }
+    }
+  }
+
   AnimatedVisibility(
     visible = isRecording,
     enter = fadeIn(tween(180)) + scaleIn(initialScale = 0.88f, animationSpec = spring(stiffness = Spring.StiffnessMediumLow)),
     exit = fadeOut(tween(150)) + scaleOut(targetScale = 0.88f)
   ) {
     Popup(
-      alignment = Alignment.Center,
+      popupPositionProvider = centerPositionProvider,
       properties = PopupProperties(focusable = false, dismissOnBackPress = false, dismissOnClickOutside = false)
     ) {
-      Surface(
-        modifier = Modifier
-          .size(280.dp)
-          .clip(RoundedCornerShape(28.dp))
-          .border(2.dp, MaterialTheme.colors.primary.copy(alpha = 0.65f), RoundedCornerShape(28.dp)),
-        shape = RoundedCornerShape(28.dp),
-        color = Color.Black,
-        elevation = 12.dp
+      Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
       ) {
-        Box(modifier = Modifier.fillMaxSize()) {
-          cameraPreview()
+        // 1. Квадратное окно превью 1:1
+        Surface(
+          modifier = Modifier
+            .size(280.dp)
+            .aspectRatio(1f)
+            .clip(RoundedCornerShape(28.dp))
+            .border(2.dp, MaterialTheme.colors.primary.copy(alpha = 0.65f), RoundedCornerShape(28.dp)),
+          shape = RoundedCornerShape(28.dp),
+          color = Color.Black,
+          elevation = 12.dp
+        ) {
+          Box(modifier = Modifier.fillMaxSize()) {
+            cameraPreview()
 
-          Row(
-            modifier = Modifier
-              .padding(14.dp)
-              .align(Alignment.TopStart)
-              .clip(RoundedCornerShape(percent = 50))
-              .background(Color.Black.copy(alpha = 0.58f))
-              .padding(horizontal = 10.dp, vertical = 5.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(6.dp)
-          ) {
-            Box(
+            // 2. Таймер внутри превью слева-сверху
+            Row(
               modifier = Modifier
-                .size(8.dp)
-                .clip(CircleShape)
-                .background(Color(0xFFE53935).copy(alpha = dotAlpha))
-            )
+                .padding(14.dp)
+                .align(Alignment.TopStart)
+                .clip(RoundedCornerShape(percent = 50))
+                .background(Color.Black.copy(alpha = 0.58f))
+                .padding(horizontal = 10.dp, vertical = 5.dp),
+              verticalAlignment = Alignment.CenterVertically,
+              horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+              Box(
+                modifier = Modifier
+                  .size(8.dp)
+                  .clip(CircleShape)
+                  .background(Color(0xFFE53935).copy(alpha = dotAlpha))
+              )
 
-            val mins = (recordingSeconds / 60).toString().padStart(2, '0')
-            val secs = (recordingSeconds % 60).toString().padStart(2, '0')
-            Text(
-              text = "$mins:$secs / 02:00",
-              fontSize = 12.5.sp,
-              fontWeight = FontWeight.SemiBold,
-              fontFamily = FontFamily.Monospace,
-              color = Color.White
-            )
+              val mins = (recordingSeconds / 60).toString().padStart(2, '0')
+              val secs = (recordingSeconds % 60).toString().padStart(2, '0')
+              Text(
+                text = "$mins:$secs / 02:00",
+                fontSize = 12.5.sp,
+                fontWeight = FontWeight.SemiBold,
+                fontFamily = FontFamily.Monospace,
+                color = Color.White
+              )
+            }
           }
+        }
+
+        Spacer(Modifier.height(16.dp))
+
+        // 3. Кнопка смены камеры (Ниже превью)
+        var flipRotation by remember { mutableStateOf(0f) }
+        val animatedFlipRotation by animateFloatAsState(
+          targetValue = flipRotation,
+          animationSpec = spring(stiffness = Spring.StiffnessMediumLow)
+        )
+
+        IconButton(
+          onClick = {
+            RichHaptics.perform(HapticPattern.CLICK)
+            flipRotation += 180f
+            onFlipCamera()
+          },
+          modifier = Modifier
+            .size(50.dp)
+            .clip(CircleShape)
+            .background(Color.Black.copy(alpha = 0.65f))
+            .border(1.dp, Color.White.copy(alpha = 0.35f), CircleShape)
+        ) {
+          Icon(
+            imageVector = FlipCameraIcon,
+            contentDescription = "Switch Camera",
+            tint = Color.White,
+            modifier = Modifier
+              .size(24.dp)
+              .graphicsLayer(rotationZ = animatedFlipRotation)
+          )
         }
       }
     }
@@ -926,96 +1103,4 @@ private fun showDisabledVoiceAlert(isDirectChat: Boolean) {
         MR.strings.only_group_owners_can_enable_voice
     )
   )
-}
-
-@Preview
-@Composable
-fun PreviewSendMsgView() {
-  val smallFont = MaterialTheme.typography.body1.copy(color = MaterialTheme.colors.onBackground)
-  val textStyle = remember { mutableStateOf(smallFont) }
-  SimpleXTheme {
-    SendMsgView(
-      composeState = remember { mutableStateOf(ComposeState(useLinkPreviews = true)) },
-      showVoiceRecordIcon = false,
-      recState = remember { mutableStateOf(RecordingState.NotStarted) },
-      isDirectChat = true,
-      liveMessageAlertShown = SharedPreference(get = { true }, set = { }),
-      sendMsgEnabled = true,
-      userCantSendReason = null,
-      sendButtonEnabled = true,
-      nextConnect = false,
-      needToAllowVoiceToContact = false,
-      allowedVoiceByPrefs = true,
-      allowVoiceToContact = {},
-      timedMessageAllowed = false,
-      placeholder = "",
-      sendMessage = {},
-      editPrevMessage = {},
-      onMessageChange = { _ -> },
-      onFilesPasted = {},
-      textStyle = textStyle,
-    )
-  }
-}
-
-@Preview
-@Composable
-fun PreviewSendMsgViewEditing() {
-  val smallFont = MaterialTheme.typography.body1.copy(color = MaterialTheme.colors.onBackground)
-  val textStyle = remember { mutableStateOf(smallFont) }
-  val composeStateEditing = ComposeState(editingItem = ChatItem.getSampleData(), useLinkPreviews = true)
-  SimpleXTheme {
-    SendMsgView(
-      composeState = remember { mutableStateOf(composeStateEditing) },
-      showVoiceRecordIcon = false,
-      recState = remember { mutableStateOf(RecordingState.NotStarted) },
-      isDirectChat = true,
-      liveMessageAlertShown = SharedPreference(get = { true }, set = { }),
-      sendMsgEnabled = true,
-      userCantSendReason = null,
-      sendButtonEnabled = true,
-      nextConnect = false,
-      needToAllowVoiceToContact = false,
-      allowedVoiceByPrefs = true,
-      allowVoiceToContact = {},
-      timedMessageAllowed = false,
-      placeholder = "",
-      sendMessage = {},
-      editPrevMessage = {},
-      onMessageChange = { _ -> },
-      onFilesPasted = {},
-      textStyle = textStyle,
-    )
-  }
-}
-
-@Preview
-@Composable
-fun PreviewSendMsgViewInProgress() {
-  val smallFont = MaterialTheme.typography.body1.copy(color = MaterialTheme.colors.onBackground)
-  val textStyle = remember { mutableStateOf(smallFont) }
-  val composeStateInProgress = ComposeState(preview = ComposePreview.FilePreview("test.txt", getAppFileUri("test.txt")), inProgress = true, useLinkPreviews = true)
-  SimpleXTheme {
-    SendMsgView(
-      composeState = remember { mutableStateOf(composeStateInProgress) },
-      showVoiceRecordIcon = false,
-      recState = remember { mutableStateOf(RecordingState.NotStarted) },
-      isDirectChat = true,
-      liveMessageAlertShown = SharedPreference(get = { true }, set = { }),
-      sendMsgEnabled = true,
-      userCantSendReason = null,
-      sendButtonEnabled = true,
-      nextConnect = false,
-      needToAllowVoiceToContact = false,
-      allowedVoiceByPrefs = true,
-      allowVoiceToContact = {},
-      timedMessageAllowed = false,
-      placeholder = "",
-      sendMessage = {},
-      editPrevMessage = {},
-      onMessageChange = { _ -> },
-      onFilesPasted = {},
-      textStyle = textStyle,
-    )
-  }
 }
