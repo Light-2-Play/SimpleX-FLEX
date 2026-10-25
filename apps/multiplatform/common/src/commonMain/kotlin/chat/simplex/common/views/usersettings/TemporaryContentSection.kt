@@ -36,9 +36,6 @@ import kotlinx.coroutines.delay
 import java.io.File
 import java.net.URI
 
-/**
- * Мост для открытия системного пикера фото/видео из Android-части
- */
 object TemporaryContentPickerBridge {
   var pickMedia: ((TemporaryMediaType, (ByteArray?) -> Unit) -> Unit)? = null
 }
@@ -53,7 +50,10 @@ fun TemporaryContentProfileSection() {
   var viewingStartIndex by remember { mutableStateOf<Int?>(null) }
   var nowMillis by remember { mutableStateOf(System.currentTimeMillis()) }
 
-  // Живое обновление таймеров раз в 15 секунд
+  val myStories = remember(items) {
+    TemporaryContentManager.getActiveItemsFor(null)
+  }
+
   LaunchedEffect(Unit) {
     TemporaryContentManager.purgeExpired()
     while (true) {
@@ -68,7 +68,7 @@ fun TemporaryContentProfileSection() {
   val cardBg = if (isLight) lerp(Color.White, primary, 0.055f) else lerp(MaterialTheme.colors.surface, primary, 0.12f)
   val borderColor = primary.copy(alpha = if (isLight) 0.16f else 0.24f)
 
- Surface(
+  Surface(
     shape = RoundedCornerShape(26.dp),
     color = cardBg,
     elevation = 0.dp,
@@ -82,7 +82,6 @@ fun TemporaryContentProfileSection() {
         .fillMaxWidth()
         .padding(vertical = 14.dp)
     ) {
-      // Верхняя шапка раздела
       Row(
         modifier = Modifier
           .fillMaxWidth()
@@ -114,14 +113,13 @@ fun TemporaryContentProfileSection() {
               color = MaterialTheme.colors.onSurface
             )
             Text(
-              text = if (items.isEmpty()) "Auto-expiring photos & videos" else "${items.size} active • auto-delete enabled",
+              text = if (myStories.isEmpty()) "Auto-expiring photos & videos" else "${myStories.size} active • auto-delete enabled",
               fontSize = 12.sp,
               color = MaterialTheme.colors.onSurface.copy(alpha = 0.6f)
             )
           }
         }
 
-        // Кнопка "+ Add"
         Surface(
           shape = CircleShape,
           color = primary,
@@ -155,13 +153,11 @@ fun TemporaryContentProfileSection() {
 
       Spacer(Modifier.height(14.dp))
 
-      // Горизонтальная лента сторис
       LazyRow(
         contentPadding = PaddingValues(horizontal = 16.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalAlignment = Alignment.CenterVertically
       ) {
-        // Плитка быстрого добавления (если список пуст или как первая карточка)
         item {
           AddStoryCardTile(onClick = {
             RichHaptics.perform(HapticPattern.CLICK)
@@ -169,7 +165,7 @@ fun TemporaryContentProfileSection() {
           })
         }
 
-        itemsIndexed(items, key = { _, item -> item.id }) { index, item ->
+        itemsIndexed(myStories, key = { _, item -> item.id }) { index, item ->
           TemporaryStoryTile(
             item = item,
             nowMillis = nowMillis,
@@ -183,7 +179,6 @@ fun TemporaryContentProfileSection() {
     }
   }
 
-  // Диалог публикации нового фото/видео с выбором таймера 1h..24h
   if (showAddDialog) {
     AddTemporaryContentDialog(
       onDismiss = { showAddDialog = false },
@@ -194,12 +189,11 @@ fun TemporaryContentProfileSection() {
     )
   }
 
-  // Полноэкранный просмотрщик сторис
   val startIdx = viewingStartIndex
-  if (startIdx != null && items.isNotEmpty()) {
+  if (startIdx != null && myStories.isNotEmpty()) {
     TemporaryContentStoryViewer(
-      items = items,
-      initialIndex = startIdx.coerceIn(0, items.lastIndex),
+      items = myStories,
+      initialIndex = startIdx.coerceIn(0, myStories.lastIndex),
       onDismiss = { viewingStartIndex = null }
     )
   }
@@ -293,7 +287,6 @@ private fun TemporaryStoryTile(
         )
       }
 
-      // Значок видео в правом верхнем углу миниатюры
       if (item.mediaType == TemporaryMediaType.VIDEO) {
         Box(
           modifier = Modifier
@@ -316,7 +309,6 @@ private fun TemporaryStoryTile(
 
     Spacer(Modifier.height(5.dp))
 
-    // Бейдж оставшегося времени (например "3h 12m")
     Text(
       text = item.remainingTimeText(nowMillis),
       fontSize = 11.sp,
@@ -374,7 +366,6 @@ private fun AddTemporaryContentDialog(
 
         Spacer(Modifier.height(18.dp))
 
-        // Выбор типа медиа: Photo / Video
         Row(
           modifier = Modifier.fillMaxWidth(),
           horizontalArrangement = Arrangement.spacedBy(10.dp)
@@ -420,7 +411,6 @@ private fun AddTemporaryContentDialog(
 
         Spacer(Modifier.height(14.dp))
 
-        // Кнопка выбора файла из галереи
         Surface(
           shape = RoundedCornerShape(18.dp),
           color = primary.copy(alpha = 0.08f),
@@ -464,7 +454,6 @@ private fun AddTemporaryContentDialog(
 
         Spacer(Modifier.height(18.dp))
 
-        // Заголовок таймера авто-удаления
         Text(
           text = "AUTO-DELETE AFTER",
           fontSize = 11.5.sp,
@@ -474,7 +463,6 @@ private fun AddTemporaryContentDialog(
         )
         Spacer(Modifier.height(10.dp))
 
-        // Сетка чипов: 1h, 3h, 6h, 12h, 16h, 24h (2 ряда по 3 кнопки)
         val durations = TemporaryDuration.values().toList()
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
           durations.chunked(3).forEach { rowItems ->
@@ -511,7 +499,6 @@ private fun AddTemporaryContentDialog(
 
         Spacer(Modifier.height(16.dp))
 
-        // Подпись (необязательно)
         OutlinedTextField(
           value = caption,
           onValueChange = { if (it.length <= 140) caption = it },
@@ -527,7 +514,6 @@ private fun AddTemporaryContentDialog(
 
         Spacer(Modifier.height(22.dp))
 
-        // Кнопки Cancel / Publish
         Row(
           modifier = Modifier.fillMaxWidth(),
           horizontalArrangement = Arrangement.End,
@@ -542,14 +528,25 @@ private fun AddTemporaryContentDialog(
           Spacer(Modifier.width(8.dp))
           Button(
             onClick = {
-              val bytes = selectedBytes ?: return@Button
+              val rawBytes = selectedBytes ?: return@Button
               RichHaptics.perform(HapticPattern.SUCCESS)
-              TemporaryContentManager.addContentFromBytes(
-                bytes = bytes,
+
+              // Оптимизация размера для E2E-рассылки через SMP-пакеты (до 12.5 КБ)
+              val sendBytes = prepareBytesForNetwork(rawBytes, selectedMediaType)
+
+              // 1. Сохранение локально
+              val newItem = TemporaryContentManager.addContentFromBytes(
+                bytes = rawBytes,
                 mediaType = selectedMediaType,
                 duration = selectedDuration,
                 caption = caption.trim()
               )
+
+              // 2. Рассылка подключённым контактам
+              if (newItem != null) {
+                StorySyncManager.broadcastStory(sendBytes, newItem)
+              }
+
               onPublished()
             },
             enabled = selectedBytes != null,
@@ -570,7 +567,7 @@ private fun AddTemporaryContentDialog(
 
 // =====================================================================
 // 4. ПОЛНОЭКРАННЫЙ ПРОСМОТРЩИК TEMPORARY CONTENT (КАК СТОРИС)
-// ====================================================================
+// =====================================================================
 @Composable
 fun TemporaryContentStoryViewer(
   items: List<TemporaryContentItem>,
@@ -614,7 +611,6 @@ fun TemporaryContentStoryViewer(
           }
         }
     ) {
-      // 1. Отображение фото или видео-индикатора по центру
       if (bitmap != null) {
         Image(
           bitmap = bitmap,
@@ -645,7 +641,6 @@ fun TemporaryContentStoryViewer(
         }
       }
 
-      // 2. Верхние полоски сегментов и информация о таймере
       Column(
         modifier = Modifier
           .fillMaxWidth()
@@ -657,7 +652,6 @@ fun TemporaryContentStoryViewer(
           )
           .padding(top = 16.dp, start = 14.dp, end = 14.dp, bottom = 24.dp)
       ) {
-        // Полоски количества сторис
         Row(
           modifier = Modifier.fillMaxWidth(),
           horizontalArrangement = Arrangement.spacedBy(4.dp)
@@ -682,7 +676,6 @@ fun TemporaryContentStoryViewer(
 
         Spacer(Modifier.height(12.dp))
 
-        // Инфо-строка: сколько осталось времени + кнопки удаления и закрытия
         Row(
           modifier = Modifier.fillMaxWidth(),
           verticalAlignment = Alignment.CenterVertically,
@@ -696,29 +689,32 @@ fun TemporaryContentStoryViewer(
               modifier = Modifier.size(18.dp)
             )
             Spacer(Modifier.width(6.dp))
+            val authorLabel = currentItem.authorDisplayName ?: "You"
             Text(
-              text = "Expires in ${currentItem.remainingTimeText(now)} (set for ${currentItem.durationHours}h)",
+              text = "$authorLabel • ${currentItem.remainingTimeText(now)}",
               color = Color.White,
-              fontSize = 13.sp,
-              fontWeight = FontWeight.SemiBold
+              fontSize = 13.5.sp,
+              fontWeight = FontWeight.Bold
             )
           }
 
           Row(verticalAlignment = Alignment.CenterVertically) {
-            // Удалить сторис вручную
-            IconButton(
-              onClick = {
-                RichHaptics.perform(HapticPattern.TOGGLE_OFF)
-                TemporaryContentManager.removeContent(currentItem.id)
-                if (items.size <= 1) onDismiss()
+            // Кнопка удаления доступна только для своих собственных историй
+            if (currentItem.authorContactId == null) {
+              IconButton(
+                onClick = {
+                  RichHaptics.perform(HapticPattern.TOGGLE_OFF)
+                  TemporaryContentManager.removeContent(currentItem.id)
+                  if (items.size <= 1) onDismiss()
+                }
+              ) {
+                Icon(
+                  painter = painterResource(MR.images.ic_delete),
+                  contentDescription = "Delete",
+                  tint = Color(0xFFFF5252),
+                  modifier = Modifier.size(22.dp)
+                )
               }
-            ) {
-              Icon(
-                painter = painterResource(MR.images.ic_delete),
-                contentDescription = "Delete",
-                tint = Color(0xFFFF5252),
-                modifier = Modifier.size(22.dp)
-              )
             }
 
             IconButton(onClick = onDismiss) {
@@ -733,7 +729,6 @@ fun TemporaryContentStoryViewer(
         }
       }
 
-      // 3. Подпись снизу (если есть)
       if (currentItem.caption.isNotBlank()) {
         Box(
           modifier = Modifier
@@ -754,6 +749,23 @@ fun TemporaryContentStoryViewer(
         }
       }
     }
+  }
+}
+
+/**
+ * Подготовка байтов: сжатие изображения под 12.5 КБ для прямого помещения в SMP-пакет
+ */
+private fun prepareBytesForNetwork(rawBytes: ByteArray, mediaType: TemporaryMediaType): ByteArray {
+  if (mediaType != TemporaryMediaType.PHOTO || rawBytes.size <= 12500) return rawBytes
+  return try {
+    val b64 = java.util.Base64.getEncoder().encodeToString(rawBytes)
+    val bitmap = base64ToBitmap(b64)
+    if (bitmap != null) {
+      val compressedBase64 = resizeImageToStrSize(bitmap, maxDataSize = 12500)
+      java.util.Base64.getDecoder().decode(compressedBase64)
+    } else rawBytes
+  } catch (_: Exception) {
+    rawBytes
   }
 }
 
