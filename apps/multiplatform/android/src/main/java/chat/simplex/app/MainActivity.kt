@@ -10,8 +10,11 @@ import android.net.Uri
 import android.os.*
 import android.view.View
 import android.view.WindowManager
+import android.Manifest
+import android.content.pm.PackageManager
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -27,8 +30,14 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.window.Dialog
 import androidx.fragment.app.FragmentActivity
+import androidx.camera.core.CameraSelector
+import androidx.camera.core.Preview as CameraPreview
+import androidx.camera.lifecycle.ProcessCameraProvider
+import androidx.camera.video.*
+import androidx.camera.view.PreviewView
 import chat.simplex.app.model.NtfManager
 import chat.simplex.app.model.NtfManager.getUserIdFromIntent
 import chat.simplex.common.*
@@ -36,11 +45,15 @@ import chat.simplex.common.helpers.*
 import chat.simplex.common.model.*
 import chat.simplex.common.ui.theme.*
 import chat.simplex.common.views.chatlist.*
+import chat.simplex.common.views.chat.LocalSquareCameraPreview
+import chat.simplex.common.views.chat.SquareVideoBridge
 import chat.simplex.common.views.helpers.*
 import chat.simplex.common.views.onboarding.*
 import chat.simplex.common.platform.*
 import chat.simplex.res.MR
+import java.io.File
 import java.lang.ref.WeakReference
+import java.net.URI
 import chat.simplex.app.SingBoxService
 import chat.simplex.common.views.chat.item.LocalVoiceTranscriptionWidget
 import chat.simplex.app.ai.VoiceTranscriptionBox
@@ -62,13 +75,92 @@ class MainActivity: FragmentActivity() {
 
   private var usbWatcherJob: Job? = null
 
+  // =====================================================================
+  // ИЗОЛИРОВАННЫЙ ДВИЖОК CAMERAX ДЛЯ КВАДРАТНОГО ВИДЕО (1:1)
+  // =====================================================================
+  private var cameraProvider: ProcessCameraProvider? = null
+  private var videoCapture: VideoCapture<Recorder>? = null
+  private var activeRecording: Recording? = null
+  private var currentVideoOutputFile: File? = null
+  private var isVideoCancelled: Boolean = false
+  private var onVideoCompleteCallback: ((URI) -> Unit)? = null
+
+  private fun initCameraXEngine() {
+    val cameraProviderFuture = ProcessCameraProvider.getInstance(this)
+    cameraProviderFuture.addListener({
+      try {
+        cameraProvider = cameraProviderFuture.get()
+        val qualitySelector = QualitySelector.from(
+          Quality.SD,
+          FallbackStrategy.lowerQualityOrHigherThan(Quality.SD)
+        )
+        val recorder = Recorder.Builder()
+          .setQualitySelector(qualitySelector)
+          .build()
+        videoCapture = VideoCapture.withOutput(recorder)
+      } catch (e: Exception) {
+        Log.e("MainActivity", "Failed to init CameraX: ${e.message}")
+      }
+    }, ContextCompat.getMainExecutor(this))
+
+    // 1. Старт видеозаписи
+    SquareVideoBridge.startRecording = {
+      val vc = videoCapture
+      if (vc != null) {
+        try {
+          isVideoCancelled = false
+          val file = File(cacheDir, "square_video_${System.currentTimeMillis()}.mp4")
+          currentVideoOutputFile = file
+
+          val fileOptions = FileOutputOptions.Builder(file).build()
+          val pendingRecording = vc.output.prepareRecording(this, fileOptions)
+
+          if (ActivityCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
+            pendingRecording.withAudioEnabled()
+          }
+
+          activeRecording = pendingRecording.start(ContextCompat.getMainExecutor(this)) { event ->
+            when (event) {
+              is VideoRecordEvent.Finalize -> {
+                if (event.hasError() || isVideoCancelled) {
+                  currentVideoOutputFile?.delete()
+                } else {
+                  currentVideoOutputFile?.let { recordedFile ->
+                    onVideoCompleteCallback?.invoke(recordedFile.toURI())
+                  }
+                }
+                activeRecording = null
+                onVideoCompleteCallback = null
+              }
+            }
+          }
+        } catch (e: Exception) {
+          Log.e("MainActivity", "Error starting CameraX recording: ${e.message}")
+        }
+      }
+    }
+
+    // 2. Остановка и отправка видео
+    SquareVideoBridge.stopRecording = { onComplete ->
+      onVideoCompleteCallback = onComplete
+      isVideoCancelled = false
+      activeRecording?.stop()
+    }
+
+    // 3. Отмена записи свайпом влево (удаление временного файла)
+    SquareVideoBridge.cancelRecording = {
+      isVideoCancelled = true
+      activeRecording?.stop()
+    }
+  }
+
   private fun startForegroundUsbWatcher() {
     if (!UsbPanicDetector.isEnabled()) return
     usbWatcherJob?.cancel()
     usbWatcherJob = lifecycleScope.launch {
       while (isActive) {
         UsbPanicDetector.triggerIfConnected(applicationContext, chatModel)
-        delay(350) // опрос порта каждые 350 мс
+        delay(350)
       }
     }
   }
@@ -79,7 +171,6 @@ class MainActivity: FragmentActivity() {
   }
 
   override fun onCreate(savedInstanceState: Bundle?) {
-    // 1. Блокировка запуска: если "Panic on USB" включен и кабель воткнут — выходим сразу
     if (UsbPanicDetector.checkStartupUsbBlock(this)) {
       return
     }
@@ -96,8 +187,8 @@ class MainActivity: FragmentActivity() {
     chat.simplex.common.views.chatlist.ByeDpiBridge.isRunning.value = SingBoxService.isRunning
 
     MediaQualityManager.init(applicationContext)
+    initCameraXEngine()
 
-    // 2. Палитра Material 3 Expressive: используем чистые тона accent1/accent2 вместо тусклых серых neutral1/neutral2
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
       getMonetPalette = { isDark ->
         if (isDark) {
@@ -109,14 +200,11 @@ class MainActivity: FragmentActivity() {
           MonetPalette(
             primary = accentPrimary,
             primaryVariant = Color(getColor(android.R.color.system_accent1_300)),
-            // Глубокий фон с мягким бархатным оттенком основного тона
             background = lerp(baseDark, accentPrimary, 0.045f),
-            // Выразительная тонированная поверхность без серой пыли
             surface = lerp(surfaceDark, accentPrimary, 0.12f),
             onPrimary = Color(getColor(android.R.color.system_accent1_900)),
             onBackground = Color(getColor(android.R.color.system_neutral1_50)),
             onSurface = Color(getColor(android.R.color.system_neutral1_50)),
-            // Сочные, но комфортные для глаз пузыри сообщений в темной теме
             sentMessage = lerp(Color(getColor(android.R.color.system_accent1_800)), accentPrimary, 0.18f),
             sentQuote = Color(getColor(android.R.color.system_accent1_700)),
             receivedMessage = lerp(surfaceDark, accentSecondary, 0.14f),
@@ -131,19 +219,15 @@ class MainActivity: FragmentActivity() {
           MonetPalette(
             primary = accentPrimary,
             primaryVariant = Color(getColor(android.R.color.system_accent1_500)),
-            // Чистый сливочно-пастельный холст вместо серого neutral1_50
             background = lerp(Color.White, accentSoft, 0.35f),
-            // Мягкая пастельная карточка M3 Expressive
             surface = lerp(Color.White, accentSoft, 0.65f),
             onPrimary = Color.White,
             onBackground = Color(getColor(android.R.color.system_neutral1_900)),
             onSurface = Color(getColor(android.R.color.system_neutral1_900)),
-            // Чистые пастельные облачка сообщений без серого оттенка
             sentMessage = lerp(Color.White, accentSoft, 0.85f),
             sentQuote = Color(getColor(android.R.color.system_accent1_200)),
             receivedMessage = lerp(Color.White, accent2Soft, 0.55f),
             receivedQuote = lerp(Color.White, accent2Soft, 0.85f),
-            // Исправлено: светлый пастельный контейнер вместо черного accent1_900
             primaryVariant2 = accentSoft
           )
         }
@@ -203,6 +287,36 @@ class MainActivity: FragmentActivity() {
               )
             )
           }
+        },
+        // Подключение квадратного 1:1 видоискателя CameraX
+        LocalSquareCameraPreview provides { isRecording, modifier ->
+          AndroidView(
+            factory = { ctx ->
+              val previewView = PreviewView(ctx).apply {
+                scaleType = PreviewView.ScaleType.FILL_CENTER
+              }
+              val provider = cameraProvider
+              val vc = videoCapture
+              if (provider != null && vc != null) {
+                try {
+                  provider.unbindAll()
+                  val cameraSelector = if (provider.hasCamera(CameraSelector.DEFAULT_FRONT_CAMERA)) {
+                    CameraSelector.DEFAULT_FRONT_CAMERA
+                  } else {
+                    CameraSelector.DEFAULT_BACK_CAMERA
+                  }
+                  val previewUseCase = CameraPreview.Builder().build().also {
+                    it.setSurfaceProvider(previewView.surfaceProvider)
+                  }
+                  provider.bindToLifecycle(this@MainActivity, cameraSelector, previewUseCase, vc)
+                } catch (e: Exception) {
+                  Log.e("MainActivity", "Error binding CameraX preview: ${e.message}")
+                }
+              }
+              previewView
+            },
+            modifier = modifier
+          )
         }
       ) {
         SingBoxComposeDialogs(this@MainActivity)
@@ -212,7 +326,6 @@ class MainActivity: FragmentActivity() {
 
     SimplexApp.context.schedulePeriodicServiceRestartWorker()
     SimplexApp.context.schedulePeriodicWakeUp()
-
     UsbPanicDetector.startMonitoring(applicationContext, chatModel)
   }
 
@@ -224,17 +337,14 @@ class MainActivity: FragmentActivity() {
 
   override fun onResume() {
     super.onResume()
-    // Мгновенная проверка при возврате экрана в фокус и старт цикла
     UsbPanicDetector.triggerIfConnected(applicationContext, chatModel)
     startForegroundUsbWatcher()
-
     AppLock.recheckAuthState()
     chat.simplex.common.views.chatlist.ByeDpiBridge.isRunning.value = SingBoxService.isRunning
   }
 
   override fun onPause() {
     super.onPause()
-    // Останавливаем цикл, когда экран заблокирован или свернут
     stopForegroundUsbWatcher()
     AppLock.appWasHidden()
   }
@@ -248,7 +358,6 @@ class MainActivity: FragmentActivity() {
   override fun onDestroy() {
     super.onDestroy()
     stopForegroundUsbWatcher()
-    // Остановка детектора USB и сервисов
     UsbPanicDetector.stopMonitoring(applicationContext)
     SingBoxService.stop()
   }
