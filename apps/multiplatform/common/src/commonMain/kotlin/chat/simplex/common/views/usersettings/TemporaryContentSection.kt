@@ -68,13 +68,13 @@ fun TemporaryContentProfileSection() {
   val cardBg = if (isLight) lerp(Color.White, primary, 0.055f) else lerp(MaterialTheme.colors.surface, primary, 0.12f)
   val borderColor = primary.copy(alpha = if (isLight) 0.16f else 0.24f)
 
-  Surface(
+ Surface(
     shape = RoundedCornerShape(26.dp),
     color = cardBg,
     elevation = 0.dp,
     modifier = Modifier
       .fillMaxWidth()
-      .padding(horizontal = 16.dp, vertical = 6.dp)
+      .padding(vertical = 4.dp)
       .border(0.75.dp, borderColor, RoundedCornerShape(26.dp))
   ) {
     Column(
