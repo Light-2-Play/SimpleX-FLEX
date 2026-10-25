@@ -110,15 +110,14 @@ actual object RichHaptics {
           comp.addPrimitive(VibrationEffect.Composition.PRIMITIVE_CLICK, 0.9f)
         }
         
-        // Мягкая симметричная волна без акустического щелчка в микрофон
+        // Плотная выразительная волна без металлического щелчка
         HapticPattern.RECORD_START -> {
-          comp.addPrimitive(VibrationEffect.Composition.PRIMITIVE_SLOW_RISE, 0.55f)
-          comp.addPrimitive(VibrationEffect.Composition.PRIMITIVE_QUICK_FALL, 0.45f)
+          comp.addPrimitive(VibrationEffect.Composition.PRIMITIVE_SLOW_RISE, 0.78f)
+          comp.addPrimitive(VibrationEffect.Composition.PRIMITIVE_QUICK_FALL, 0.62f)
         }
         
-        // Быстрое глухое затухание при отпускании микрофона
         HapticPattern.RECORD_STOP -> {
-          comp.addPrimitive(VibrationEffect.Composition.PRIMITIVE_QUICK_FALL, 0.4f)
+          comp.addPrimitive(VibrationEffect.Composition.PRIMITIVE_QUICK_FALL, 0.45f)
         }
 
         HapticPattern.SUCCESS -> {
@@ -178,18 +177,17 @@ actual object RichHaptics {
           VibrationEffect.createWaveform(longArrayOf(0, 12, 10, 16), intArrayOf(0, 60, 150, 255), -1)
 
         // Мягкий синусоидальный холм: 0 -> 45 -> 110 -> 160 -> 95 -> 30 -> 0
-        HapticPattern.RECORD_START ->
+       HapticPattern.RECORD_START ->
           VibrationEffect.createWaveform(
-            longArrayOf(0, 16, 18, 22, 18, 16),
-            intArrayOf(0, 45, 110, 160, 95, 30),
+            longArrayOf(0, 18, 20, 24, 20, 16),
+            intArrayOf(0, 65, 145, 205, 125, 40),
             -1
           )
 
-        // Короткий мягкий спад без звона
         HapticPattern.RECORD_STOP ->
           VibrationEffect.createWaveform(
-            longArrayOf(0, 12, 16),
-            intArrayOf(0, 90, 35),
+            longArrayOf(0, 14, 18),
+            intArrayOf(0, 110, 45),
             -1
           )
 
