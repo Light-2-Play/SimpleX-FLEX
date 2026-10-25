@@ -21,7 +21,7 @@ import boofcv.alg.fiducial.qrcode.QrCodeEncoder
 fun Material3ExpressiveQRCode(
   content: String,
   size: Dp,
-  primaryColor: Color = Color(0xFF191C1E),
+  primaryColor: Color = Color.Black,
   containerColor: Color = Color.White,
   modifier: Modifier = Modifier
 ) {
@@ -48,7 +48,6 @@ fun Material3ExpressiveQRCode(
     if (qrCode == null) return@Surface
 
     val numModules = QrCode.totalModules(qrCode.version)
-    // Гарантированная Quiet Zone (4 модуля со всех сторон)
     val quietZone = 4
     val totalGrid = numModules + (quietZone * 2)
 
@@ -61,7 +60,7 @@ fun Material3ExpressiveQRCode(
       val moduleSize = canvasSize / totalGrid
       val offsetQuiet = quietZone * moduleSize
 
-      // 1. Отрисовка сетки данных БЕЗ зазоров (с мягким Expressive-скруглением)
+      // 1. Модули данных отрисовываются с мягким скруглением и нахлёстом (без зазоров)
       for (row in 0 until numModules) {
         for (col in 0 until numModules) {
           if (!qrCode.get(row, col)) continue
@@ -75,17 +74,16 @@ fun Material3ExpressiveQRCode(
           val x = offsetQuiet + (col * moduleSize)
           val y = offsetQuiet + (row * moduleSize)
 
-          // Модули соединяются внахлест (+0.35f), исключая появление субпиксельных белых щелей
           drawRoundRect(
             color = primaryColor,
             topLeft = Offset(x, y),
-            size = Size(moduleSize + 0.35f, moduleSize + 0.35f),
-            cornerRadius = CornerRadius(moduleSize * 0.22f, moduleSize * 0.22f)
+            size = Size(moduleSize + 0.4f, moduleSize + 0.4f),
+            cornerRadius = CornerRadius(moduleSize * 0.26f, moduleSize * 0.26f)
           )
         }
       }
 
-      // 2. Отрисовка 3 поисковых маркеров со строгой геометрией 1:1:3:1:1 для мгновенного захвата BoofCV
+      // 2. Угловые маркеры (Finder Patterns 7x7) — строго прямоугольные для мгновенного захвата BoofCV
       val finderOrigins = listOf(
         Offset(offsetQuiet, offsetQuiet),
         Offset(offsetQuiet + (numModules - 7) * moduleSize, offsetQuiet),
@@ -93,35 +91,31 @@ fun Material3ExpressiveQRCode(
       )
 
       val finderSize = moduleSize * 7f
-      val finderCorner = CornerRadius(moduleSize * 0.55f, moduleSize * 0.55f)
 
       for (origin in finderOrigins) {
         // Внешний квадрат 7x7
-        drawRoundRect(
+        drawRect(
           color = primaryColor,
           topLeft = origin,
-          size = Size(finderSize, finderSize),
-          cornerRadius = finderCorner
+          size = Size(finderSize, finderSize)
         )
 
         // Внутренний белый контур 5x5
         val innerWhiteOffset = origin + Offset(moduleSize, moduleSize)
         val innerWhiteSize = moduleSize * 5f
-        drawRoundRect(
+        drawRect(
           color = containerColor,
           topLeft = innerWhiteOffset,
-          size = Size(innerWhiteSize, innerWhiteSize),
-          cornerRadius = CornerRadius(moduleSize * 0.38f, moduleSize * 0.38f)
+          size = Size(innerWhiteSize, innerWhiteSize)
         )
 
-        // Центральный монолитный квадрат 3x3
+        // Центральный монолитный черный квадрат 3x3
         val centerBlackOffset = origin + Offset(moduleSize * 2f, moduleSize * 2f)
         val centerBlackSize = moduleSize * 3f
-        drawRoundRect(
+        drawRect(
           color = primaryColor,
           topLeft = centerBlackOffset,
-          size = Size(centerBlackSize, centerBlackSize),
-          cornerRadius = CornerRadius(moduleSize * 0.25f, moduleSize * 0.25f)
+          size = Size(centerBlackSize, centerBlackSize)
         )
       }
     }
