@@ -8,9 +8,12 @@ import SectionTextFooter
 import SectionView
 import SectionViewWithButton
 import androidx.compose.desktop.ui.tooling.preview.Preview
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.*
 import androidx.compose.runtime.*
@@ -20,6 +23,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalUriHandler
@@ -29,6 +33,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.icerock.moko.resources.compose.painterResource
 import dev.icerock.moko.resources.compose.stringResource
+import boofcv.alg.fiducial.qrcode.QrCode
 import chat.simplex.common.model.*
 import chat.simplex.common.ui.theme.*
 import chat.simplex.common.views.helpers.*
@@ -272,11 +277,12 @@ fun showAddShortLinkAlert(
 
 @Composable
 fun ExpressiveQRCodeCard(
+  contentUri: String,
+  qrStyle: MutableState<QrDesignStyle>,
   title: String? = null,
   titleButton: (@Composable () -> Unit)? = null,
   onShareClick: (() -> Unit)? = null,
   onShareViaChatClick: (() -> Unit)? = null,
-  content: @Composable () -> Unit
 ) {
   val isLight = MaterialTheme.colors.isLight
   val cardBg = lerp(
@@ -289,6 +295,11 @@ fun ExpressiveQRCodeCard(
     MaterialTheme.colors.primary,
     if (isLight) 0.14f else 0.20f
   )
+
+  val classicImage = remember(contentUri) {
+    qrCodeBitmap(contentUri, 1024, QrCode.ErrorLevel.M)
+      .replaceColor(Color.Black.toArgb(), Color(0xff062d56).toArgb())
+  }
 
   Surface(
     modifier = Modifier
@@ -325,9 +336,76 @@ fun ExpressiveQRCodeCard(
         }
       }
 
-      // Непосредственный вызов Expressive QR-кода без лишней промежуточной подложки
-      content()
+      // 1. Отображение QR-кода (Modern / Classic)
+      Box(
+        modifier = Modifier.size(250.dp),
+        contentAlignment = Alignment.Center
+      ) {
+        if (qrStyle.value == QrDesignStyle.MODERN) {
+          Material3ExpressiveQRCode(
+            content = contentUri,
+            size = 250.dp,
+            primaryColor = Color(0xFF191C1E),
+            containerColor = Color.White
+          )
+        } else {
+          Surface(
+            shape = RoundedCornerShape(24.dp),
+            color = Color.White,
+            elevation = 2.dp,
+            modifier = Modifier.size(250.dp)
+          ) {
+            Box(
+              modifier = Modifier
+                .fillMaxSize()
+                .padding(12.dp),
+              contentAlignment = Alignment.Center
+            ) {
+              Image(
+                bitmap = classicImage,
+                contentDescription = null,
+                modifier = Modifier.fillMaxSize()
+              )
+            }
+          }
+        }
+      }
 
+      // 2. Переключатель Modern / Classic
+      Surface(
+        shape = RoundedCornerShape(percent = 50),
+        color = MaterialTheme.colors.primary.copy(alpha = 0.12f),
+        border = BorderStroke(1.dp, MaterialTheme.colors.primary.copy(alpha = 0.22f))
+      ) {
+        Row(
+          modifier = Modifier.padding(3.dp),
+          verticalAlignment = Alignment.CenterVertically
+        ) {
+          QrStyleChip(
+            text = "Modern",
+            selected = qrStyle.value == QrDesignStyle.MODERN,
+            onClick = {
+              if (qrStyle.value != QrDesignStyle.MODERN) {
+                RichHaptics.perform(HapticPattern.SELECTION_CHANGE)
+                qrStyle.value = QrDesignStyle.MODERN
+              }
+            }
+          )
+
+          QrStyleChip(
+            text = "Classic",
+            selected = qrStyle.value == QrDesignStyle.CLASSIC,
+            onClick = {
+              if (qrStyle.value != QrDesignStyle.CLASSIC) {
+                RichHaptics.perform(HapticPattern.SELECTION_CHANGE)
+                qrStyle.value = QrDesignStyle.CLASSIC
+              }
+            }
+          )
+        }
+      }
+
+      // 3. Кнопки поделиться
       if (onShareClick != null || onShareViaChatClick != null) {
         Row(
           modifier = Modifier.fillMaxWidth(),
@@ -392,6 +470,32 @@ fun ExpressiveQRCodeCard(
 }
 
 @Composable
+private fun QrStyleChip(
+  text: String,
+  selected: Boolean,
+  onClick: () -> Unit
+) {
+  val primaryColor = MaterialTheme.colors.primary
+  val onSurfaceColor = MaterialTheme.colors.onSurface
+
+  Surface(
+    shape = CircleShape,
+    color = if (selected) primaryColor else Color.Transparent,
+    modifier = Modifier
+      .clip(CircleShape)
+      .clickable(onClick = onClick)
+  ) {
+    Text(
+      text = text,
+      fontSize = 12.5.sp,
+      fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+      color = if (selected) MaterialTheme.colors.onPrimary else onSurfaceColor.copy(alpha = 0.7f),
+      modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp)
+    )
+  }
+}
+
+@Composable
 private fun UserAddressLayout(
   user: User?,
   userAddress: UserContactLinkRec?,
@@ -406,6 +510,8 @@ private fun UserAddressLayout(
   deleteAddress: () -> Unit,
   saveAddressSettings: (AddressSettingsState, MutableState<AddressSettingsState>) -> Unit,
 ) {
+  val qrStyle = rememberSaveable { mutableStateOf(QrDesignStyle.MODERN) }
+
   ColumnWithScrollBar {
     if (!onboarding) {
       AppBarTitle(stringResource(MR.strings.simplex_address), hostDevice(user?.remoteHostId))
@@ -445,6 +551,7 @@ private fun UserAddressLayout(
         }
       } else {
         val showShortLink = remember { mutableStateOf(true) }
+        val addressUri = userAddress.connLinkContact.simplexChatUri(short = showShortLink.value)
 
         if (onboarding) {
           Text(
@@ -452,25 +559,23 @@ private fun UserAddressLayout(
             Modifier.fillMaxWidth().padding(horizontal = DEFAULT_PADDING, vertical = DEFAULT_PADDING_HALF),
             style = MaterialTheme.typography.body1
           )
-          LinkTextView(userAddress.connLinkContact.simplexChatUri(short = showShortLink.value), true)
+          LinkTextView(addressUri, true)
           Text(
             stringResource(MR.strings.onboarding_or_use_qr_code),
             Modifier.fillMaxWidth().padding(horizontal = DEFAULT_PADDING, vertical = DEFAULT_PADDING_HALF),
             style = MaterialTheme.typography.body1
           )
-          ExpressiveQRCodeCard {
-            Material3ExpressiveQRCode(
-              content = userAddress.connLinkContact.simplexChatUri(short = showShortLink.value),
-              size = 250.dp,
-              primaryColor = Color(0xFF191C1E),
-              containerColor = Color.White
-            )
-          }
+          ExpressiveQRCodeCard(
+            contentUri = addressUri,
+            qrStyle = qrStyle
+          )
         } else {
           val addressSettingsState = remember { mutableStateOf(AddressSettingsState(settings = userAddress.addressSettings)) }
           val savedAddressSettingsState = remember { mutableStateOf(addressSettingsState.value) }
 
           ExpressiveQRCodeCard(
+            contentUri = addressUri,
+            qrStyle = qrStyle,
             title = stringResource(MR.strings.for_social_media),
             titleButton = if (userAddress.connLinkContact.connShortLink != null) {
               { ToggleShortLinkButton(showShortLink) }
@@ -490,14 +595,7 @@ private fun UserAddressLayout(
               }
               if (userAddress.shouldBeUpgraded) showAddShortLinkAlert { shareViaChat() } else shareViaChat()
             }
-          ) {
-            Material3ExpressiveQRCode(
-              content = userAddress.connLinkContact.simplexChatUri(short = showShortLink.value),
-              size = 250.dp,
-              primaryColor = Color(0xFF191C1E),
-              containerColor = Color.White
-            )
-          }
+          )
 
           if (userAddress.shouldBeUpgraded) {
             AddShortLinkButton(text = stringResource(MR.strings.add_short_link)) { showAddShortLinkAlert(null) }
