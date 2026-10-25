@@ -109,11 +109,9 @@ actual object RichHaptics {
           comp.addPrimitive(VibrationEffect.Composition.PRIMITIVE_QUICK_RISE, 0.5f)
           comp.addPrimitive(VibrationEffect.Composition.PRIMITIVE_CLICK, 0.9f)
         }
-        // Мягкая вибрация «волной» при записи голосового
+        // Мощный, но максимально короткий и чистый удар (без гула в микрофон)
         HapticPattern.RECORD_START -> {
-          comp.addPrimitive(VibrationEffect.Composition.PRIMITIVE_SLOW_RISE, 0.35f)
-          comp.addPrimitive(VibrationEffect.Composition.PRIMITIVE_QUICK_RISE, 0.75f, 25)
-          comp.addPrimitive(VibrationEffect.Composition.PRIMITIVE_CLICK, 0.9f, 35)
+          comp.addPrimitive(VibrationEffect.Composition.PRIMITIVE_HEAVY_CLICK, 1.0f)
         }
         
         HapticPattern.RECORD_STOP -> {
@@ -176,16 +174,15 @@ actual object RichHaptics {
         HapticPattern.SEND_MESSAGE ->
           VibrationEffect.createWaveform(longArrayOf(0, 12, 10, 16), intArrayOf(0, 60, 150, 255), -1)
 
-        // Плавная волна нарастания и затухания для старых версий API
         HapticPattern.RECORD_START ->
           VibrationEffect.createWaveform(
-            longArrayOf(0, 45, 50, 40, 30),
-            intArrayOf(0, 50, 120, 200, 80),
+            longArrayOf(0, 20), 
+            intArrayOf(0, 255), 
             -1
           )
 
         HapticPattern.RECORD_STOP ->
-          VibrationEffect.createWaveform(longArrayOf(0, 15, 25, 15), intArrayOf(0, 100, 0, 50), -1)
+          VibrationEffect.createWaveform(longArrayOf(0, 15), intArrayOf(0, 180), -1)
 
         HapticPattern.SUCCESS ->
           VibrationEffect.createWaveform(longArrayOf(0, 8, 35, 12, 35, 20), intArrayOf(0, 80, 0, 180, 0, 255), -1)
