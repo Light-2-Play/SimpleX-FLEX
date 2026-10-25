@@ -111,7 +111,7 @@ actual object RichHaptics {
         }
         // Мощный, но максимально короткий и чистый удар (без гула в микрофон)
         HapticPattern.RECORD_START -> {
-          comp.addPrimitive(VibrationEffect.Composition.PRIMITIVE_HEAVY_CLICK, 1.0f)
+          comp.addPrimitive(VibrationEffect.Composition.PRIMITIVE_CLICK, 1.0f)
         }
         
         HapticPattern.RECORD_STOP -> {
