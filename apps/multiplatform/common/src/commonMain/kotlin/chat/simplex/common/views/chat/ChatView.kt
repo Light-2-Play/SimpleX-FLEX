@@ -104,10 +104,6 @@ fun ChatView(
   val showSearch = rememberSaveable { mutableStateOf(false) }
   val chat = chatModel.chats.value.firstOrNull { chat -> chat.chatInfo.id == staleChatId.value }
   
-  val visibleItems = chat.chatItems.filterNot { item ->
-  val text = (item.msgContent as? MsgContent.MCText)?.text ?: ""
-  text.startsWith(StorySyncManager.STORY_MSG_PREFIX)
-}
   // They have their own iterator inside for a reason to prevent crash "Reading a state that was created after the snapshot..."
   val remoteHostId = remember { derivedStateOf { chatModel.chats.value.firstOrNull { chat -> chat.chatInfo.id == staleChatId.value }?.remoteHostId } }
   val chatRh = remoteHostId.value
