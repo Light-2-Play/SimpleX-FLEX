@@ -78,16 +78,6 @@ object ConnectProgressManager {
 
 val connectProgressManager = ConnectProgressManager
 
-val text = (msg.content as? MsgContent.MCText)?.text ?: ""
-if (text.startsWith(StorySyncManager.STORY_MSG_PREFIX)) {
-  val sender = (chat.chatInfo as? ChatInfo.Direct)?.contact
-  if (sender != null) {
-    StorySyncManager.handleIncomingStoryMessage(sender.contactId, sender.displayName, text)
-  }
-  // Игнорируем добавление в видимый список сообщений чата:
-  return
-}
-
 object ChannelRelaysModel {
   val groupId = mutableStateOf<Long?>(null)
   val groupRelays = mutableStateListOf<GroupRelay>()
