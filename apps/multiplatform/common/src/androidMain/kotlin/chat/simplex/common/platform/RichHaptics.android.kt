@@ -63,7 +63,7 @@ actual object RichHaptics {
         val effect = getWaveformEffect(pattern)
         vibrator.vibrate(effect)
       } else {
-        // 3. Устаревший fallback для древних API
+        // 3. Устаревший fallback для старых API
         @Suppress("DEPRECATION")
         vibrator.vibrate(25)
       }
@@ -109,15 +109,18 @@ actual object RichHaptics {
           comp.addPrimitive(VibrationEffect.Composition.PRIMITIVE_QUICK_RISE, 0.5f)
           comp.addPrimitive(VibrationEffect.Composition.PRIMITIVE_CLICK, 0.9f)
         }
-        // Мощный, но максимально короткий и чистый удар (без гула в микрофон)
+        
+        // Мягкая симметричная волна без акустического щелчка в микрофон
         HapticPattern.RECORD_START -> {
-          comp.addPrimitive(VibrationEffect.Composition.PRIMITIVE_CLICK, 1.0f)
+          comp.addPrimitive(VibrationEffect.Composition.PRIMITIVE_SLOW_RISE, 0.55f)
+          comp.addPrimitive(VibrationEffect.Composition.PRIMITIVE_QUICK_FALL, 0.45f)
         }
         
+        // Быстрое глухое затухание при отпускании микрофона
         HapticPattern.RECORD_STOP -> {
-          comp.addPrimitive(VibrationEffect.Composition.PRIMITIVE_QUICK_FALL, 0.5f)
-          comp.addPrimitive(VibrationEffect.Composition.PRIMITIVE_TICK, 0.4f, 20)
+          comp.addPrimitive(VibrationEffect.Composition.PRIMITIVE_QUICK_FALL, 0.4f)
         }
+
         HapticPattern.SUCCESS -> {
           comp.addPrimitive(VibrationEffect.Composition.PRIMITIVE_TICK, 0.4f)
           comp.addPrimitive(VibrationEffect.Composition.PRIMITIVE_CLICK, 0.75f, 35)
@@ -174,15 +177,21 @@ actual object RichHaptics {
         HapticPattern.SEND_MESSAGE ->
           VibrationEffect.createWaveform(longArrayOf(0, 12, 10, 16), intArrayOf(0, 60, 150, 255), -1)
 
+        // Мягкий синусоидальный холм: 0 -> 45 -> 110 -> 160 -> 95 -> 30 -> 0
         HapticPattern.RECORD_START ->
           VibrationEffect.createWaveform(
-            longArrayOf(0, 20), 
-            intArrayOf(0, 255), 
+            longArrayOf(0, 16, 18, 22, 18, 16),
+            intArrayOf(0, 45, 110, 160, 95, 30),
             -1
           )
 
+        // Короткий мягкий спад без звона
         HapticPattern.RECORD_STOP ->
-          VibrationEffect.createWaveform(longArrayOf(0, 15), intArrayOf(0, 180), -1)
+          VibrationEffect.createWaveform(
+            longArrayOf(0, 12, 16),
+            intArrayOf(0, 90, 35),
+            -1
+          )
 
         HapticPattern.SUCCESS ->
           VibrationEffect.createWaveform(longArrayOf(0, 8, 35, 12, 35, 20), intArrayOf(0, 80, 0, 180, 0, 255), -1)
