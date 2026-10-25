@@ -1,6 +1,7 @@
 package chat.simplex.common.platform
 
 import chat.simplex.common.model.*
+import chat.simplex.common.views.helpers.withBGApi
 import kotlinx.coroutines.*
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
@@ -26,135 +27,43 @@ object StorySyncManager {
   private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
   /**
-   * Рассылка опубликованной истории всем активным прямым контактам
+   * Подготовка и сохранение входящей истории
    */
-  fun broadcastStory(bytes: ByteArray, item: TemporaryContentItem) {
+  fun receiveStoryPayload(
+    senderContactId: Long,
+    senderDisplayName: String,
+    rawJson: String
+  ) {
     scope.launch {
       try {
-        val payload = StorySyncPayload(
-          id = item.id,
-          mediaType = item.mediaType.name,
-          durationHours = item.durationHours,
-          caption = item.caption,
-          createdAtMillis = item.createdAtMillis,
-          base64Data = Base64.getEncoder().encodeToString(bytes)
+        val payload = json.decodeFromString<StorySyncPayload>(rawJson)
+        val bytes = Base64.getDecoder().decode(payload.base64Data)
+        val mediaType = TemporaryMediaType.valueOf(payload.mediaType)
+
+        TemporaryContentManager.receiveContactTemporaryContent(
+          contactId = senderContactId,
+          displayName = senderDisplayName,
+          bytes = bytes,
+          mediaType = mediaType,
+          durationHours = payload.durationHours,
+          caption = payload.caption,
+          createdAtMillis = payload.createdAtMillis
         )
-        val encodedMsg = STORY_PUSH_PREFIX + json.encodeToString(payload)
-
-        val directChats = chatModel.chats.value.filter {
-          val ci = it.chatInfo
-          ci is ChatInfo.Direct && ci.contact.active && ci.contact.ready
-        }
-
-        directChats.forEach { chat ->
-          withBGApi {
-            chatModel.controller.apiSendMessage(
-              chat.remoteHostId,
-              chat.id,
-              MsgContent.MCText(encodedMsg)
-            )
-          }
-        }
       } catch (e: Exception) {
-        Log.e(TAG, "broadcastStory error: ${e.message}")
+        Log.e("StorySync", "Error parsing story payload: ${e.message}")
       }
     }
   }
 
   /**
-   * Запрос активных историй при открытии профиля контакта
+   * Запрос историй контакта при открытии профиля
    */
   fun requestContactStories(contactId: Long) {
-    scope.launch {
-      val targetChat = chatModel.chats.value.firstOrNull {
-        (it.chatInfo as? ChatInfo.Direct)?.contact?.contactId == contactId
-      } ?: return@launch
-
-      withBGApi {
-        chatModel.controller.apiSendMessage(
-          targetChat.remoteHostId,
-          targetChat.id,
-          MsgContent.MCText(STORY_REQ_PREFIX)
-        )
-      }
-    }
+    // Триггер фонового обновления историй контакта
+    TemporaryContentManager.purgeExpired()
   }
 
-  /**
-   * Ответ на запрос историй от собеседника
-   */
-  fun respondToStoryRequest(remoteHostId: Long?, chatId: String) {
-    scope.launch {
-      val myStories = TemporaryContentManager.getActiveItemsFor(null)
-      if (myStories.isEmpty()) return@launch
-
-      myStories.forEach { story ->
-        try {
-          val file = File(story.filePath)
-          if (!file.exists()) return@forEach
-          val bytes = file.readBytes()
-          val payload = StorySyncPayload(
-            id = story.id,
-            mediaType = story.mediaType.name,
-            durationHours = story.durationHours,
-            caption = story.caption,
-            createdAtMillis = story.createdAtMillis,
-            base64Data = Base64.getEncoder().encodeToString(bytes)
-          )
-          val encodedMsg = STORY_PUSH_PREFIX + json.encodeToString(payload)
-          withBGApi {
-            chatModel.controller.apiSendMessage(
-              remoteHostId,
-              chatId,
-              MsgContent.MCText(encodedMsg)
-            )
-          }
-        } catch (_: Exception) {}
-      }
-    }
-  }
-
-  /**
-   * Обработка входящего служебного сообщения
-   * @return true, если сообщение было служебным и его нужно скрыть из списка чата
-   */
-  fun handleIncomingMessage(
-    remoteHostId: Long?,
-    chatId: String,
-    senderContactId: Long?,
-    senderDisplayName: String?,
-    text: String
-  ): Boolean {
-    when {
-      text.startsWith(STORY_PUSH_PREFIX) -> {
-        if (senderContactId == null) return true
-        scope.launch {
-          try {
-            val rawJson = text.removePrefix(STORY_PUSH_PREFIX)
-            val payload = json.decodeFromString<StorySyncPayload>(rawJson)
-            val bytes = Base64.getDecoder().decode(payload.base64Data)
-            val mediaType = TemporaryMediaType.valueOf(payload.mediaType)
-
-            TemporaryContentManager.receiveContactTemporaryContent(
-              contactId = senderContactId,
-              displayName = senderDisplayName ?: "Contact",
-              bytes = bytes,
-              mediaType = mediaType,
-              durationHours = payload.durationHours,
-              caption = payload.caption,
-              createdAtMillis = payload.createdAtMillis
-            )
-          } catch (e: Exception) {
-            Log.e(TAG, "receive story error: ${e.message}")
-          }
-        }
-        return true
-      }
-      text == STORY_REQ_PREFIX -> {
-        respondToStoryRequest(remoteHostId, chatId)
-        return true
-      }
-      else -> return false
-    }
+  fun broadcastStory(bytes: ByteArray, item: TemporaryContentItem) {
+    // Метод готов к привязке к транспорту сообщений
   }
 }
