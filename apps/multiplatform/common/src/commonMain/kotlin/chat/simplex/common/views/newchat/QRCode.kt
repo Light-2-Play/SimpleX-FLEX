@@ -25,11 +25,6 @@ import chat.simplex.common.views.helpers.*
 import chat.simplex.res.MR
 import kotlinx.coroutines.launch
 
-enum class QrDesignStyle {
-  MODERN,
-  CLASSIC
-}
-
 @Composable
 fun SimpleXCreatedLinkQRCode(
   connLink: CreatedConnLink,
@@ -84,13 +79,11 @@ fun QRCode(
   val scope = rememberCoroutineScope()
   val qrSize = if (small) 210.dp else 260.dp
 
-  // Состояние переключения стиля отображения
   var qrStyle by rememberSaveable { mutableStateOf(QrDesignStyle.MODERN) }
 
   val errorLevel = if (small) QrCode.ErrorLevel.M else QrCode.ErrorLevel.L
   val logoSize = if (small) 0.21f else 0.16f
 
-  // Генерация классического битмапа (используется для Classic-режима и для экспорта/шаринга)
   val classicImage = remember(connReq, errorLevel, tintColor, withLogo) {
     qrCodeBitmap(connReq, 1024, errorLevel)
       .replaceColor(Color.Black.toArgb(), tintColor.toArgb())
@@ -144,7 +137,7 @@ fun QRCode(
           ) {
             Image(
               bitmap = classicImage,
-              contentDescription = stringResource(MR.strings.scan_qr_code),
+              contentDescription = null,
               modifier = Modifier.fillMaxSize()
             )
           }
