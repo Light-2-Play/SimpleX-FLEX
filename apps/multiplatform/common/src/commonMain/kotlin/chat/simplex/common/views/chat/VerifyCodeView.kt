@@ -58,12 +58,12 @@ private fun VerifyCodeLayout(
   ColumnWithScrollBar(Modifier.padding(horizontal = DEFAULT_PADDING)) {
     AppBarTitle(stringResource(MR.strings.security_code), withPadding = false)
 
-    // User status header in English
+   // User status header in English
     Row(
       modifier = Modifier
         .fillMaxWidth()
         .padding(bottom = DEFAULT_PADDING_HALF),
-      horizontalAlignment = Alignment.CenterHorizontally,
+      horizontalArrangement = Arrangement.Center,
       verticalAlignment = Alignment.CenterVertically
     ) {
       if (connectionVerified) {
