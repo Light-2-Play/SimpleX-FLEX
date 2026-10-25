@@ -292,28 +292,32 @@ class MainActivity: FragmentActivity() {
         LocalSquareCameraPreview provides { isRecording, modifier ->
           AndroidView(
             factory = { ctx ->
-              val previewView = PreviewView(ctx).apply {
+              // COMPATIBLE (TextureView) обязателен для отрисовки внутри Compose Popup
+              PreviewView(ctx).apply {
+                implementationMode = PreviewView.ImplementationMode.COMPATIBLE
                 scaleType = PreviewView.ScaleType.FILL_CENTER
-              }
-              val provider = cameraProvider
-              val vc = videoCapture
-              if (provider != null && vc != null) {
-                try {
-                  provider.unbindAll()
-                  val cameraSelector = if (provider.hasCamera(CameraSelector.DEFAULT_FRONT_CAMERA)) {
-                    CameraSelector.DEFAULT_FRONT_CAMERA
-                  } else {
-                    CameraSelector.DEFAULT_BACK_CAMERA
+                
+                post {
+                  val provider = cameraProvider
+                  val vc = videoCapture
+                  if (provider != null && vc != null) {
+                    try {
+                      provider.unbindAll()
+                      val cameraSelector = if (provider.hasCamera(CameraSelector.DEFAULT_FRONT_CAMERA)) {
+                        CameraSelector.DEFAULT_FRONT_CAMERA
+                      } else {
+                        CameraSelector.DEFAULT_BACK_CAMERA
+                      }
+                      val previewUseCase = CameraPreview.Builder().build().also {
+                        it.setSurfaceProvider(surfaceProvider)
+                      }
+                      provider.bindToLifecycle(this@MainActivity, cameraSelector, previewUseCase, vc)
+                    } catch (e: Exception) {
+                      android.util.Log.e("MainActivity", "Camera bind error", e)
+                    }
                   }
-                  val previewUseCase = CameraPreview.Builder().build().also {
-                    it.setSurfaceProvider(previewView.surfaceProvider)
-                  }
-                  provider.bindToLifecycle(this@MainActivity, cameraSelector, previewUseCase, vc)
-                } catch (e: Exception) {
-                  Log.e("MainActivity", "Error binding CameraX preview: ${e.message}")
                 }
               }
-              previewView
             },
             modifier = modifier
           )
