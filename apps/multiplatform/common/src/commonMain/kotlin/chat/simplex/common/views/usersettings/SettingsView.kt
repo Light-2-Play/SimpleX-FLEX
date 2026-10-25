@@ -41,13 +41,6 @@ import chat.simplex.res.MR
 
 @Composable
 fun SettingsView(chatModel: ChatModel, setPerformLA: (Boolean) -> Unit, close: () -> Unit) {
-  var showFlexSettings by remember { mutableStateOf(false) }
-
-  if (showFlexSettings) {
-    FlexSettingsView(onBack = { showFlexSettings = false })
-    return
-  }
-
   val stopped = chatModel.chatRunning.value == false
   val showSettingsModal: (@Composable (ChatModel) -> Unit) -> (() -> Unit) = { modalView -> { ModalManager.start.showModal(settings = true, cardScreen = true) { modalView(chatModel) } } }
   SettingsLayout(
@@ -74,7 +67,6 @@ fun SettingsView(chatModel: ChatModel, setPerformLA: (Boolean) -> Unit, close: (
       ModalManager.start.showModal(cardScreen = true) { VersionInfoView(showSettingsModal, ::doWithAuth) }
     },
     withAuth = ::doWithAuth,
-    openFlexSettings = { showFlexSettings = true }
   )
   KeyChangeEffect(chatModel.updatingProgress.value != null) {
     close()
@@ -99,7 +91,6 @@ fun SettingsLayout(
   showCustomModal: (@Composable ModalData.(ChatModel, () -> Unit) -> Unit) -> (() -> Unit),
   showVersion: () -> Unit,
   withAuth: (title: String, desc: String, block: () -> Unit) -> Unit,
-  openFlexSettings: () -> Unit = {},
 ) {
   val view = LocalMultiplatformView()
   LaunchedEffect(Unit) {
@@ -111,7 +102,8 @@ fun SettingsLayout(
   ColumnWithScrollBar {
     AppBarTitle(stringResource(MR.strings.your_settings))
 
-    FlexSettingsEntryTile(onClick = openFlexSettings)
+    // Вход в FLEX Settings через нативный модальный стек
+    FlexSettingsEntryTile(onClick = showSettingsModal { FlexSettingsView() })
 
     SectionView {
       SettingsActionItem(painterResource(MR.images.ic_light_mode), stringResource(MR.strings.appearance_settings), showSettingsModal { AppearanceView(it) })
@@ -618,7 +610,6 @@ fun PreviewSettingsLayout() {
       showCustomModal = { {} },
       showVersion = {},
       withAuth = { _, _, _ -> },
-      openFlexSettings = {},
     )
   }
 }
