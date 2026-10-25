@@ -2,23 +2,23 @@ package chat.simplex.common.views.usersettings
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.icerock.moko.resources.compose.painterResource
+import chat.simplex.common.model.ChatModel
 import chat.simplex.common.platform.HapticPattern
 import chat.simplex.common.platform.RichHaptics
 import chat.simplex.common.platform.UsbPanicDetector
+import chat.simplex.common.views.helpers.ColumnWithScrollBar
 import chat.simplex.res.MR
 
 // =====================================================================
@@ -77,104 +77,86 @@ fun FlexSettingsEntryTile(onClick: () -> Unit) {
   }
 }
 
-// Псевдоним на случай старых вызовов
-@Composable
-fun FlexSettingsSection(onClick: () -> Unit = {}) {
-  FlexSettingsEntryTile(onClick = onClick)
-}
-
 // =====================================================================
-// 2. ЭКРАН НАСТРОЕК FLEX
+// 2. ЭКРАН НАСТРОЕК FLEX (БЕЗ СЕРОЙ ПЛАШКИ, С ЦЕНТРИРОВАННЫМ ЗАГОЛОВКОМ)
 // =====================================================================
 @Composable
-fun FlexSettingsView(onBack: () -> Unit) {
+fun FlexSettingsView(chatModel: ChatModel? = null) {
   var usbPanicEnabled by remember { mutableStateOf(UsbPanicDetector.isEnabled()) }
   var advancedHapticsEnabled by remember { mutableStateOf(RichHaptics.isEnabled()) }
+  val bottomPadding = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() + 90.dp
 
-  Scaffold(
-    topBar = {
-      TopAppBar(
-        title = {
-          Text(
-            text = "FLEX Settings",
-            fontSize = 18.sp,
-            fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colors.onSurface
-          )
-        },
-        navigationIcon = {
-          IconButton(onClick = onBack) {
-            Icon(
-              painter = painterResource(MR.images.ic_arrow_forward),
-              contentDescription = "Back",
-              modifier = Modifier.rotate(180f),
-              tint = MaterialTheme.colors.onSurface
-            )
-          }
-        },
-        backgroundColor = MaterialTheme.colors.surface,
-        elevation = 0.dp
-      )
-    },
-    backgroundColor = MaterialTheme.colors.background
-  ) { paddingValues ->
-    Column(
+  ColumnWithScrollBar(
+    modifier = Modifier
+      .fillMaxSize()
+      .padding(horizontal = 16.dp)
+  ) {
+    // Отступ сверху от строки состояния
+    Spacer(Modifier.height(18.dp))
+
+    // Заголовок ровно по центру экрана
+    Text(
+      text = "FLEX Settings",
+      fontSize = 22.sp,
+      fontWeight = FontWeight.Bold,
+      color = MaterialTheme.colors.onBackground,
+      textAlign = TextAlign.Center,
       modifier = Modifier
-        .fillMaxSize()
-        .padding(paddingValues)
-        .verticalScroll(rememberScrollState())
-        .padding(16.dp)
-    ) {
+        .fillMaxWidth()
+        .padding(vertical = 14.dp)
+    )
 
-      // -------------------------------------------------------------
-      // СЕКЦИЯ 1: БЕЗОПАСНОСТЬ (SECURITY)
-      // -------------------------------------------------------------
-      FlexCategoryHeader("SECURITY")
+    Spacer(Modifier.height(8.dp))
 
-      FlexSettingCard {
-        // USB Panic
-        FlexToggleItem(
-          title = "USB Panic",
-          subtitle = "Purge cache, clipboard and kill app on USB plug",
-          icon = painterResource(MR.images.ic_security),
-          iconTint = if (usbPanicEnabled) Color.Red else MaterialTheme.colors.onSurface.copy(alpha = 0.6f),
-          checked = usbPanicEnabled,
-          activeTrackColor = Color.Red,
-          onCheckedChange = { enabled ->
-            usbPanicEnabled = enabled
-            UsbPanicDetector.setEnabled(enabled)
-            if (advancedHapticsEnabled) {
-              RichHaptics.perform(if (enabled) HapticPattern.WARNING else HapticPattern.TOGGLE_OFF)
-            }
+    // -------------------------------------------------------------
+    // СЕКЦИЯ 1: SECURITY
+    // -------------------------------------------------------------
+    FlexCategoryHeader("SECURITY")
+
+    FlexSettingCard {
+      FlexToggleItem(
+        title = "USB Panic",
+        subtitle = "Purge cache, clipboard and kill app on USB plug",
+        icon = painterResource(MR.images.ic_security),
+        iconTint = if (usbPanicEnabled) Color.Red else MaterialTheme.colors.onSurface.copy(alpha = 0.6f),
+        checked = usbPanicEnabled,
+        activeTrackColor = Color.Red,
+        onCheckedChange = { enabled ->
+          usbPanicEnabled = enabled
+          UsbPanicDetector.setEnabled(enabled)
+          if (advancedHapticsEnabled) {
+            RichHaptics.perform(if (enabled) HapticPattern.WARNING else HapticPattern.TOGGLE_OFF)
           }
-        )
-      }
-
-      Spacer(modifier = Modifier.height(20.dp))
-
-      // -------------------------------------------------------------
-      // СЕКЦИЯ 2: ИНТЕРФЕЙС И ОТКЛИК (INTERFACE & FEEDBACK)
-      // -------------------------------------------------------------
-      FlexCategoryHeader("INTERFACE & FEEDBACK")
-
-      FlexSettingCard {
-        // Advanced Haptics
-        FlexToggleItem(
-          title = "Advanced Haptics",
-          subtitle = "Tactile vibration and feedback across UI",
-          icon = painterResource(MR.images.ic_notifications),
-          iconTint = if (advancedHapticsEnabled) Color(0xFFFFA000) else MaterialTheme.colors.onSurface.copy(alpha = 0.6f),
-          checked = advancedHapticsEnabled,
-          onCheckedChange = { enabled ->
-            advancedHapticsEnabled = enabled
-            RichHaptics.setEnabled(enabled)
-            if (enabled) {
-              RichHaptics.perform(HapticPattern.HEAVY_CLICK)
-            }
-          }
-        )
-      }
+        }
+      )
     }
+
+    Spacer(modifier = Modifier.height(20.dp))
+
+    // -------------------------------------------------------------
+    // СЕКЦИЯ 2: INTERFACE & FEEDBACK
+    // -------------------------------------------------------------
+    FlexCategoryHeader("INTERFACE & FEEDBACK")
+
+    FlexSettingCard {
+      FlexToggleItem(
+        title = "Advanced Haptics",
+        subtitle = "Tactile vibration and feedback across UI",
+        icon = painterResource(MR.images.ic_notifications),
+        iconTint = if (advancedHapticsEnabled) Color(0xFFFFA000) else MaterialTheme.colors.onSurface.copy(alpha = 0.6f),
+        checked = advancedHapticsEnabled,
+        onCheckedChange = { enabled ->
+          advancedHapticsEnabled = enabled
+          RichHaptics.setEnabled(enabled)
+          if (enabled) {
+            RichHaptics.perform(HapticPattern.HEAVY_CLICK)
+          }
+        }
+      )
+    }
+
+    // Запас высоты над круглой кнопкой возврата SimpleX
+    Spacer(Modifier.height(bottomPadding))
   }
 }
 
