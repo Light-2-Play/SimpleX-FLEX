@@ -45,7 +45,16 @@ enum class RecordMediaMode {
   VOICE, VIDEO
 }
 
-// Провайдер для передачи платформенного CameraX Preview (если задан в androidMain)
+/**
+ * Изолированный мост CameraX для квадратного видео (1:1).
+ * Полностью независим от встроенного голосового RecorderNative.
+ */
+object SquareVideoBridge {
+  var startRecording: (() -> Unit)? = null
+  var stopRecording: (((URI) -> Unit) -> Unit)? = null
+  var cancelRecording: (() -> Unit)? = null
+}
+
 val LocalSquareCameraPreview = compositionLocalOf<(@Composable (isRecording: Boolean, modifier: Modifier) -> Unit)?> { null }
 
 // Spec: spec/client/compose.md#SendMsgView
@@ -328,6 +337,7 @@ private fun RecordVoiceView(
   stopRecOnNextClick: MutableState<Boolean>,
   onVideoFileRecorded: (URI) -> Unit
 ) {
+  // АУДИОДВИЖОК (используется ТОЛЬКО для голосовых сообщений)
   val rec: RecorderInterface = remember { RecorderNative() }
   DisposableEffect(Unit) { onDispose { rec.stop() } }
 
@@ -348,37 +358,10 @@ private fun RecordVoiceView(
   val isAudioRecordingActive = recState.value is RecordingState.Started
   val isAnyRecording = isAudioRecordingActive || isVideoRecordingActive
 
-  val stopRecordingAndAddAudio: () -> Unit = {
-    recState.value.filePathNullable?.let {
-      recState.value = RecordingState.Finished(it, rec.stop())
-    }
-    isHoldingToRecord = false
-    stopRecOnNextClick.value = false
-  }
-
-  val stopAndSendVideo: () -> Unit = {
-    isVideoRecordingActive = false
-    isHoldingToRecord = false
-    stopRecOnNextClick.value = false
-    // Временный файл CameraX передается в общий пайплайн медиа-сообщений
-    val tempVideoFile = getAppFileUri("square_video_temp.mp4")
-    onVideoFileRecorded(URI(tempVideoFile.toString()))
-  }
-
-  val cancelRecording: () -> Unit = {
-    if (recordMode == RecordMediaMode.VOICE) {
-      rec.stop()
-      recState.value = RecordingState.NotStarted
-    } else {
-      isVideoRecordingActive = false
-    }
-    stopRecOnNextClick.value = false
-    isHoldingToRecord = false
-    dragOffsetY = 0f
-    dragOffsetX = 0f
-  }
-
-  val startRecording: () -> Unit = {
+  // =====================================================================
+  // ИЗОЛИРОВАННЫЕ ДЕЙСТВИЯ: АУДИО (VOICE)
+  // =====================================================================
+  val startVoiceRecording: () -> Unit = {
     val filePath = rec.start { progress: Int?, finished: Boolean ->
       val state = recState.value
       if (state is RecordingState.Started && progress != null) {
@@ -393,6 +376,49 @@ private fun RecordVoiceView(
     }
   }
 
+  val stopVoiceRecordingAndAddAudio: () -> Unit = {
+    recState.value.filePathNullable?.let {
+      recState.value = RecordingState.Finished(it, rec.stop())
+    }
+    isHoldingToRecord = false
+    stopRecOnNextClick.value = false
+  }
+
+  val cancelVoiceRecording: () -> Unit = {
+    rec.stop()
+    recState.value = RecordingState.NotStarted
+    stopRecOnNextClick.value = false
+    isHoldingToRecord = false
+    dragOffsetY = 0f
+    dragOffsetX = 0f
+  }
+
+  // =====================================================================
+  // ИЗОЛИРОВАННЫЕ ДЕЙСТВИЯ: ВИДЕО CameraX 1:1 (VIDEO)
+  // =====================================================================
+  val startVideoRecording: () -> Unit = {
+    isVideoRecordingActive = true
+    SquareVideoBridge.startRecording?.invoke()
+  }
+
+  val stopVideoRecordingAndSend: () -> Unit = {
+    SquareVideoBridge.stopRecording?.invoke { uri ->
+      onVideoFileRecorded(uri)
+    }
+    isVideoRecordingActive = false
+    isHoldingToRecord = false
+    stopRecOnNextClick.value = false
+  }
+
+  val cancelVideoRecording: () -> Unit = {
+    SquareVideoBridge.cancelRecording?.invoke()
+    isVideoRecordingActive = false
+    stopRecOnNextClick.value = false
+    isHoldingToRecord = false
+    dragOffsetY = 0f
+    dragOffsetX = 0f
+  }
+
   // Таймер записи до 02:00 (120 секунд)
   LaunchedEffect(isAnyRecording) {
     if (isAnyRecording) {
@@ -403,7 +429,7 @@ private fun RecordVoiceView(
       }
       if (recordingSeconds >= 120) {
         RichHaptics.perform(HapticPattern.RECORD_STOP)
-        if (isVideoRecordingActive) stopAndSendVideo() else stopRecordingAndAddAudio()
+        if (isVideoRecordingActive) stopVideoRecordingAndSend() else stopVoiceRecordingAndAddAudio()
       }
     } else {
       recordingSeconds = 0
@@ -424,7 +450,7 @@ private fun RecordVoiceView(
   }
 
   // =====================================================================
-  // 1. ПАНЕЛЬ СОСТОЯНИЯ ЗАПИСИ (ПОВЕРХ СТРОКИ ВВОДА)
+  // 1. ИНДИКАТОР ЗАПИСИ И ТАЙМЕР В СТРОКЕ ВВОДА
   // =====================================================================
   if (isAnyRecording || isHoldingToRecord) {
     val mins = (recordingSeconds / 60).toString().padStart(2, '0')
@@ -451,7 +477,7 @@ private fun RecordVoiceView(
           IconButton(
             onClick = {
               RichHaptics.perform(HapticPattern.TOGGLE_OFF)
-              cancelRecording()
+              if (recordMode == RecordMediaMode.VIDEO) cancelVideoRecording() else cancelVoiceRecording()
             },
             modifier = Modifier.size(28.dp)
           ) {
@@ -502,13 +528,12 @@ private fun RecordVoiceView(
   }
 
   // =====================================================================
-  // 2. КНОПКА ЗАПИСИ И ВСПЛЫВАЮЩИЙ ЗАМОЧЕК
+  // 2. КНОПКА ЗАПИСИ И ЗАМОЧЕК HANDS-FREE
   // =====================================================================
   Box(
     modifier = Modifier.wrapContentSize(),
     contentAlignment = Alignment.Center
   ) {
-    // Всплывающий замочек (показывается при удержании до фиксации)
     AnimatedVisibility(
       visible = isHoldingToRecord && !isLocked && isAnyRecording,
       enter = fadeIn(tween(140)) + slideInVertically(initialOffsetY = { it / 2 }),
@@ -579,7 +604,7 @@ private fun RecordVoiceView(
                 val event = awaitPointerEvent()
               } while (event.changes.any { it.pressed })
               RichHaptics.perform(HapticPattern.RECORD_STOP)
-              if (recordMode == RecordMediaMode.VIDEO) stopAndSendVideo() else stopRecordingAndAddAudio()
+              if (recordMode == RecordMediaMode.VIDEO) stopVideoRecordingAndSend() else stopVoiceRecordingAndAddAudio()
               return@awaitEachGesture
             }
 
@@ -600,14 +625,14 @@ private fun RecordVoiceView(
               RichHaptics.perform(HapticPattern.SELECTION_CHANGE)
               recordMode = if (recordMode == RecordMediaMode.VOICE) RecordMediaMode.VIDEO else RecordMediaMode.VOICE
             } else {
-              // Зажатие (>= 220 мс): старт записи с волновой отдачей
+              // Зажатие (>= 220 мс): старт соответствующего движка
               isHoldingToRecord = true
               RichHaptics.perform(HapticPattern.RECORD_START)
 
               if (recordMode == RecordMediaMode.VIDEO) {
-                isVideoRecordingActive = true
+                startVideoRecording()
               } else {
-                startRecording()
+                startVoiceRecording()
               }
 
               var lockedByDrag = false
@@ -623,7 +648,7 @@ private fun RecordVoiceView(
                   dragOffsetX = (dragOffsetX + delta.x).coerceAtMost(0f)
                   change.consume()
 
-                  // Свайп вверх к замочку (>= 56.dp) -> фиксация Hands-free
+                  // Свайп вверх к замочку (>= 56.dp)
                   if (dragOffsetY <= -lockThresholdPx && !lockedByDrag) {
                     lockedByDrag = true
                     stopRecOnNextClick.value = true
@@ -631,11 +656,11 @@ private fun RecordVoiceView(
                     break
                   }
 
-                  // Свайп влево (>= 70.dp) -> отмена записи
+                  // Свайп влево (>= 70.dp)
                   if (dragOffsetX <= -cancelThresholdPx && !cancelledByDrag) {
                     cancelledByDrag = true
                     RichHaptics.perform(HapticPattern.TOGGLE_OFF)
-                    cancelRecording()
+                    if (recordMode == RecordMediaMode.VIDEO) cancelVideoRecording() else cancelVoiceRecording()
                     break
                   }
                 }
@@ -645,10 +670,10 @@ private fun RecordVoiceView(
               dragOffsetY = 0f
               dragOffsetX = 0f
 
-              // Отпускание пальца без фиксации замочка и без отмены -> завершение и отправка
+              // Отпустили палец без фиксации замочка и без отмены -> завершить и отправить
               if (!lockedByDrag && !cancelledByDrag) {
                 RichHaptics.perform(HapticPattern.RECORD_STOP)
-                if (recordMode == RecordMediaMode.VIDEO) stopAndSendVideo() else stopRecordingAndAddAudio()
+                if (recordMode == RecordMediaMode.VIDEO) stopVideoRecordingAndSend() else stopVoiceRecordingAndAddAudio()
               }
             }
           }
@@ -681,7 +706,7 @@ private fun RecordVoiceView(
   }
 
   // =====================================================================
-  // 3. КВАДРАТНЫЙ ВИДОИСКАТЕЛЬ (1:1) ПО ЦЕНТРУ ЭКРАНА
+  // 3. КВАДРАТНЫЙ ВИДОИСКАТЕЛЬ CameraX 1:1 (ПО ЦЕНТРУ ЭКРАНА)
   // =====================================================================
   val cameraPreviewProvider = LocalSquareCameraPreview.current
 
@@ -692,7 +717,6 @@ private fun RecordVoiceView(
       if (cameraPreviewProvider != null) {
         cameraPreviewProvider(isVideoRecordingActive, Modifier.fillMaxSize())
       } else {
-        // Чистый fallback-видоискатель для превью и платформ
         Box(
           modifier = Modifier
             .fillMaxSize()
@@ -753,7 +777,6 @@ private fun SquareVideoRecordOverlay(
           Box(modifier = Modifier.fillMaxSize()) {
             cameraPreview()
 
-            // Таймер 00:00 / 02:00 в левом верхнем углу превью
             Row(
               modifier = Modifier
                 .padding(14.dp)
