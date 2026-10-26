@@ -119,14 +119,13 @@ fun ChatItemView(
 ) {
   val cInfo = chat.chatInfo
   
- // --- ПЕРЕХВАТ И СКРЫТИЕ СЛУЖЕБНЫХ СООБЩЕНИЙ СТОРИС ---
- // Полное скрытие служебных сообщений сторис в интерфейсе чата
+  // --- СКРЫТИЕ XFTP-ФАЙЛОВ СТОРИС ИЗ ОБЫЧНОГО ЧАТА ---
   val rawText = cItem.content.text.trim()
-  if (rawText.contains(StorySyncManager.STORY_PUSH_PREFIX) ||
-      rawText.contains(StorySyncManager.STORY_REQ_PREFIX)) {
+  if (rawText.startsWith(StorySyncManager.STORY_TAG_PREFIX)) {
     Box(Modifier.size(0.dp)) {}
     return
   }
+  // ---------------------------------------------------
   // -----------------------------------------------------
 
   val uriHandler = LocalUriHandler.current
