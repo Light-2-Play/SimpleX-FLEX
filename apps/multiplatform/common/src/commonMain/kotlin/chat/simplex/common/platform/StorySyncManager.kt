@@ -72,9 +72,6 @@ object StorySyncManager {
     }
   }
 
-  /**
-   * Опрос всех активных контактов при входе в раздел Temporary Content из списка чатов
-   */
   fun requestStoriesFromAllContacts() {
     scope.launch {
       val directChats = chatModel.chats.value.filter {
