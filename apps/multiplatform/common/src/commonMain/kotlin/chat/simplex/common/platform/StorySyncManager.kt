@@ -17,7 +17,7 @@ object StorySyncManager {
   private val handledItemIds = ConcurrentHashMap.newKeySet<Long>()
   private val requestedDownloadIds = ConcurrentHashMap.newKeySet<Long>()
 
-  fun startBackgroundObserver(chatModel: ChatModel) {
+fun startBackgroundObserver(chatModel: ChatModel) {
     observerJob?.cancel()
     observerJob = scope.launch {
       snapshotFlow { chatModel.chats.value }.collect { chats: List<Chat> ->
@@ -31,24 +31,15 @@ object StorySyncManager {
           }
 
           storyItems.forEach { item ->
-            // Исходящее сообщение автора сторис
+            // Исходящее сообщение автора — не удаляем во время выгрузки!
             if (item.chatDir.sent) {
-              val ciFile = item.file
-              val statusName = ciFile?.fileStatus?.let { it::class.simpleName } ?: ""
-              val isStillUploading = statusName.contains("Upload", ignoreCase = true) ||
-                                     statusName.contains("Wait", ignoreCase = true)
-
-              if (!isStillUploading && statusName.isNotBlank()) {
-                handledItemIds.add(item.id)
-                removeStoryItemFromChat(chatModel, chat, item)
-              }
               return@forEach
             }
 
-            // Входящее сообщение сторис
+            // Входящее сообщение на стороне получателя
             val ciFile = item.file ?: return@forEach
 
-            // Автоматическое скачивание с XFTP без ручного клика в чате
+            // 1. АВТОМАТИЧЕСКИЙ СТАРТ СКАЧИВАНИЯ БЕЗ КЛИКОВ В ЧАТЕ
             if (!ciFile.loaded) {
               if (!requestedDownloadIds.contains(ciFile.fileId)) {
                 requestedDownloadIds.add(ciFile.fileId)
@@ -56,18 +47,18 @@ object StorySyncManager {
                   try {
                     chatModel.controller.receiveFile(chat.remoteHostId, user, ciFile.fileId)
                   } catch (e: Exception) {
-                    Log.e(TAG, "XFTP auto-receiveFile error: ${e.message}")
+                    Log.e(TAG, "auto receiveFile error: ${e.message}")
                   }
                 }
               }
               return@forEach
             }
 
-            // Файл полностью загружен с XFTP на диск
+            // 2. ФАЙЛ ПОЛНОСТЬЮ СКАЧАН НА ДИСК
             val loadedPath = getLoadedFilePath(ciFile)
             if (loadedPath != null) {
               val fileOnDisk = File(loadedPath)
-              if (fileOnDisk.exists()) {
+              if (fileOnDisk.exists() && fileOnDisk.length() > 0) {
                 handledItemIds.add(item.id)
 
                 val rawText = item.content.text
@@ -98,7 +89,7 @@ object StorySyncManager {
                   Log.e(TAG, "Failed importing story file: ${e.message}")
                 }
 
-                // Скрываем техническое сообщение из переписки
+                // Удаляем сервисную запись из чата только теперь, когда файл уже сохранён в истории
                 removeStoryItemFromChat(chatModel, chat, item)
               }
             }
