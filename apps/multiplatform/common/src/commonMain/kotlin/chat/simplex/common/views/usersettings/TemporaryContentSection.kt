@@ -575,12 +575,11 @@ private fun AddTemporaryContentDialog(
             Text("Cancel", color = primary, fontWeight = FontWeight.SemiBold)
           }
           Spacer(Modifier.width(8.dp))
-        Button(
+       Button(
             onClick = {
               val rawBytes = selectedBytes ?: return@Button
               RichHaptics.perform(HapticPattern.SUCCESS)
 
-              // 1. Сохраняем локально
               val newItem = TemporaryContentManager.addContentFromBytes(
                 bytes = rawBytes,
                 mediaType = selectedMediaType,
@@ -589,7 +588,6 @@ private fun AddTemporaryContentDialog(
                 audience = selectedAudience
               )
 
-              // 2. Отправляем через XFTP в фоне
               if (newItem != null) {
                 val mediaFile = File(newItem.filePath)
                 val thumbFile = File("${newItem.filePath}_thumb.jpg")
