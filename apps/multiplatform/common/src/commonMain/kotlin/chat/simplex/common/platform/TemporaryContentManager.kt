@@ -1,6 +1,6 @@
 package chat.simplex.common.platform
 
-import kotlinx.coroutines.*
+import chat.simplex.common.model.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -8,176 +8,135 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import java.io.File
-import java.util.UUID
-
-enum class TemporaryDuration(val hours: Int, val label: String) {
-  HOURS_1(1, "1h"),
-  HOURS_3(3, "3h"),
-  HOURS_6(6, "6h"),
-  HOURS_12(12, "12h"),
-  HOURS_16(16, "16h"),
-  HOURS_24(24, "24h");
-
-  val durationMillis: Long
-    get() = hours * 3600_000L
-}
 
 enum class TemporaryMediaType {
   PHOTO, VIDEO
 }
 
-/**
- * Аудитория для показа Temporary Content
- */
+enum class TemporaryDuration(val hours: Int, val label: String) {
+  HOURS_1(1, "1 hr"),
+  HOURS_6(6, "6 hrs"),
+  HOURS_12(12, "12 hrs"),
+  HOURS_24(24, "24 hrs"),
+  HOURS_48(48, "48 hrs"),
+  HOURS_72(72, "72 hrs");
+}
+
 enum class TemporaryAudience(val label: String) {
-  VERIFIED_USERS("Verified Users"),
+  VERIFIED_USERS("Verified"),
   CONTACTS("Contacts"),
-  ALL_USERS("All Users")
+  ALL_USERS("All")
 }
 
 @Serializable
 data class TemporaryContentItem(
-  val id: String = UUID.randomUUID().toString(),
+  val id: String,
+  val authorContactId: Long? = null,
+  val authorDisplayName: String? = null,
   val filePath: String,
   val mediaType: TemporaryMediaType,
   val createdAtMillis: Long,
-  val expiresAtMillis: Long,
   val durationHours: Int,
+  val expiresAtMillis: Long = createdAtMillis + (durationHours * 3600_000L),
   val caption: String = "",
-  val authorContactId: Long? = null,
-  val authorDisplayName: String? = null,
   val audience: TemporaryAudience = TemporaryAudience.CONTACTS
 ) {
-  fun isExpired(now: Long = System.currentTimeMillis()): Boolean = now >= expiresAtMillis
-
-  fun remainingTimeText(now: Long = System.currentTimeMillis()): String {
-    val diff = (expiresAtMillis - now).coerceAtLeast(0L)
-    val totalMinutes = diff / 60_000L
-    val hours = totalMinutes / 60
-    val minutes = totalMinutes % 60
+  fun remainingTimeText(nowMillis: Long): String {
+    val remainingMs = (expiresAtMillis - nowMillis).coerceAtLeast(0L)
+    val hours = remainingMs / 3600_000L
+    val minutes = (remainingMs % 3600_000L) / 60_000L
     return when {
       hours > 0 -> "${hours}h ${minutes}m"
       minutes > 0 -> "${minutes}m"
-      else -> "< 1m"
+      else -> "<1m"
     }
   }
 
-  fun remainingProgress(now: Long = System.currentTimeMillis()): Float {
-    val total = (expiresAtMillis - createdAtMillis).coerceAtLeast(1L)
-    val left = (expiresAtMillis - now).coerceAtLeast(0L)
-    return (left.toFloat() / total.toFloat()).coerceIn(0f, 1f)
+  fun remainingProgress(nowMillis: Long): Float {
+    val totalMs = (durationHours * 3600_000L).toFloat()
+    if (totalMs <= 0f) return 0f
+    val remainingMs = (expiresAtMillis - nowMillis).coerceIn(0L, totalMs.toLong()).toFloat()
+    return (remainingMs / totalMs).coerceIn(0f, 1f)
   }
 }
 
 object TemporaryContentManager {
-  private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
-  private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-
   private val _items = MutableStateFlow<List<TemporaryContentItem>>(emptyList())
   val items: StateFlow<List<TemporaryContentItem>> = _items.asStateFlow()
 
-  private var storageDir: File? = null
-  private var metadataFile: File? = null
-  private var cleanupJob: Job? = null
+  private val json = Json { ignoreUnknownKeys = true }
+
+  private fun getStorageDir(): File {
+    val dir = File(getAppFilePath("temporary_content"))
+    if (!dir.exists()) {
+      dir.mkdirs()
+    }
+    return dir
+  }
+
+  private val metadataFile: File
+    get() = File(getStorageDir(), "metadata.json")
 
   init {
-    initStorage()
-    startAutoCleanupLoop()
-  }
-
-  private fun initStorage() {
-    try {
-      val baseDir = File(getAppFilePath(""))
-      val dir = File(baseDir, "temporary_content")
-      if (!dir.exists()) dir.mkdirs()
-      storageDir = dir
-      metadataFile = File(dir, "metadata.json")
-      loadFromDisk()
-      purgeExpired()
-    } catch (e: Exception) {
-      Log.e(TAG, "TemporaryContentManager init error: ${e.message}")
-    }
-  }
-
-  private fun startAutoCleanupLoop() {
-    cleanupJob?.cancel()
-    cleanupJob = scope.launch {
-      while (isActive) {
-        purgeExpired()
-        delay(30_000L)
-      }
-    }
-  }
-
-  fun hasActiveContent(contactId: Long?): Boolean {
-    val now = System.currentTimeMillis()
-    return _items.value.any { it.authorContactId == contactId && !it.isExpired(now) }
+    loadMetadataFromDisk()
+    purgeExpired()
   }
 
   fun getActiveItemsFor(contactId: Long?): List<TemporaryContentItem> {
     val now = System.currentTimeMillis()
-    return _items.value
-      .filter { it.authorContactId == contactId && !it.isExpired(now) }
-      .sortedBy { it.createdAtMillis }
+    return _items.value.filter { it.authorContactId == contactId && it.expiresAtMillis > now }
   }
 
   fun addContentFromBytes(
     bytes: ByteArray,
     mediaType: TemporaryMediaType,
     duration: TemporaryDuration,
-    caption: String = "",
-    audience: TemporaryAudience = TemporaryAudience.CONTACTS
+    caption: String,
+    audience: TemporaryAudience
   ): TemporaryContentItem? {
-    if (storageDir == null) initStorage()
-    val dir = storageDir ?: return null
-
     return try {
+      val dir = getStorageDir()
       val ext = if (mediaType == TemporaryMediaType.VIDEO) "mp4" else "jpg"
-      val id = UUID.randomUUID().toString()
-      val destFile = File(dir, "temp_${id}.$ext")
+      val id = "my_${System.currentTimeMillis()}"
+      val destFile = File(dir, "$id.$ext")
       destFile.writeBytes(bytes)
 
-      // Автоматическое создание превью первого кадра для полученного видео
       if (mediaType == TemporaryMediaType.VIDEO) {
-        try {
-          val retriever = android.media.MediaMetadataRetriever()
-          retriever.setDataSource(destFile.absolutePath)
-          val frame = retriever.getFrameAtTime(0)
-          if (frame != null) {
-            val thumbFile = File("${destFile.absolutePath}_thumb.jpg")
-            val stream = java.io.ByteArrayOutputStream()
-            frame.compress(android.graphics.Bitmap.CompressFormat.JPEG, 75, stream)
-            thumbFile.writeBytes(stream.toByteArray())
-          }
-          retriever.release()
-        } catch (_: Exception) {}
+        val lastThumb = File(dir, "last_video_thumb.jpg")
+        if (lastThumb.exists()) {
+          val storyThumb = File("${destFile.absolutePath}_thumb.jpg")
+          lastThumb.copyTo(storyThumb, overwrite = true)
+          lastThumb.delete()
+        }
       }
 
       val now = System.currentTimeMillis()
-      val newItem = TemporaryContentItem(
+      val expiresAt = now + (duration.hours * 3600_000L)
+      val item = TemporaryContentItem(
         id = id,
+        authorContactId = null,
+        authorDisplayName = null,
         filePath = destFile.absolutePath,
         mediaType = mediaType,
         createdAtMillis = now,
-        expiresAtMillis = now + duration.durationMillis,
         durationHours = duration.hours,
+        expiresAtMillis = expiresAt,
         caption = caption,
-        authorContactId = null,
-        authorDisplayName = null,
         audience = audience
       )
 
-      val updated = (_items.value + newItem).sortedByDescending { it.createdAtMillis }
-      _items.value = updated
-      saveToDisk(updated)
-      newItem
+      val currentList = _items.value.toMutableList()
+      currentList.add(0, item)
+      _items.value = currentList
+      saveMetadataToDisk()
+      item
     } catch (e: Exception) {
-      Log.e(TAG, "Failed to add temporary content: ${e.message}")
+      Log.e(TAG, "addContentFromBytes error: ${e.message}")
       null
     }
   }
 
-fun receiveContactTemporaryContent(
+  fun receiveContactTemporaryContent(
     contactId: Long,
     displayName: String,
     bytes: ByteArray,
@@ -202,13 +161,14 @@ fun receiveContactTemporaryContent(
           if (frame != null) {
             val thumbFile = File("${destFile.absolutePath}_thumb.jpg")
             val stream = java.io.ByteArrayOutputStream()
-            frame.compress(android.graphics.Bitmap.CompressFormat.JPEG, 80, stream)
+            frame.compress(android.graphics.Bitmap.CompressFormat.JPEG, 75, stream)
             thumbFile.writeBytes(stream.toByteArray())
           }
           retriever.release()
         } catch (_: Exception) {}
       }
 
+      val expiresAt = createdAtMillis + (durationHours * 3600_000L)
       val newItem = TemporaryContentItem(
         id = id,
         authorContactId = contactId,
@@ -217,51 +177,39 @@ fun receiveContactTemporaryContent(
         mediaType = mediaType,
         createdAtMillis = createdAtMillis,
         durationHours = durationHours,
+        expiresAtMillis = expiresAt,
         caption = caption,
         audience = TemporaryAudience.CONTACTS
       )
 
-      // Мгновенное обновление StateFlow для Compose (без перезагрузки приложения)
+      // Мгновенное обновление Compose-потока: истории появляются без перезапуска приложения
       val currentList = _items.value.toMutableList()
       currentList.removeAll { it.id == newItem.id }
       currentList.add(0, newItem)
       _items.value = currentList
-
       saveMetadataToDisk()
     } catch (e: Exception) {
-      Log.e("TempContent", "Failed to receive contact story: ${e.message}")
-    }
-  }
-      val updated = (_items.value + newItem).sortedByDescending { it.createdAtMillis }
-      _items.value = updated
-      saveToDisk(updated)
-      newItem
-    } catch (e: Exception) {
-      Log.e(TAG, "Failed to save received contact story: ${e.message}")
-      null
+      Log.e(TAG, "receiveContactTemporaryContent error: ${e.message}")
     }
   }
 
   fun removeContent(id: String) {
     val current = _items.value
-    val target = current.find { it.id == id }
-    if (target != null) {
-      try {
-        File(target.filePath).delete()
-        val thumb = File("${target.filePath}_thumb.jpg")
-        if (thumb.exists()) thumb.delete()
-      } catch (_: Exception) {}
-    }
-    val updated = current.filterNot { it.id == id }
-    _items.value = updated
-    saveToDisk(updated)
+    val item = current.firstOrNull { it.id == id } ?: return
+    try {
+      val f = File(item.filePath)
+      if (f.exists()) f.delete()
+      val thumb = File("${item.filePath}_thumb.jpg")
+      if (thumb.exists()) thumb.delete()
+    } catch (_: Exception) {}
+    _items.value = current.filter { it.id != id }
+    saveMetadataToDisk()
   }
 
   fun purgeExpired() {
     val now = System.currentTimeMillis()
     val current = _items.value
-    val (expired, active) = current.partition { it.isExpired(now) }
-
+    val (active, expired) = current.partition { it.expiresAtMillis > now }
     if (expired.isNotEmpty()) {
       expired.forEach { item ->
         try {
@@ -272,28 +220,28 @@ fun receiveContactTemporaryContent(
         } catch (_: Exception) {}
       }
       _items.value = active
-      saveToDisk(active)
+      saveMetadataToDisk()
     }
   }
 
-  private fun loadFromDisk() {
-    val file = metadataFile ?: return
-    if (!file.exists()) return
+  private fun saveMetadataToDisk() {
     try {
-      val content = file.readText()
-      val parsed = json.decodeFromString<List<TemporaryContentItem>>(content)
-      _items.value = parsed.filter { File(it.filePath).exists() }
+      val text = json.encodeToString(_items.value)
+      metadataFile.writeText(text)
     } catch (e: Exception) {
-      Log.e(TAG, "Error loading metadata: ${e.message}")
+      Log.e(TAG, "saveMetadataToDisk error: ${e.message}")
     }
   }
 
-  private fun saveToDisk(list: List<TemporaryContentItem>) {
-    val file = metadataFile ?: return
+  private fun loadMetadataFromDisk() {
     try {
-      file.writeText(json.encodeToString(list))
+      if (metadataFile.exists()) {
+        val text = metadataFile.readText()
+        val list = json.decodeFromString<List<TemporaryContentItem>>(text)
+        _items.value = list.filter { File(it.filePath).exists() }
+      }
     } catch (e: Exception) {
-      Log.e(TAG, "Error saving metadata: ${e.message}")
+      Log.e(TAG, "loadMetadataFromDisk error: ${e.message}")
     }
   }
 }
