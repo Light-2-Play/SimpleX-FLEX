@@ -9,6 +9,7 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import java.io.File
+import java.util.concurrent.ConcurrentHashMap
 
 @Serializable
 data class StoryXftpDescriptor(
@@ -30,6 +31,9 @@ object StorySyncManager {
   private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
   private var observerJob: Job? = null
 
+  // Защита от повторной обработки и бесконечного спама
+  private val handledMessageIds = ConcurrentHashMap.newKeySet<Long>()
+
   fun startBackgroundObserver(chatModel: ChatModel) {
     observerJob?.cancel()
     observerJob = scope.launch {
@@ -37,14 +41,19 @@ object StorySyncManager {
         chats.forEach { chat ->
           val directContact = (chat.chatInfo as? ChatInfo.Direct)?.contact ?: return@forEach
 
+          // Ищем только новые, еще не обработанные служебные сообщения
           val unhandledItems = chat.chatItems.filter { item ->
-            !item.chatDir.sent && (
+            !item.chatDir.sent &&
+            !handledMessageIds.contains(item.id) && (
               item.content.text.contains(STORY_PUSH_PREFIX) ||
               item.content.text.contains(STORY_REQ_PREFIX)
             )
           }
 
           unhandledItems.forEach { item ->
+            // Сразу помечаем как обработанное, чтобы разорвать цикл
+            handledMessageIds.add(item.id)
+
             val text = item.content.text.trim()
             handleIncomingMessage(
               remoteHostId = chat.remoteHostId,
@@ -54,6 +63,14 @@ object StorySyncManager {
               text = text
             )
 
+            // 1. Удаляем из оперативной памяти списка сообщений
+            withContext(Dispatchers.Main) {
+              try {
+                chatModel.chatsContext.removeChatItem(chat.remoteHostId, chat.chatInfo, item)
+              } catch (_: Exception) {}
+            }
+
+            // 2. Удаляем из локальной базы данных SQLite
             withBGApi {
               try {
                 chatModel.controller.apiDeleteChatItems(
@@ -72,18 +89,6 @@ object StorySyncManager {
     }
   }
 
-  fun requestStoriesFromAllContacts() {
-    scope.launch {
-      val directChats = chatModel.chats.value.filter {
-        val ci = it.chatInfo
-        ci is ChatInfo.Direct && ci.contact.active && ci.contact.ready
-      }
-      directChats.forEach { chat ->
-        sendHiddenServiceMessage(chat, STORY_REQ_PREFIX)
-      }
-    }
-  }
-
   suspend fun publishAndBroadcastStoryWithProgress(
     file: File,
     item: TemporaryContentItem,
@@ -91,7 +96,7 @@ object StorySyncManager {
     onProgress: (Int, String) -> Unit
   ): Boolean = withContext(Dispatchers.IO) {
     try {
-      onProgress(0, "Encrypting...")
+      onProgress(5, "Encrypting...")
 
       val uploadResult = XftpStoryUploader.uploadEncryptedStory(file, item.durationHours) { pct ->
         onProgress(pct, "Uploading: $pct%")
@@ -146,7 +151,7 @@ object StorySyncManager {
     }
   }
 
-  fun respondToStoryRequest(remoteHostId: Long?, chatId: String) {
+  private fun respondToStoryRequest(remoteHostId: Long?, chatId: String) {
     scope.launch {
       val targetChat = chatModel.chats.value.firstOrNull { it.id == chatId } ?: return@launch
       val myStories = TemporaryContentManager.getActiveItemsFor(null)
@@ -211,7 +216,7 @@ object StorySyncManager {
               )
             }
           } catch (e: Exception) {
-            Log.e(TAG, "Error auto-downloading story: ${e.message}")
+            Log.e(TAG, "Error receiving story: ${e.message}")
           }
         }
         return true
