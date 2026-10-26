@@ -543,24 +543,6 @@ fun ChatInfoLayout(
   val scrollState = rememberScrollState()
   val scope = rememberCoroutineScope()
 
-  // Запрашиваем актуальные истории контакта при входе в его профиль
-  LaunchedEffect(contact.contactId) {
-    StorySyncManager.requestContactStories(contact.contactId)
-  }
-
-  KeyChangeEffect(chat.id) {
-    scope.launch { scrollState.scrollTo(0) }
-  }
-  ColumnWithScrollBar {
-    Row(
-      Modifier.fillMaxWidth(),
-      horizontalArrangement = Arrangement.Center
-    ) {
-      ChatInfoHeader(chat.chatInfo, contact)
-    }
-
-    LocalAliasEditor(chat.id, localAlias, updateValue = onLocalAliasChanged)
-
     // Раздел активных историй собеседника (если они есть)
     ContactStoriesSection(contact.contactId, contact.displayName)
 
