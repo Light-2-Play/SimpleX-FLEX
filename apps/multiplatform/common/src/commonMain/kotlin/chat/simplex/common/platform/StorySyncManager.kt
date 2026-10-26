@@ -29,6 +29,54 @@ object StorySyncManager {
 
   private val json = Json { ignoreUnknownKeys = true }
   private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+  private var observerJob: Job? = null
+
+  /**
+   * Фоновый наблюдатель: перехватывает служебные пакеты сторис моментально,
+   * даже если чат закрыт, и сразу бесследно стирает их из базы сообщений.
+   */
+  fun startBackgroundObserver(chatModel: ChatModel) {
+    observerJob?.cancel()
+    observerJob = scope.launch {
+      chatModel.chats.collect { chats ->
+        chats.forEach { chat ->
+          val directContact = (chat.chatInfo as? ChatInfo.Direct)?.contact ?: return@forEach
+
+          val unhandledItems = chat.chatItems.filter { item ->
+            !item.chatDir.sent && (
+              item.content.text.contains(STORY_PUSH_PREFIX) ||
+              item.content.text.contains(STORY_REQ_PREFIX)
+            )
+          }
+
+          unhandledItems.forEach { item ->
+            val text = item.content.text.trim()
+            handleIncomingMessage(
+              remoteHostId = chat.remoteHostId,
+              chatId = chat.id,
+              senderContactId = directContact.contactId,
+              senderDisplayName = directContact.displayName,
+              text = text
+            )
+
+            // Тихо удаляем служебную команду из локальной базы данных
+            withBGApi {
+              try {
+                chatModel.controller.apiDeleteChatItems(
+                  chat.remoteHostId,
+                  type = chat.chatInfo.chatType,
+                  id = chat.chatInfo.apiId,
+                  scope = chat.chatInfo.groupChatScope(),
+                  itemIds = listOf(item.id),
+                  mode = CIDeleteMode.cidmInternal
+                )
+              } catch (_: Exception) {}
+            }
+          }
+        }
+      }
+    }
+  }
 
   fun publishAndBroadcastStory(
     file: File,
@@ -41,12 +89,13 @@ object StorySyncManager {
         val rawBytes = file.readBytes()
         val descriptor: StoryXftpDescriptor
 
-        // Если это фото размером до 11 КБ — шлём прямо через SMP без сторонних запросов
-        if (item.mediaType == TemporaryMediaType.PHOTO && rawBytes.size <= 11_000) {
+        // Фотографии сжимаем и передаем прямо через SMP без сторонних узлов
+        if (item.mediaType == TemporaryMediaType.PHOTO) {
+          val compressedBytes = preparePhotoBytes(rawBytes)
           descriptor = StoryXftpDescriptor(
             id = item.id,
             downloadUrl = null,
-            directBase64 = Base64.getEncoder().encodeToString(rawBytes),
+            directBase64 = Base64.getEncoder().encodeToString(compressedBytes),
             encryptionKey = "",
             iv = "",
             mediaType = item.mediaType.name,
@@ -56,9 +105,9 @@ object StorySyncManager {
             thumbBase64 = thumbBytes?.let { Base64.getEncoder().encodeToString(it) }
           )
         } else {
-          // Иначе шифруем AES-256 и выгружаем в облако
+          // Видео шифруем AES-256 и загружаем на временное защищенное хранилище
           val uploadResult = XftpStoryUploader.uploadEncryptedStory(file, item.durationHours) ?: run {
-            Log.e(TAG, "Failed to upload story")
+            Log.e(TAG, "Failed to upload video story")
             return@launch
           }
 
@@ -187,6 +236,19 @@ object StorySyncManager {
         return true
       }
       else -> return false
+    }
+  }
+
+  private fun preparePhotoBytes(rawBytes: ByteArray): ByteArray {
+    return try {
+      val b64 = Base64.getEncoder().encodeToString(rawBytes)
+      val bitmap = base64ToBitmap(b64)
+      if (bitmap != null) {
+        val compressed = resizeImageToStrSize(bitmap, maxDataSize = 9500)
+        Base64.getDecoder().decode(compressed)
+      } else rawBytes
+    } catch (_: Exception) {
+      rawBytes
     }
   }
 
