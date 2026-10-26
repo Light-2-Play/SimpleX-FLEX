@@ -9,14 +9,16 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import java.io.File
+import java.util.Base64
 import java.util.concurrent.ConcurrentHashMap
 
 @Serializable
 data class StoryXftpDescriptor(
   val id: String,
-  val downloadUrl: String,
-  val encryptionKey: String,
-  val iv: String,
+  val downloadUrl: String? = null,
+  val directBase64: String? = null,
+  val encryptionKey: String = "",
+  val iv: String = "",
   val mediaType: String,
   val durationHours: Int,
   val caption: String,
@@ -31,7 +33,7 @@ object StorySyncManager {
   private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
   private var observerJob: Job? = null
 
-  // Защита от повторной обработки и бесконечного спама
+  // Защита от спама и повторной обработки одних и тех же сообщений
   private val handledMessageIds = ConcurrentHashMap.newKeySet<Long>()
 
   fun startBackgroundObserver(chatModel: ChatModel) {
@@ -41,7 +43,6 @@ object StorySyncManager {
         chats.forEach { chat ->
           val directContact = (chat.chatInfo as? ChatInfo.Direct)?.contact ?: return@forEach
 
-          // Ищем только новые, еще не обработанные служебные сообщения
           val unhandledItems = chat.chatItems.filter { item ->
             !item.chatDir.sent &&
             !handledMessageIds.contains(item.id) && (
@@ -51,7 +52,6 @@ object StorySyncManager {
           }
 
           unhandledItems.forEach { item ->
-            // Сразу помечаем как обработанное, чтобы разорвать цикл
             handledMessageIds.add(item.id)
 
             val text = item.content.text.trim()
@@ -63,14 +63,12 @@ object StorySyncManager {
               text = text
             )
 
-            // 1. Удаляем из оперативной памяти списка сообщений
+            // Моментально удаляем служебную команду из памяти и БД чата
             withContext(Dispatchers.Main) {
               try {
                 chatModel.chatsContext.removeChatItem(chat.remoteHostId, chat.chatInfo, item)
               } catch (_: Exception) {}
             }
-
-            // 2. Удаляем из локальной базы данных SQLite
             withBGApi {
               try {
                 chatModel.controller.apiDeleteChatItems(
@@ -96,27 +94,44 @@ object StorySyncManager {
     onProgress: (Int, String) -> Unit
   ): Boolean = withContext(Dispatchers.IO) {
     try {
-      onProgress(5, "Encrypting...")
+      val descriptor: StoryXftpDescriptor
 
-      val uploadResult = XftpStoryUploader.uploadEncryptedStory(file, item.durationHours) { pct ->
-        onProgress(pct, "Uploading: $pct%")
-      } ?: run {
-        onProgress(0, "Upload error")
-        return@withContext false
+      // ФОТО: Передаются напрямую через SMP без сторонних серверов
+      if (item.mediaType == TemporaryMediaType.PHOTO) {
+        onProgress(30, "Preparing photo...")
+        val compressedBytes = preparePhotoBytes(file.readBytes())
+        descriptor = StoryXftpDescriptor(
+          id = item.id,
+          downloadUrl = null,
+          directBase64 = Base64.getEncoder().encodeToString(compressedBytes),
+          mediaType = item.mediaType.name,
+          durationHours = item.durationHours,
+          caption = item.caption,
+          createdAtMillis = item.createdAtMillis
+        )
+        onProgress(85, "Sending...")
+      } else {
+        // ВИДЕО: Шифрование AES-256 и загрузка в хранилище
+        onProgress(5, "Encrypting video...")
+        val uploadResult = XftpStoryUploader.uploadEncryptedStory(file, item.durationHours) { pct ->
+          onProgress(pct, "Uploading: $pct%")
+        } ?: run {
+          onProgress(0, "Upload error")
+          return@withContext false
+        }
+
+        descriptor = StoryXftpDescriptor(
+          id = item.id,
+          downloadUrl = uploadResult.downloadUrl,
+          directBase64 = null,
+          encryptionKey = uploadResult.keyBase64,
+          iv = uploadResult.ivBase64,
+          mediaType = item.mediaType.name,
+          durationHours = item.durationHours,
+          caption = item.caption,
+          createdAtMillis = item.createdAtMillis
+        )
       }
-
-      onProgress(95, "Sending descriptor...")
-
-      val descriptor = StoryXftpDescriptor(
-        id = item.id,
-        downloadUrl = uploadResult.downloadUrl,
-        encryptionKey = uploadResult.keyBase64,
-        iv = uploadResult.ivBase64,
-        mediaType = item.mediaType.name,
-        durationHours = item.durationHours,
-        caption = item.caption,
-        createdAtMillis = item.createdAtMillis
-      )
 
       val encodedMsg = STORY_PUSH_PREFIX + json.encodeToString(descriptor)
 
@@ -197,11 +212,17 @@ object StorySyncManager {
             val rawJson = cleanText.substringAfter(STORY_PUSH_PREFIX)
             val desc = json.decodeFromString<StoryXftpDescriptor>(rawJson)
 
-            val decryptedFileBytes = XftpStoryUploader.downloadAndDecryptStory(
-              downloadUrl = desc.downloadUrl,
-              keyBase64 = desc.encryptionKey,
-              ivBase64 = desc.iv
-            )
+            val decryptedFileBytes = if (desc.directBase64 != null) {
+              // Мгновенная расшифровка прямо из пакета SMP
+              Base64.getDecoder().decode(desc.directBase64)
+            } else if (desc.downloadUrl != null) {
+              // Скачивание и расшифровка видеофайла
+              XftpStoryUploader.downloadAndDecryptStory(
+                downloadUrl = desc.downloadUrl,
+                keyBase64 = desc.encryptionKey,
+                ivBase64 = desc.iv
+              )
+            } else null
 
             if (decryptedFileBytes != null) {
               val mediaType = TemporaryMediaType.valueOf(desc.mediaType)
@@ -216,7 +237,7 @@ object StorySyncManager {
               )
             }
           } catch (e: Exception) {
-            Log.e(TAG, "Error receiving story: ${e.message}")
+            Log.e(TAG, "Error saving received story: ${e.message}")
           }
         }
         return true
@@ -226,6 +247,19 @@ object StorySyncManager {
         return true
       }
       else -> return false
+    }
+  }
+
+  private fun preparePhotoBytes(rawBytes: ByteArray): ByteArray {
+    return try {
+      val b64 = Base64.getEncoder().encodeToString(rawBytes)
+      val bitmap = base64ToBitmap(b64)
+      if (bitmap != null) {
+        val compressed = resizeImageToStrSize(bitmap, maxDataSize = 8500)
+        Base64.getDecoder().decode(compressed)
+      } else rawBytes
+    } catch (_: Exception) {
+      rawBytes
     }
   }
 
