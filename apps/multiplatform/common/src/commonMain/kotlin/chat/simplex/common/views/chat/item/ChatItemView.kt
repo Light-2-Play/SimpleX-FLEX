@@ -39,6 +39,7 @@ import dev.icerock.moko.resources.ImageResource
 import dev.icerock.moko.resources.StringResource
 import kotlinx.datetime.Clock
 import kotlin.math.*
+import chat.simplex.common.platform.StorySyncManager
 
 val LocalVoiceTranscriptionWidget = staticCompositionLocalOf<@Composable (ChatItem) -> Unit> {
   { /* Пустышка для Desktop/iOS */ }
@@ -120,12 +121,12 @@ fun ChatItemView(
 
   // --- ПЕРЕХВАТ И СКРЫТИЕ СЛУЖЕБНЫХ СООБЩЕНИЙ СТОРИС ---
   val rawText = cItem.content.text
-  if (rawText.startsWith(chat.simplex.common.platform.StorySyncManager.STORY_PUSH_PREFIX) ||
-      rawText == chat.simplex.common.platform.StorySyncManager.STORY_REQ_PREFIX) {
+  if (rawText.startsWith(StorySyncManager.STORY_PUSH_PREFIX) ||
+      rawText == StorySyncManager.STORY_REQ_PREFIX) {
     LaunchedEffect(cItem.id) {
       val contact = (cInfo as? ChatInfo.Direct)?.contact
       if (contact != null) {
-        chat.simplex.common.platform.StorySyncManager.handleIncomingMessage(
+        StorySyncManager.handleIncomingMessage(
           remoteHostId = rhId,
           chatId = chat.id,
           senderContactId = contact.contactId,
@@ -143,6 +144,7 @@ fun ChatItemView(
   val uriHandler = LocalUriHandler.current
   val sent = cItem.chatDir.sent
   val alignment = if (sent) Alignment.CenterEnd else Alignment.CenterStart
+  // ... дальше ваш исходный код
   val showMenu = remember { mutableStateOf(false) }
   val fullDeleteAllowed = remember(cInfo) { cInfo.featureEnabled(ChatFeature.FullDelete) }
   val onLinkLongClick = { _: String ->
