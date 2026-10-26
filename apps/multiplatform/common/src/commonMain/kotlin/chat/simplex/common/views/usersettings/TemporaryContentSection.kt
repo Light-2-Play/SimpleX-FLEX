@@ -35,6 +35,7 @@ import chat.simplex.common.platform.*
 import chat.simplex.common.views.helpers.*
 import chat.simplex.res.MR
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import java.io.File
 import java.net.URI
 
@@ -325,7 +326,7 @@ private fun TemporaryStoryTile(
 }
 
 // =====================================================================
-// 3. ДИАЛОГ ДОБАВЛЕНИЯ КОНТЕНТА (С АУДИТОРИЕЙ: Verified / Contacts / All)
+// 3. ДИАЛОГ ДОБАВЛЕНИЯ С ОТОБРАЖЕНИЕМ ПРОЦЕНТОВ ОТПРАВКИ
 // =====================================================================
 @Composable
 private fun AddTemporaryContentDialog(
@@ -338,11 +339,17 @@ private fun AddTemporaryContentDialog(
   var selectedBytes by remember { mutableStateOf<ByteArray?>(null) }
   var caption by remember { mutableStateOf("") }
 
+  // Состояния прогресса
+  var isUploading by remember { mutableStateOf(false) }
+  var uploadProgress by remember { mutableStateOf(0) }
+  var uploadStatus by remember { mutableStateOf("") }
+  val coroutineScope = rememberCoroutineScope()
+
   val primary = MaterialTheme.colors.primary
   val isLight = MaterialTheme.colors.isLight
   val surfaceColor = if (isLight) lerp(Color.White, primary, 0.06f) else lerp(MaterialTheme.colors.surface, primary, 0.12f)
 
-  Dialog(onDismissRequest = onDismiss) {
+  Dialog(onDismissRequest = { if (!isUploading) onDismiss() }) {
     Surface(
       shape = RoundedCornerShape(28.dp),
       color = surfaceColor,
@@ -384,7 +391,7 @@ private fun AddTemporaryContentDialog(
               modifier = Modifier
                 .weight(1f)
                 .clip(RoundedCornerShape(16.dp))
-                .clickable {
+                .clickable(enabled = !isUploading) {
                   RichHaptics.perform(HapticPattern.SELECTION_CHANGE)
                   selectedMediaType = type
                   selectedBytes = null
@@ -425,7 +432,7 @@ private fun AddTemporaryContentDialog(
             .fillMaxWidth()
             .border(1.dp, primary.copy(alpha = 0.28f), RoundedCornerShape(18.dp))
             .clip(RoundedCornerShape(18.dp))
-            .clickable {
+            .clickable(enabled = !isUploading) {
               RichHaptics.perform(HapticPattern.CLICK)
               TemporaryContentPickerBridge.pickMedia?.invoke(selectedMediaType) { bytes ->
                 selectedBytes = bytes
@@ -461,7 +468,7 @@ private fun AddTemporaryContentDialog(
 
         Spacer(Modifier.height(16.dp))
 
-        // Раздел: SHARE WITH (Verified Users / Contacts / All Users)
+        // Аудитория
         Text(
           text = "SHARE WITH",
           fontSize = 11.sp,
@@ -482,7 +489,7 @@ private fun AddTemporaryContentDialog(
               modifier = Modifier
                 .weight(1f)
                 .clip(RoundedCornerShape(percent = 50))
-                .clickable {
+                .clickable(enabled = !isUploading) {
                   RichHaptics.perform(HapticPattern.SELECTION_CHANGE)
                   selectedAudience = aud
                 }
@@ -503,7 +510,7 @@ private fun AddTemporaryContentDialog(
 
         Spacer(Modifier.height(16.dp))
 
-        // Время авто-удаления
+        // Время жизни
         Text(
           text = "AUTO-DELETE AFTER",
           fontSize = 11.sp,
@@ -527,7 +534,7 @@ private fun AddTemporaryContentDialog(
                   modifier = Modifier
                     .weight(1f)
                     .clip(RoundedCornerShape(percent = 50))
-                    .clickable {
+                    .clickable(enabled = !isUploading) {
                       RichHaptics.perform(HapticPattern.SELECTION_CHANGE)
                       selectedDuration = duration
                     }
@@ -553,6 +560,7 @@ private fun AddTemporaryContentDialog(
           onValueChange = { if (it.length <= 140) caption = it },
           placeholder = { Text("Add a caption (optional)...", fontSize = 13.sp) },
           singleLine = true,
+          enabled = !isUploading,
           shape = RoundedCornerShape(14.dp),
           colors = TextFieldDefaults.outlinedTextFieldColors(
             focusedBorderColor = primary,
@@ -563,52 +571,90 @@ private fun AddTemporaryContentDialog(
 
         Spacer(Modifier.height(20.dp))
 
-        Row(
-          modifier = Modifier.fillMaxWidth(),
-          horizontalArrangement = Arrangement.End,
-          verticalAlignment = Alignment.CenterVertically
-        ) {
-          TextButton(
-            onClick = onDismiss,
-            shape = CircleShape
+        // Блок прогресса отправки или кнопки
+        if (isUploading) {
+          Column(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalAlignment = Alignment.CenterHorizontally
           ) {
-            Text("Cancel", color = primary, fontWeight = FontWeight.SemiBold)
+            LinearProgressIndicator(
+              progress = (uploadProgress.toFloat() / 100f).coerceIn(0f, 1f),
+              color = primary,
+              backgroundColor = primary.copy(alpha = 0.2f),
+              modifier = Modifier
+                .fillMaxWidth()
+                .height(6.dp)
+                .clip(CircleShape)
+            )
+            Spacer(Modifier.height(10.dp))
+            Text(
+              text = "$uploadStatus ($uploadProgress%)",
+              fontSize = 13.5.sp,
+              fontWeight = FontWeight.Bold,
+              color = primary
+            )
           }
-          Spacer(Modifier.width(8.dp))
-      Button(
-            onClick = {
-              val rawBytes = selectedBytes ?: return@Button
-              RichHaptics.perform(HapticPattern.SUCCESS)
-
-              // 1. Локальное сохранение
-              val newItem = TemporaryContentManager.addContentFromBytes(
-                bytes = rawBytes,
-                mediaType = selectedMediaType,
-                duration = selectedDuration,
-                caption = caption.trim(),
-                audience = selectedAudience
-              )
-
-              // 2. Отправка в сеть через защищенный загрузчик
-              if (newItem != null) {
-                val mediaFile = File(newItem.filePath)
-                StorySyncManager.publishAndBroadcastStory(
-                  file = mediaFile,
-                  item = newItem
-                )
-              }
-
-              onPublished()
-            },
-            enabled = selectedBytes != null,
-            shape = CircleShape,
-            colors = ButtonDefaults.buttonColors(
-              backgroundColor = primary,
-              contentColor = MaterialTheme.colors.onPrimary
-            ),
-            elevation = null
+        } else {
+          Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.End,
+            verticalAlignment = Alignment.CenterVertically
           ) {
-            Text("Publish (${selectedDuration.label})", fontWeight = FontWeight.Bold)
+            TextButton(
+              onClick = onDismiss,
+              shape = CircleShape
+            ) {
+              Text("Cancel", color = primary, fontWeight = FontWeight.SemiBold)
+            }
+            Spacer(Modifier.width(8.dp))
+            Button(
+              onClick = {
+                val rawBytes = selectedBytes ?: return@Button
+                RichHaptics.perform(HapticPattern.CLICK)
+
+                // 1. Сохраняем локально
+                val newItem = TemporaryContentManager.addContentFromBytes(
+                  bytes = rawBytes,
+                  mediaType = selectedMediaType,
+                  duration = selectedDuration,
+                  caption = caption.trim(),
+                  audience = selectedAudience
+                ) ?: return@Button
+
+                // 2. Запускаем отправку с отображением процентов
+                isUploading = true
+                coroutineScope.launch {
+                  val mediaFile = File(newItem.filePath)
+                  val success = StorySyncManager.publishAndBroadcastStoryWithProgress(
+                    file = mediaFile,
+                    item = newItem
+                  ) { pct, status ->
+                    uploadProgress = pct
+                    uploadStatus = status
+                  }
+
+                  if (success) {
+                    RichHaptics.perform(HapticPattern.SUCCESS)
+                    delay(300L)
+                    onPublished()
+                  } else {
+                    RichHaptics.perform(HapticPattern.ERROR)
+                    uploadStatus = "Failed to upload"
+                    delay(1500L)
+                    isUploading = false
+                  }
+                }
+              },
+              enabled = selectedBytes != null,
+              shape = CircleShape,
+              colors = ButtonDefaults.buttonColors(
+                backgroundColor = primary,
+                contentColor = MaterialTheme.colors.onPrimary
+              ),
+              elevation = null
+            ) {
+              Text("Publish (${selectedDuration.label})", fontWeight = FontWeight.Bold)
+            }
           }
         }
       }
@@ -617,7 +663,7 @@ private fun AddTemporaryContentDialog(
 }
 
 // =====================================================================
-// 4. ПОЛНОЭКРАННЫЙ ПРОСМОТРЩИК TEMPORARY CONTENT (С ВИДЕОПЛЕЕРОМ)
+// 4. ПОЛНОЭКРАННЫЙ ПРОСМОТРЩИК TEMPORARY CONTENT
 // =====================================================================
 @Composable
 fun TemporaryContentStoryViewer(
@@ -662,13 +708,11 @@ fun TemporaryContentStoryViewer(
           }
         }
     ) {
-      // 1. Воспроизведение контента: Видеоплеер или Фото
       if (currentItem.mediaType == TemporaryMediaType.VIDEO) {
         val videoPlayer = LocalStoryVideoPlayer.current
         if (videoPlayer != null) {
           videoPlayer(currentItem.filePath, Modifier.fillMaxSize())
         } else {
-          // Запасной видоискатель, если плеер не передан
           Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             Icon(
               painter = painterResource(MR.images.ic_videocam),
@@ -687,7 +731,6 @@ fun TemporaryContentStoryViewer(
         )
       }
 
-      // 2. Верхняя информационная плашка
       Column(
         modifier = Modifier
           .fillMaxWidth()
@@ -775,7 +818,6 @@ fun TemporaryContentStoryViewer(
         }
       }
 
-      // 3. Подпись (если есть)
       if (currentItem.caption.isNotBlank()) {
         Box(
           modifier = Modifier
@@ -809,14 +851,15 @@ fun AllStoriesFeedView(close: () -> Unit) {
   var nowMillis by remember { mutableStateOf(System.currentTimeMillis()) }
   var viewingStories by remember { mutableStateOf<List<TemporaryContentItem>?>(null) }
 
+  // При входе в раздел опрашиваем контакты для автозагрузки их контента
   LaunchedEffect(Unit) {
+    StorySyncManager.requestStoriesFromAllContacts()
     while (true) {
       delay(15_000L)
       nowMillis = System.currentTimeMillis()
     }
   }
 
-  // Группируем истории: null = свои, остальные = контакты
   val myStories = items.filter { it.authorContactId == null }.sortedBy { it.createdAtMillis }
   val contactStories = items.filter { it.authorContactId != null }
     .groupBy { it.authorContactId }
@@ -885,11 +928,12 @@ fun AllStoriesFeedView(close: () -> Unit) {
         }
       }
 
-     Divider(
-  modifier = Modifier.padding(vertical = 12.dp),
-  color = MaterialTheme.colors.onSurface.copy(alpha = 0.08f)
-)
-      // 2. Блок чужих историй
+      Divider(
+        modifier = Modifier.padding(vertical = 12.dp),
+        color = MaterialTheme.colors.onSurface.copy(alpha = 0.08f)
+      )
+
+      // 2. Блок входящих историй от контактов
       if (contactStories.isEmpty()) {
         Box(modifier = Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) {
           Text(
@@ -907,7 +951,7 @@ fun AllStoriesFeedView(close: () -> Unit) {
           color = primary,
           modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp)
         )
-        
+
         contactStories.forEach { userStories ->
           val authorName = userStories.first().authorDisplayName ?: "Unknown Contact"
           Row(
@@ -950,7 +994,7 @@ fun AllStoriesFeedView(close: () -> Unit) {
           }
         }
       }
-     Spacer(Modifier.navigationBarsPadding().height(24.dp))
+      Spacer(Modifier.navigationBarsPadding().height(24.dp))
     }
   }
 
