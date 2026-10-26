@@ -1,7 +1,9 @@
 package chat.simplex.common.platform
 
+import androidx.compose.runtime.snapshotFlow
+import kotlinx.coroutines.flow.collect
 import chat.simplex.common.model.*
-import chat.simplex.common.views.helpers.withBGApi
+import chat.simplex.common.views.helpers.*
 import kotlinx.coroutines.*
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
@@ -38,7 +40,7 @@ object StorySyncManager {
   fun startBackgroundObserver(chatModel: ChatModel) {
     observerJob?.cancel()
     observerJob = scope.launch {
-      chatModel.chats.collect { chats ->
+      snapshotFlow { chatModel.chats.value }.collect { chats: List<Chat> ->
         chats.forEach { chat ->
           val directContact = (chat.chatInfo as? ChatInfo.Direct)?.contact ?: return@forEach
 
