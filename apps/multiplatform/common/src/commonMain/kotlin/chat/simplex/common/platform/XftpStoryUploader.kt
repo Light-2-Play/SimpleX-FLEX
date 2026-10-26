@@ -25,23 +25,35 @@ data class EncryptedUploadResult(
 
 object XftpStoryUploader {
 
-  suspend fun uploadEncryptedStory(file: File, durationHours: Int): EncryptedUploadResult? = withContext(Dispatchers.IO) {
+  suspend fun uploadEncryptedStory(
+    file: File,
+    durationHours: Int,
+    onProgress: (Int) -> Unit
+  ): EncryptedUploadResult? = withContext(Dispatchers.IO) {
     try {
+      onProgress(5)
       val rawBytes = file.readBytes()
 
-      // 1. Генерация 256-битного ключа и 96-битного вектора инициализации (IV)
+      // 1. Локальное шифрование AES-256-GCM
       val keyBytes = ByteArray(32).also { SecureRandom().nextBytes(it) }
       val iv = ByteArray(12).also { SecureRandom().nextBytes(it) }
 
-      // 2. Локальное шифрование AES-256-GCM
       val cipher = Cipher.getInstance("AES/GCM/NoPadding")
       cipher.init(Cipher.ENCRYPT_MODE, SecretKeySpec(keyBytes, "AES"), GCMParameterSpec(128, iv))
       val encryptedBytes = cipher.doFinal(rawBytes)
+      onProgress(15)
 
-      // 3. Выгрузка зашифрованного блоба
-      val uploadedUrl = uploadToTmpFiles(encryptedBytes) ?: uploadToLitterbox(encryptedBytes, durationHours)
+      // 2. Выгрузка с расчетом прогресса в процентах (от 15% до 90%)
+      val uploadedUrl = uploadToTmpFiles(encryptedBytes) { pct ->
+        val mapped = 15 + ((pct * 75) / 100)
+        onProgress(mapped.coerceIn(15, 90))
+      } ?: uploadToLitterbox(encryptedBytes, durationHours) { pct ->
+        val mapped = 15 + ((pct * 75) / 100)
+        onProgress(mapped.coerceIn(15, 90))
+      }
 
       if (uploadedUrl != null) {
+        onProgress(95)
         EncryptedUploadResult(
           downloadUrl = uploadedUrl,
           keyBase64 = Base64.getEncoder().encodeToString(keyBytes),
@@ -51,12 +63,12 @@ object XftpStoryUploader {
         null
       }
     } catch (e: Exception) {
-      Log.e("XftpUploader", "Encryption/upload failed: ${e.message}")
+      Log.e("XftpUploader", "Upload failed: ${e.message}")
       null
     }
   }
 
-  private fun uploadToTmpFiles(data: ByteArray): String? {
+  private fun uploadToTmpFiles(data: ByteArray, onUploadProgress: (Int) -> Unit): String? {
     return try {
       val boundary = "===TmpStory${System.currentTimeMillis()}==="
       val conn = (URL("https://tmpfiles.org/api/v1/upload").openConnection() as HttpURLConnection).apply {
@@ -64,7 +76,7 @@ object XftpStoryUploader {
         doOutput = true
         setRequestProperty("Content-Type", "multipart/form-data; boundary=$boundary")
         setRequestProperty("User-Agent", "SimpleX-FLEX/1.0")
-        connectTimeout = 25_000
+        connectTimeout = 30_000
         readTimeout = 60_000
       }
 
@@ -77,7 +89,17 @@ object XftpStoryUploader {
         writer.append("Content-Type: application/octet-stream\r\n\r\n")
         writer.flush()
 
-        os.write(data)
+        // Потоковая запись с подсчетом процентов
+        var offset = 0
+        val total = data.size
+        val chunkSize = 16384 // 16 KB
+
+        while (offset < total) {
+          val len = minOf(chunkSize, total - offset)
+          os.write(data, offset, len)
+          offset += len
+          onUploadProgress((offset * 100L / total).toInt())
+        }
         os.flush()
 
         writer.append("\r\n--$boundary--\r\n")
@@ -88,7 +110,6 @@ object XftpStoryUploader {
         val response = conn.inputStream.bufferedReader().use { it.readText() }
         val json = Json.parseToJsonElement(response).jsonObject
         val rawUrl = json["data"]?.jsonObject?.get("url")?.jsonPrimitive?.content
-        // Преобразуем страницу просмотра в прямую ссылку на скачивание
         rawUrl?.replace("tmpfiles.org/", "tmpfiles.org/dl/")
       } else null
     } catch (_: Exception) {
@@ -96,7 +117,7 @@ object XftpStoryUploader {
     }
   }
 
-  private fun uploadToLitterbox(data: ByteArray, durationHours: Int): String? {
+  private fun uploadToLitterbox(data: ByteArray, durationHours: Int, onUploadProgress: (Int) -> Unit): String? {
     return try {
       val boundary = "===LitterStory${System.currentTimeMillis()}==="
       val conn = (URL("https://litterbox.catbox.moe/resources/internals/api.php").openConnection() as HttpURLConnection).apply {
@@ -104,7 +125,7 @@ object XftpStoryUploader {
         doOutput = true
         setRequestProperty("Content-Type", "multipart/form-data; boundary=$boundary")
         setRequestProperty("User-Agent", "Mozilla/5.0")
-        connectTimeout = 25_000
+        connectTimeout = 30_000
         readTimeout = 60_000
       }
 
@@ -126,7 +147,16 @@ object XftpStoryUploader {
         writer.append("Content-Type: application/octet-stream\r\n\r\n")
         writer.flush()
 
-        os.write(data)
+        var offset = 0
+        val total = data.size
+        val chunkSize = 16384
+
+        while (offset < total) {
+          val len = minOf(chunkSize, total - offset)
+          os.write(data, offset, len)
+          offset += len
+          onUploadProgress((offset * 100L / total).toInt())
+        }
         os.flush()
 
         writer.append("\r\n--$boundary--\r\n")
