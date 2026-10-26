@@ -131,6 +131,9 @@ class MainActivity: FragmentActivity() {
     mainActivity = WeakReference(this)
     super.onCreate(savedInstanceState)
 
+// Запуск фонового приёма и отправки Temporary Content
+    StorySyncManager.startBackgroundObserver(chatModel)
+    
     chat.simplex.common.views.usersettings.TemporaryContentPickerBridge.pickMedia = { mediaType, callback ->
       tempContentCallback = callback
       val mime = if (mediaType == chat.simplex.common.platform.TemporaryMediaType.VIDEO) "video/*" else "image/*"
