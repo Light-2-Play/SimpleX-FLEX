@@ -2,7 +2,9 @@ package chat.simplex.common.platform
 
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import java.io.*
+import java.io.File
+import java.io.OutputStreamWriter
+import java.io.PrintWriter
 import java.net.HttpURLConnection
 import java.net.URL
 import java.security.SecureRandom
@@ -19,29 +21,25 @@ data class EncryptedUploadResult(
 )
 
 object XftpStoryUploader {
-  // Публичный сервис временного размещения с авто-удалением через 24 часа
   private const val UPLOAD_API = "https://litterbox.catbox.moe/resources/internals/api.php"
 
   suspend fun uploadEncryptedStory(file: File, durationHours: Int): EncryptedUploadResult? = withContext(Dispatchers.IO) {
     try {
       val rawBytes = file.readBytes()
 
-      // 1. Генерация ключа AES-256 и IV (96 бит)
       val keyBytes = ByteArray(32).also { SecureRandom().nextBytes(it) }
       val iv = ByteArray(12).also { SecureRandom().nextBytes(it) }
 
-      // 2. Шифрование файла на устройстве
       val cipher = Cipher.getInstance("AES/GCM/NoPadding")
       cipher.init(Cipher.ENCRYPT_MODE, SecretKeySpec(keyBytes, "AES"), GCMParameterSpec(128, iv))
       val encryptedBytes = cipher.doFinal(rawBytes)
 
-      // 3. Загрузка зашифрованного шума через Multipart POST
-      val boundary = "===StoryBoundary${System.currentTimeMillis()}==="
+      val boundary = "===Story${System.currentTimeMillis()}==="
       val conn = (URL(UPLOAD_API).openConnection() as HttpURLConnection).apply {
         requestMethod = "POST"
         doOutput = true
         setRequestProperty("Content-Type", "multipart/form-data; boundary=$boundary")
-        setRequestProperty("User-Agent", "SimpleX-Stories/1.0")
+        setRequestProperty("User-Agent", "Mozilla/5.0")
         connectTimeout = 30_000
         readTimeout = 60_000
       }
@@ -55,20 +53,17 @@ object XftpStoryUploader {
       conn.outputStream.use { os ->
         val writer = PrintWriter(OutputStreamWriter(os, "UTF-8"), true)
 
-        // reqtype = fileupload
         writer.append("--$boundary\r\n")
         writer.append("Content-Disposition: form-data; name=\"reqtype\"\r\n\r\n")
         writer.append("fileupload\r\n")
 
-        // time = 1h / 12h / 24h
         writer.append("--$boundary\r\n")
         writer.append("Content-Disposition: form-data; name=\"time\"\r\n\r\n")
         writer.append("$timeParam\r\n")
 
-        // fileToUpload
         val fileId = UUID.randomUUID().toString()
         writer.append("--$boundary\r\n")
-        writer.append("Content-Disposition: form-data; name=\"fileToUpload\"; filename=\"encrypted_$fileId.bin\"\r\n")
+        writer.append("Content-Disposition: form-data; name=\"fileToUpload\"; filename=\"enc_$fileId.bin\"\r\n")
         writer.append("Content-Type: application/octet-stream\r\n\r\n")
         writer.flush()
 
@@ -103,7 +98,7 @@ object XftpStoryUploader {
     try {
       val conn = (URL(downloadUrl).openConnection() as HttpURLConnection).apply {
         requestMethod = "GET"
-        setRequestProperty("User-Agent", "SimpleX-Stories/1.0")
+        setRequestProperty("User-Agent", "Mozilla/5.0")
         connectTimeout = 20_000
         readTimeout = 60_000
       }
