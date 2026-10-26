@@ -137,6 +137,15 @@ object TemporaryContentManager {
       val destFile = File(dir, "temp_${id}.$ext")
       destFile.writeBytes(bytes)
 
+      if (mediaType == TemporaryMediaType.VIDEO) {
+        val lastThumb = File(dir, "last_video_thumb.jpg")
+        if (lastThumb.exists()) {
+          val storyThumb = File("${destFile.absolutePath}_thumb.jpg")
+          lastThumb.copyTo(storyThumb, overwrite = true)
+          lastThumb.delete()
+        }
+      }
+
       val now = System.currentTimeMillis()
       val newItem = TemporaryContentItem(
         id = id,
