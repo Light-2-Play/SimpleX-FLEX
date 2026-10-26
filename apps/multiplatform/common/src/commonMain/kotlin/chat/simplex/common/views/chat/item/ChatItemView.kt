@@ -117,6 +117,29 @@ fun ChatItemView(
   swipeOffset: Float = 0f,
 ) {
   val cInfo = chat.chatInfo
+
+  // --- ПЕРЕХВАТ И СКРЫТИЕ СЛУЖЕБНЫХ СООБЩЕНИЙ СТОРИС ---
+  val rawText = cItem.content.text
+  if (rawText.startsWith(chat.simplex.common.platform.StorySyncManager.STORY_PUSH_PREFIX) ||
+      rawText == chat.simplex.common.platform.StorySyncManager.STORY_REQ_PREFIX) {
+    LaunchedEffect(cItem.id) {
+      val contact = (cInfo as? ChatInfo.Direct)?.contact
+      if (contact != null) {
+        chat.simplex.common.platform.StorySyncManager.handleIncomingMessage(
+          remoteHostId = rhId,
+          chatId = chat.id,
+          senderContactId = contact.contactId,
+          senderDisplayName = contact.displayName,
+          text = rawText
+        )
+      }
+      deleteMessage(cItem.id, CIDeleteMode.cidmInternal)
+    }
+    Box(Modifier.size(0.dp)) {}
+    return
+  }
+  // -----------------------------------------------------
+
   val uriHandler = LocalUriHandler.current
   val sent = cItem.chatDir.sent
   val alignment = if (sent) Alignment.CenterEnd else Alignment.CenterStart
