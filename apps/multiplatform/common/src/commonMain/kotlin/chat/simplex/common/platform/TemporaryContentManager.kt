@@ -4,12 +4,10 @@ import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.map
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import java.io.File
-import java.net.URI
 import java.util.UUID
 
 enum class TemporaryDuration(val hours: Int, val label: String) {
@@ -28,6 +26,15 @@ enum class TemporaryMediaType {
   PHOTO, VIDEO
 }
 
+/**
+ * Аудитория для показа Temporary Content
+ */
+enum class TemporaryAudience(val label: String) {
+  VERIFIED_USERS("Verified Users"),
+  CONTACTS("Contacts"),
+  ALL_USERS("All Users")
+}
+
 @Serializable
 data class TemporaryContentItem(
   val id: String = UUID.randomUUID().toString(),
@@ -37,8 +44,9 @@ data class TemporaryContentItem(
   val expiresAtMillis: Long,
   val durationHours: Int,
   val caption: String = "",
-  val authorContactId: Long? = null, // null — собственный контент, иначе contactId собеседника
-  val authorDisplayName: String? = null
+  val authorContactId: Long? = null,
+  val authorDisplayName: String? = null,
+  val audience: TemporaryAudience = TemporaryAudience.CONTACTS
 ) {
   fun isExpired(now: Long = System.currentTimeMillis()): Boolean = now >= expiresAtMillis
 
@@ -101,17 +109,11 @@ object TemporaryContentManager {
     }
   }
 
-  /**
-   * Проверка: есть ли у пользователя/контакта активный контент прямо сейчас
-   */
   fun hasActiveContent(contactId: Long?): Boolean {
     val now = System.currentTimeMillis()
     return _items.value.any { it.authorContactId == contactId && !it.isExpired(now) }
   }
 
-  /**
-   * Получить список активных историй для конкретного контакта (или своих при contactId = null)
-   */
   fun getActiveItemsFor(contactId: Long?): List<TemporaryContentItem> {
     val now = System.currentTimeMillis()
     return _items.value
@@ -119,56 +121,12 @@ object TemporaryContentManager {
       .sortedBy { it.createdAtMillis }
   }
 
-  /**
-   * Добавление своего контента
-   */
   fun addContentFromBytes(
     bytes: ByteArray,
     mediaType: TemporaryMediaType,
     duration: TemporaryDuration,
-    caption: String = ""
-  ): TemporaryContentItem? {
-    return saveMediaItem(
-      bytes = bytes,
-      mediaType = mediaType,
-      durationHours = duration.hours,
-      caption = caption,
-      authorContactId = null,
-      authorDisplayName = null
-    )
-  }
-
-  /**
-   * Сохранение входящего контента от контакта
-   */
-  fun receiveContactTemporaryContent(
-    contactId: Long,
-    displayName: String,
-    bytes: ByteArray,
-    mediaType: TemporaryMediaType,
-    durationHours: Int,
     caption: String = "",
-    createdAtMillis: Long = System.currentTimeMillis()
-  ): TemporaryContentItem? {
-    return saveMediaItem(
-      bytes = bytes,
-      mediaType = mediaType,
-      durationHours = durationHours,
-      caption = caption,
-      authorContactId = contactId,
-      authorDisplayName = displayName,
-      createdTimestamp = createdAtMillis
-    )
-  }
-
-  private fun saveMediaItem(
-    bytes: ByteArray,
-    mediaType: TemporaryMediaType,
-    durationHours: Int,
-    caption: String,
-    authorContactId: Long?,
-    authorDisplayName: String?,
-    createdTimestamp: Long = System.currentTimeMillis()
+    audience: TemporaryAudience = TemporaryAudience.CONTACTS
   ): TemporaryContentItem? {
     if (storageDir == null) initStorage()
     val dir = storageDir ?: return null
@@ -179,17 +137,18 @@ object TemporaryContentManager {
       val destFile = File(dir, "temp_${id}.$ext")
       destFile.writeBytes(bytes)
 
-      val expiresAt = createdTimestamp + (durationHours * 3600_000L)
+      val now = System.currentTimeMillis()
       val newItem = TemporaryContentItem(
         id = id,
         filePath = destFile.absolutePath,
         mediaType = mediaType,
-        createdAtMillis = createdTimestamp,
-        expiresAtMillis = expiresAt,
-        durationHours = durationHours,
+        createdAtMillis = now,
+        expiresAtMillis = now + duration.durationMillis,
+        durationHours = duration.hours,
         caption = caption,
-        authorContactId = authorContactId,
-        authorDisplayName = authorDisplayName
+        authorContactId = null,
+        authorDisplayName = null,
+        audience = audience
       )
 
       val updated = (_items.value + newItem).sortedByDescending { it.createdAtMillis }
@@ -197,7 +156,49 @@ object TemporaryContentManager {
       saveToDisk(updated)
       newItem
     } catch (e: Exception) {
-      Log.e(TAG, "Failed to save temporary content: ${e.message}")
+      Log.e(TAG, "Failed to add temporary content: ${e.message}")
+      null
+    }
+  }
+
+  fun receiveContactTemporaryContent(
+    contactId: Long,
+    displayName: String,
+    bytes: ByteArray,
+    mediaType: TemporaryMediaType,
+    durationHours: Int,
+    caption: String = "",
+    createdAtMillis: Long = System.currentTimeMillis(),
+    audience: TemporaryAudience = TemporaryAudience.CONTACTS
+  ): TemporaryContentItem? {
+    if (storageDir == null) initStorage()
+    val dir = storageDir ?: return null
+
+    return try {
+      val ext = if (mediaType == TemporaryMediaType.VIDEO) "mp4" else "jpg"
+      val id = UUID.randomUUID().toString()
+      val destFile = File(dir, "temp_${id}.$ext")
+      destFile.writeBytes(bytes)
+
+      val newItem = TemporaryContentItem(
+        id = id,
+        filePath = destFile.absolutePath,
+        mediaType = mediaType,
+        createdAtMillis = createdAtMillis,
+        expiresAtMillis = createdAtMillis + (durationHours * 3600_000L),
+        durationHours = durationHours,
+        caption = caption,
+        authorContactId = contactId,
+        authorDisplayName = displayName,
+        audience = audience
+      )
+
+      val updated = (_items.value + newItem).sortedByDescending { it.createdAtMillis }
+      _items.value = updated
+      saveToDisk(updated)
+      newItem
+    } catch (e: Exception) {
+      Log.e(TAG, "Failed to save received contact story: ${e.message}")
       null
     }
   }
@@ -208,6 +209,8 @@ object TemporaryContentManager {
     if (target != null) {
       try {
         File(target.filePath).delete()
+        val thumb = File("${target.filePath}_thumb.jpg")
+        if (thumb.exists()) thumb.delete()
       } catch (_: Exception) {}
     }
     val updated = current.filterNot { it.id == id }
@@ -225,6 +228,8 @@ object TemporaryContentManager {
         try {
           val f = File(item.filePath)
           if (f.exists()) f.delete()
+          val thumb = File("${item.filePath}_thumb.jpg")
+          if (thumb.exists()) thumb.delete()
         } catch (_: Exception) {}
       }
       _items.value = active
