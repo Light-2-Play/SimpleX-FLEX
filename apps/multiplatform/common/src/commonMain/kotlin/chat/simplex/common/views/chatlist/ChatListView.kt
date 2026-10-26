@@ -740,7 +740,7 @@ private fun ChatListToolbar(
       }
     }
 
-    // 3. Остров: Иконка щита (ByeDPI/VLESS) и кнопки действий
+    // 3. Остров: Иконка щита (ByeDPI/VLESS), кнопка Temporary Content и действия
     Surface(
       modifier = Modifier.height(48.dp),
       shape = RoundedCornerShape(percent = 50),
@@ -772,6 +772,29 @@ private fun ChatListToolbar(
             tint = vpnTint
           )
         }
+
+        // =====================================================================
+        // КНОПКА TEMPORARY CONTENT (STORIES FEED)
+        // =====================================================================
+        val allStories by TemporaryContentManager.items.collectAsState()
+        val hasActiveStories = allStories.isNotEmpty()
+
+        IconButton(
+          onClick = {
+            RichHaptics.perform(HapticPattern.CLICK)
+            ModalManager.start.showModal {
+              AllStoriesFeedView(close = { ModalManager.start.closeModal() })
+            }
+          }
+        ) {
+          Icon(
+            painter = painterResource(MR.images.ic_timer),
+            contentDescription = "Temporary Content",
+            tint = if (hasActiveStories) MaterialTheme.colors.primary else MaterialTheme.colors.onSurface.copy(alpha = 0.65f)
+          )
+        }
+        // =====================================================================
+
         barButtons.forEach { it() }
       }
     }
