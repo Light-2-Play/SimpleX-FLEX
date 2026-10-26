@@ -36,6 +36,8 @@ import kotlinx.coroutines.delay
 import java.io.File
 import java.net.URI
 
+val LocalStoryVideoPlayer = compositionLocalOf<(@Composable (filePath: String, modifier: Modifier) -> Unit)?> { null }
+
 object TemporaryContentPickerBridge {
   var pickMedia: ((TemporaryMediaType, (ByteArray?) -> Unit) -> Unit)? = null
 }
@@ -200,7 +202,7 @@ fun TemporaryContentProfileSection() {
 }
 
 // =====================================================================
-// 2. ПЛИТКИ КАРУСЕЛИ СТОРИС
+// 2. ПЛИТКИ КАРУСЕЛИ
 // =====================================================================
 @Composable
 private fun AddStoryCardTile(onClick: () -> Unit) {
@@ -321,7 +323,7 @@ private fun TemporaryStoryTile(
 }
 
 // =====================================================================
-// 3. ДИАЛОГ ДОБАВЛЕНИЯ И ВЫБОРА ВРЕМЕНИ (1h, 3h, 6h, 12h, 16h, 24h)
+// 3. ДИАЛОГ ДОБАВЛЕНИЯ КОНТЕНТА (С АУДИТОРИЕЙ: Verified / Contacts / All)
 // =====================================================================
 @Composable
 private fun AddTemporaryContentDialog(
@@ -330,6 +332,7 @@ private fun AddTemporaryContentDialog(
 ) {
   var selectedDuration by remember { mutableStateOf(TemporaryDuration.HOURS_24) }
   var selectedMediaType by remember { mutableStateOf(TemporaryMediaType.PHOTO) }
+  var selectedAudience by remember { mutableStateOf(TemporaryAudience.CONTACTS) }
   var selectedBytes by remember { mutableStateOf<ByteArray?>(null) }
   var caption by remember { mutableStateOf("") }
 
@@ -359,13 +362,14 @@ private fun AddTemporaryContentDialog(
         )
         Spacer(Modifier.height(4.dp))
         Text(
-          text = "Select photo or video and auto-delete timer",
+          text = "Select photo or video and privacy settings",
           fontSize = 13.sp,
           color = MaterialTheme.colors.onSurface.copy(alpha = 0.65f)
         )
 
-        Spacer(Modifier.height(18.dp))
+        Spacer(Modifier.height(16.dp))
 
+        // Тип контента: Photo / Video
         Row(
           modifier = Modifier.fillMaxWidth(),
           horizontalArrangement = Arrangement.spacedBy(10.dp)
@@ -411,6 +415,7 @@ private fun AddTemporaryContentDialog(
 
         Spacer(Modifier.height(14.dp))
 
+        // Кнопка выбора файла
         Surface(
           shape = RoundedCornerShape(18.dp),
           color = primary.copy(alpha = 0.08f),
@@ -452,23 +457,65 @@ private fun AddTemporaryContentDialog(
           }
         }
 
-        Spacer(Modifier.height(18.dp))
+        Spacer(Modifier.height(16.dp))
 
+        // Раздел: SHARE WITH (Verified Users / Contacts / All Users)
         Text(
-          text = "AUTO-DELETE AFTER",
-          fontSize = 11.5.sp,
+          text = "SHARE WITH",
+          fontSize = 11.sp,
           fontWeight = FontWeight.Bold,
           letterSpacing = 1.sp,
           color = primary
         )
-        Spacer(Modifier.height(10.dp))
+        Spacer(Modifier.height(8.dp))
+        Row(
+          modifier = Modifier.fillMaxWidth(),
+          horizontalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+          TemporaryAudience.values().forEach { aud ->
+            val isSelected = selectedAudience == aud
+            Surface(
+              shape = RoundedCornerShape(percent = 50),
+              color = if (isSelected) primary else primary.copy(alpha = 0.10f),
+              modifier = Modifier
+                .weight(1f)
+                .clip(RoundedCornerShape(percent = 50))
+                .clickable {
+                  RichHaptics.perform(HapticPattern.SELECTION_CHANGE)
+                  selectedAudience = aud
+                }
+            ) {
+              Text(
+                text = aud.label,
+                fontSize = 11.5.sp,
+                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                color = if (isSelected) MaterialTheme.colors.onPrimary else MaterialTheme.colors.onSurface,
+                textAlign = TextAlign.Center,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.padding(vertical = 8.dp, horizontal = 4.dp)
+              )
+            }
+          }
+        }
 
+        Spacer(Modifier.height(16.dp))
+
+        // Время авто-удаления
+        Text(
+          text = "AUTO-DELETE AFTER",
+          fontSize = 11.sp,
+          fontWeight = FontWeight.Bold,
+          letterSpacing = 1.sp,
+          color = primary
+        )
+        Spacer(Modifier.height(8.dp))
         val durations = TemporaryDuration.values().toList()
-        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
           durations.chunked(3).forEach { rowItems ->
             Row(
               modifier = Modifier.fillMaxWidth(),
-              horizontalArrangement = Arrangement.spacedBy(8.dp)
+              horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
               rowItems.forEach { duration ->
                 val isSelected = selectedDuration == duration
@@ -484,12 +531,12 @@ private fun AddTemporaryContentDialog(
                     }
                 ) {
                   Text(
-                    text = "${duration.hours} ${if (duration.hours == 1) "hour" else "hours"}",
-                    fontSize = 13.sp,
+                    text = "${duration.hours} ${if (duration.hours == 1) "hr" else "hrs"}",
+                    fontSize = 12.sp,
                     fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
                     color = if (isSelected) MaterialTheme.colors.onPrimary else MaterialTheme.colors.onSurface,
                     textAlign = TextAlign.Center,
-                    modifier = Modifier.padding(vertical = 10.dp)
+                    modifier = Modifier.padding(vertical = 8.dp)
                   )
                 }
               }
@@ -497,12 +544,12 @@ private fun AddTemporaryContentDialog(
           }
         }
 
-        Spacer(Modifier.height(16.dp))
+        Spacer(Modifier.height(14.dp))
 
         OutlinedTextField(
           value = caption,
           onValueChange = { if (it.length <= 140) caption = it },
-          placeholder = { Text("Add a caption (optional)...", fontSize = 13.5.sp) },
+          placeholder = { Text("Add a caption (optional)...", fontSize = 13.sp) },
           singleLine = true,
           shape = RoundedCornerShape(14.dp),
           colors = TextFieldDefaults.outlinedTextFieldColors(
@@ -512,7 +559,7 @@ private fun AddTemporaryContentDialog(
           modifier = Modifier.fillMaxWidth()
         )
 
-        Spacer(Modifier.height(22.dp))
+        Spacer(Modifier.height(20.dp))
 
         Row(
           modifier = Modifier.fillMaxWidth(),
@@ -531,21 +578,14 @@ private fun AddTemporaryContentDialog(
               val rawBytes = selectedBytes ?: return@Button
               RichHaptics.perform(HapticPattern.SUCCESS)
 
-              // Оптимизация размера для E2E-рассылки через SMP-пакеты (до 12.5 КБ)
-              val sendBytes = prepareBytesForNetwork(rawBytes, selectedMediaType)
-
-              // 1. Сохранение локально
-              val newItem = TemporaryContentManager.addContentFromBytes(
+              // Локальное сохранение с указанной аудиторией
+              TemporaryContentManager.addContentFromBytes(
                 bytes = rawBytes,
                 mediaType = selectedMediaType,
                 duration = selectedDuration,
-                caption = caption.trim()
+                caption = caption.trim(),
+                audience = selectedAudience
               )
-
-              // 2. Рассылка подключённым контактам
-              if (newItem != null) {
-                StorySyncManager.broadcastStory(sendBytes, newItem)
-              }
 
               onPublished()
             },
@@ -566,7 +606,7 @@ private fun AddTemporaryContentDialog(
 }
 
 // =====================================================================
-// 4. ПОЛНОЭКРАННЫЙ ПРОСМОТРЩИК TEMPORARY CONTENT (КАК СТОРИС)
+// 4. ПОЛНОЭКРАННЫЙ ПРОСМОТРЩИК TEMPORARY CONTENT (С ВИДЕОПЛЕЕРОМ)
 // =====================================================================
 @Composable
 fun TemporaryContentStoryViewer(
@@ -611,43 +651,39 @@ fun TemporaryContentStoryViewer(
           }
         }
     ) {
-      if (bitmap != null) {
+      // 1. Воспроизведение контента: Видеоплеер или Фото
+      if (currentItem.mediaType == TemporaryMediaType.VIDEO) {
+        val videoPlayer = LocalStoryVideoPlayer.current
+        if (videoPlayer != null) {
+          videoPlayer(currentItem.filePath, Modifier.fillMaxSize())
+        } else {
+          // Запасной видоискатель, если плеер не передан
+          Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            Icon(
+              painter = painterResource(MR.images.ic_videocam),
+              contentDescription = null,
+              tint = Color.White,
+              modifier = Modifier.size(64.dp)
+            )
+          }
+        }
+      } else if (bitmap != null) {
         Image(
           bitmap = bitmap,
           contentDescription = null,
           contentScale = ContentScale.Fit,
           modifier = Modifier.fillMaxSize()
         )
-      } else {
-        Column(
-          modifier = Modifier.align(Alignment.Center),
-          horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-          Icon(
-            painter = painterResource(
-              if (currentItem.mediaType == TemporaryMediaType.VIDEO) MR.images.ic_videocam else MR.images.ic_image
-            ),
-            contentDescription = null,
-            tint = Color.White,
-            modifier = Modifier.size(64.dp)
-          )
-          Spacer(Modifier.height(12.dp))
-          Text(
-            text = if (currentItem.mediaType == TemporaryMediaType.VIDEO) "Video Story (${currentItem.durationHours}h)" else "Photo Story",
-            color = Color.White,
-            fontSize = 16.sp,
-            fontWeight = FontWeight.SemiBold
-          )
-        }
       }
 
+      // 2. Верхняя информационная плашка
       Column(
         modifier = Modifier
           .fillMaxWidth()
           .align(Alignment.TopCenter)
           .background(
             Brush.verticalGradient(
-              listOf(Color.Black.copy(alpha = 0.7f), Color.Transparent)
+              listOf(Color.Black.copy(alpha = 0.75f), Color.Transparent)
             )
           )
           .padding(top = 16.dp, start = 14.dp, end = 14.dp, bottom = 24.dp)
@@ -699,7 +735,6 @@ fun TemporaryContentStoryViewer(
           }
 
           Row(verticalAlignment = Alignment.CenterVertically) {
-            // Кнопка удаления доступна только для своих собственных историй
             if (currentItem.authorContactId == null) {
               IconButton(
                 onClick = {
@@ -729,12 +764,13 @@ fun TemporaryContentStoryViewer(
         }
       }
 
+      // 3. Подпись (если есть)
       if (currentItem.caption.isNotBlank()) {
         Box(
           modifier = Modifier
             .fillMaxWidth()
             .align(Alignment.BottomCenter)
-            .background(Color.Black.copy(alpha = 0.6f))
+            .background(Color.Black.copy(alpha = 0.65f))
             .padding(horizontal = 20.dp, vertical = 18.dp),
           contentAlignment = Alignment.Center
         ) {
@@ -752,28 +788,17 @@ fun TemporaryContentStoryViewer(
   }
 }
 
-/**
- * Подготовка байтов: сжатие изображения под 12.5 КБ для прямого помещения в SMP-пакет
- */
-private fun prepareBytesForNetwork(rawBytes: ByteArray, mediaType: TemporaryMediaType): ByteArray {
-  if (mediaType != TemporaryMediaType.PHOTO || rawBytes.size <= 12500) return rawBytes
-  return try {
-    val b64 = java.util.Base64.getEncoder().encodeToString(rawBytes)
-    val bitmap = base64ToBitmap(b64)
-    if (bitmap != null) {
-      val compressedBase64 = resizeImageToStrSize(bitmap, maxDataSize = 12500)
-      java.util.Base64.getDecoder().decode(compressedBase64)
-    } else rawBytes
-  } catch (_: Exception) {
-    rawBytes
-  }
-}
-
 private fun loadStoryBitmapSafe(filePath: String, mediaType: TemporaryMediaType): ImageBitmap? {
-  if (mediaType != TemporaryMediaType.PHOTO) return null
   return try {
-    val file = File(filePath)
-    if (file.exists()) {
+    val file = if (mediaType == TemporaryMediaType.VIDEO) {
+      val thumb = File("${filePath}_thumb.jpg")
+      if (thumb.exists()) thumb else null
+    } else {
+      val f = File(filePath)
+      if (f.exists()) f else null
+    }
+
+    if (file != null && file.exists()) {
       val base64Str = java.util.Base64.getEncoder().encodeToString(file.readBytes())
       base64ToBitmap(base64Str)
     } else null
