@@ -119,14 +119,12 @@ fun ChatItemView(
 ) {
   val cInfo = chat.chatInfo
   
-  // --- СКРЫТИЕ XFTP-ФАЙЛОВ СТОРИС ИЗ ОБЫЧНОГО ЧАТА ---
+ // Стало (скрывает XFTP-сообщения сторис):
   val rawText = cItem.content.text.trim()
   if (rawText.startsWith(StorySyncManager.STORY_TAG_PREFIX)) {
     Box(Modifier.size(0.dp)) {}
     return
   }
-  // ---------------------------------------------------
-  // -----------------------------------------------------
 
   val uriHandler = LocalUriHandler.current
   val sent = cItem.chatDir.sent
