@@ -17,11 +17,6 @@ object StorySyncManager {
   private val handledItemIds = ConcurrentHashMap.newKeySet<Long>()
   private val requestedDownloadIds = ConcurrentHashMap.newKeySet<Long>()
 
-  /**
-   * Фоновый наблюдатель:
-   * 1. На стороне получателя: дожидается выгрузки файла отправителем, скачивает с XFTP и переносит в сторис.
-   * 2. На стороне отправителя: как только XFTP-выгрузка завершена, тихо удаляет элемент из локального чата.
-   */
   fun startBackgroundObserver(chatModel: ChatModel) {
     observerJob?.cancel()
     observerJob = scope.launch {
@@ -36,14 +31,13 @@ object StorySyncManager {
           }
 
           storyItems.forEach { item ->
-            // --- 1. ЕСЛИ ЭТО ИСХОДЯЩАЯ ИСТОРИЯ (ОТПРАВИТЕЛЬ) ---
+            // Исходящее сообщение автора сторис
             if (item.chatDir.sent) {
               val ciFile = item.file
               val statusName = ciFile?.fileStatus?.let { it::class.simpleName } ?: ""
               val isStillUploading = statusName.contains("Upload", ignoreCase = true) ||
                                      statusName.contains("Wait", ignoreCase = true)
 
-              // Удаляем сообщение из чата ТОЛЬКО когда выгрузка на XFTP реально завершилась
               if (!isStillUploading && statusName.isNotBlank()) {
                 handledItemIds.add(item.id)
                 removeStoryItemFromChat(chatModel, chat, item)
@@ -51,34 +45,25 @@ object StorySyncManager {
               return@forEach
             }
 
-            // --- 2. ЕСЛИ ЭТО ВХОДЯЩАЯ ИСТОРИЯ (ПОЛУЧАТЕЛЬ) ---
+            // Входящее сообщение сторис
             val ciFile = item.file ?: return@forEach
 
-            // Если файл ещё не скачан на устройство
+            // Автоматическое скачивание с XFTP без ручного клика в чате
             if (!ciFile.loaded) {
-              val statusName = ciFile.fileStatus::class.simpleName ?: ""
-              val isWaitingForSender = statusName.contains("Wait", ignoreCase = true)
-
-              // Если отправитель всё ещё загружает файл на XFTP — ждём
-              if (isWaitingForSender) {
-                return@forEach
-              }
-
-              // Отправитель закончил загрузку на XFTP — запускаем скачивание к себе
               if (!requestedDownloadIds.contains(ciFile.fileId)) {
                 requestedDownloadIds.add(ciFile.fileId)
                 withBGApi {
                   try {
                     chatModel.controller.receiveFile(chat.remoteHostId, user, ciFile.fileId)
                   } catch (e: Exception) {
-                    Log.e(TAG, "XFTP receiveFile error: ${e.message}")
+                    Log.e(TAG, "XFTP auto-receiveFile error: ${e.message}")
                   }
                 }
               }
               return@forEach
             }
 
-            // Файл полностью скачан с XFTP на диск!
+            // Файл полностью загружен с XFTP на диск
             val loadedPath = getLoadedFilePath(ciFile)
             if (loadedPath != null) {
               val fileOnDisk = File(loadedPath)
@@ -113,7 +98,7 @@ object StorySyncManager {
                   Log.e(TAG, "Failed importing story file: ${e.message}")
                 }
 
-                // Стираем сервисное сообщение из переписки
+                // Скрываем техническое сообщение из переписки
                 removeStoryItemFromChat(chatModel, chat, item)
               }
             }
@@ -159,10 +144,6 @@ object StorySyncManager {
     }
   }
 
-  /**
-   * Отправка медиафайла через официальный XFTP-протокол SimpleX
-   * с ожиданием окончания реальной выгрузки перед закрытием диалога
-   */
   suspend fun publishAndBroadcastStoryWithProgress(
     file: File,
     item: TemporaryContentItem,
@@ -208,7 +189,6 @@ object StorySyncManager {
 
       val sentItemIds = mutableListOf<Pair<Chat, Long>>()
 
-      // 1. Ставим файлы в очередь отправки XFTP
       recipients.forEach { chat ->
         withBGApi {
           try {
@@ -217,7 +197,16 @@ object StorySyncManager {
             val appFile = File(getAppFilePath(xftpFileName))
             file.copyTo(appFile, overwrite = true)
 
-            val cryptoFile = CryptoFile.plain(appFile.name)
+            // Проверяем локальное шифрование SimpleX для корректной XFTP-выгрузки
+            val cryptoFile = if (chatModel.controller.appPrefs.privacyEncryptLocalFiles.get()) {
+              val encFile = File(getAppFilePath("enc_${appFile.name}"))
+              val args = encryptCryptoFile(appFile.absolutePath, encFile.absolutePath)
+              appFile.delete()
+              CryptoFile(encFile.name, args)
+            } else {
+              CryptoFile.plain(appFile.name)
+            }
+
             val cInfo = chat.chatInfo
 
             val sentItems = chatModel.controller.apiSendMessages(
@@ -243,7 +232,7 @@ object StorySyncManager {
               sentItemIds.add(chat to aItem.chatItem.id)
             }
           } catch (e: Exception) {
-            Log.e(TAG, "Error queuing story to ${chat.chatInfo.displayName}: ${e.message}")
+            Log.e(TAG, "Error queuing story: ${e.message}")
           }
         }
       }
@@ -253,7 +242,6 @@ object StorySyncManager {
         return@withContext true
       }
 
-      // 2. Ожидаем завершения реальной выгрузки на XFTP-сервер
       var attempts = 0
       while (attempts < 45) {
         delay(1000L)
@@ -272,15 +260,12 @@ object StorySyncManager {
         val pct = (25 + attempts * 6).coerceAtMost(92)
         onProgress(pct, "Uploading to XFTP: $pct%")
 
-        if (!stillUploading && attempts >= 2) {
-          break
-        }
+        if (!stillUploading && attempts >= 2) break
       }
 
       onProgress(96, "Finishing...")
-      delay(1200L)
+      delay(1000L)
 
-      // 3. Выгрузка завершена — удаляем служебные сообщения из чата отправителя
       sentItemIds.forEach { (chat, itemId) ->
         val currentChat = chatModel.chats.value.firstOrNull { it.id == chat.id }
         val currentItem = currentChat?.chatItems?.firstOrNull { it.id == itemId }
