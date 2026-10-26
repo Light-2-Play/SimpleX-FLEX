@@ -845,14 +845,13 @@ fun AllStoriesFeedView(close: () -> Unit) {
   var viewingStories by remember { mutableStateOf<List<TemporaryContentItem>?>(null) }
 
   // Опрашиваем всех контактов при открытии раздела
-  LaunchedEffect(Unit) {
-    StorySyncManager.requestStoriesFromAllContacts()
+ LaunchedEffect(Unit) {
     while (true) {
       delay(15_000L)
       nowMillis = System.currentTimeMillis()
     }
   }
-
+ 
   val myStories = items.filter { it.authorContactId == null }.sortedBy { it.createdAtMillis }
   val contactStories = items.filter { it.authorContactId != null }
     .groupBy { it.authorContactId }
