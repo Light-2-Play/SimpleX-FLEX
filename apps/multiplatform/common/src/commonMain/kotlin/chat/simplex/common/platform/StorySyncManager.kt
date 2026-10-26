@@ -12,7 +12,8 @@ import java.util.Base64
 @Serializable
 data class StoryXftpDescriptor(
   val id: String,
-  val downloadUrl: String,
+  val downloadUrl: String? = null,
+  val directBase64: String? = null,
   val encryptionKey: String,
   val iv: String,
   val mediaType: String,
@@ -29,9 +30,6 @@ object StorySyncManager {
   private val json = Json { ignoreUnknownKeys = true }
   private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
-  /**
-   * Загрузка файла на XFTP и отправка компактного дескриптора (< 500 байт) контактам
-   */
   fun publishAndBroadcastStory(
     file: File,
     item: TemporaryContentItem,
@@ -40,22 +38,43 @@ object StorySyncManager {
   ) {
     scope.launch {
       try {
-        val uploadResult = XftpStoryUploader.uploadEncryptedStory(file) ?: run {
-          Log.e(TAG, "Failed to upload story to XFTP")
-          return@launch
-        }
+        val rawBytes = file.readBytes()
+        val descriptor: StoryXftpDescriptor
 
-        val descriptor = StoryXftpDescriptor(
-          id = item.id,
-          downloadUrl = uploadResult.downloadUrl,
-          encryptionKey = uploadResult.keyBase64,
-          iv = uploadResult.ivBase64,
-          mediaType = item.mediaType.name,
-          durationHours = item.durationHours,
-          caption = item.caption,
-          createdAtMillis = item.createdAtMillis,
-          thumbBase64 = thumbBytes?.let { Base64.getEncoder().encodeToString(it) }
-        )
+        // Если это фото размером до 11 КБ — шлём прямо через SMP без сторонних запросов
+        if (item.mediaType == TemporaryMediaType.PHOTO && rawBytes.size <= 11_000) {
+          descriptor = StoryXftpDescriptor(
+            id = item.id,
+            downloadUrl = null,
+            directBase64 = Base64.getEncoder().encodeToString(rawBytes),
+            encryptionKey = "",
+            iv = "",
+            mediaType = item.mediaType.name,
+            durationHours = item.durationHours,
+            caption = item.caption,
+            createdAtMillis = item.createdAtMillis,
+            thumbBase64 = thumbBytes?.let { Base64.getEncoder().encodeToString(it) }
+          )
+        } else {
+          // Иначе шифруем AES-256 и выгружаем в облако
+          val uploadResult = XftpStoryUploader.uploadEncryptedStory(file, item.durationHours) ?: run {
+            Log.e(TAG, "Failed to upload story")
+            return@launch
+          }
+
+          descriptor = StoryXftpDescriptor(
+            id = item.id,
+            downloadUrl = uploadResult.downloadUrl,
+            directBase64 = null,
+            encryptionKey = uploadResult.keyBase64,
+            iv = uploadResult.ivBase64,
+            mediaType = item.mediaType.name,
+            durationHours = item.durationHours,
+            caption = item.caption,
+            createdAtMillis = item.createdAtMillis,
+            thumbBase64 = thumbBytes?.let { Base64.getEncoder().encodeToString(it) }
+          )
+        }
 
         val encodedMsg = STORY_PUSH_PREFIX + json.encodeToString(descriptor)
 
@@ -126,19 +145,24 @@ object StorySyncManager {
     senderDisplayName: String?,
     text: String
   ): Boolean {
+    val cleanText = text.trim()
     when {
-      text.startsWith(STORY_PUSH_PREFIX) -> {
+      cleanText.contains(STORY_PUSH_PREFIX) -> {
         if (senderContactId == null) return true
         scope.launch {
           try {
-            val rawJson = text.removePrefix(STORY_PUSH_PREFIX)
+            val rawJson = cleanText.substringAfter(STORY_PUSH_PREFIX)
             val desc = json.decodeFromString<StoryXftpDescriptor>(rawJson)
 
-            val decryptedFileBytes = XftpStoryUploader.downloadAndDecryptStory(
-              downloadUrl = desc.downloadUrl,
-              keyBase64 = desc.encryptionKey,
-              ivBase64 = desc.iv
-            )
+            val decryptedFileBytes = if (desc.directBase64 != null) {
+              Base64.getDecoder().decode(desc.directBase64)
+            } else if (desc.downloadUrl != null) {
+              XftpStoryUploader.downloadAndDecryptStory(
+                downloadUrl = desc.downloadUrl,
+                keyBase64 = desc.encryptionKey,
+                ivBase64 = desc.iv
+              )
+            } else null
 
             if (decryptedFileBytes != null) {
               val mediaType = TemporaryMediaType.valueOf(desc.mediaType)
@@ -153,12 +177,12 @@ object StorySyncManager {
               )
             }
           } catch (e: Exception) {
-            Log.e(TAG, "Error receiving XFTP story: ${e.message}")
+            Log.e(TAG, "Error receiving story: ${e.message}")
           }
         }
         return true
       }
-      text == STORY_REQ_PREFIX -> {
+      cleanText.contains(STORY_REQ_PREFIX) -> {
         respondToStoryRequest(remoteHostId, chatId)
         return true
       }
@@ -181,15 +205,15 @@ object StorySyncManager {
           sign = false,
           composedMessages = listOf(
             ComposedMessage(
-  fileSource = null,
-  quotedItemId = null,
-  msgContent = MsgContent.MCText(text),
-  mentions = emptyMap()
-)
+              fileSource = null,
+              quotedItemId = null,
+              msgContent = MsgContent.MCText(text),
+              mentions = emptyMap()
+            )
           )
         )
       } catch (e: Exception) {
-        Log.e(TAG, "Failed to send hidden story service message: ${e.message}")
+        Log.e(TAG, "Failed to send story message: ${e.message}")
       }
     }
   }
