@@ -64,6 +64,42 @@ object StorySyncManager {
   }
 
   fun broadcastStory(bytes: ByteArray, item: TemporaryContentItem) {
-    // Метод готов к привязке к транспорту сообщений
+    scope.launch {
+      try {
+        val payload = StorySyncPayload(
+          id = item.id,
+          mediaType = item.mediaType.name,
+          durationHours = item.durationHours,
+          caption = item.caption,
+          createdAtMillis = item.createdAtMillis,
+          base64Data = Base64.getEncoder().encodeToString(bytes)
+        )
+        val encodedMsg = STORY_PUSH_PREFIX + json.encodeToString(payload)
+
+        // Фильтрация контактов по выбранной аудитории (Verified Users / Contacts / All Users)
+        val directChats = chatModel.chats.value.filter {
+          val ci = it.chatInfo
+          if (ci !is ChatInfo.Direct || !ci.contact.active || !ci.contact.ready) return@filter false
+          when (item.audience) {
+            TemporaryAudience.VERIFIED_USERS -> ci.contact.verified
+            TemporaryAudience.CONTACTS -> true
+            TemporaryAudience.ALL_USERS -> true
+          }
+        }
+
+        directChats.forEach { chat ->
+          withBGApi {
+            chatModel.controller.apiSendTextMessage(
+              chat.remoteHostId,
+              chat.chatInfo.chatType,
+              chat.chatInfo.apiId,
+              null,
+              encodedMsg
+            )
+          }
+        }
+      } catch (e: Exception) {
+        Log.e("StorySync", "Error broadcasting story: ${e.message}")
+      }
+    }
   }
-}
