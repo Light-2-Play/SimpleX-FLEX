@@ -658,6 +658,9 @@ private fun AddTemporaryContentDialog(
 // =====================================================================
 // 4. ПОЛНОЭКРАННЫЙ ПРОСМОТРЩИК TEMPORARY CONTENT
 // =====================================================================
+// =====================================================================
+// 4. ПОЛНОЭКРАННЫЙ ПРОСМОТРЩИК TEMPORARY CONTENT
+// =====================================================================
 @Composable
 fun TemporaryContentStoryViewer(
   items: List<TemporaryContentItem>,
@@ -701,6 +704,7 @@ fun TemporaryContentStoryViewer(
           }
         }
     ) {
+      // 1. Отображение медиаконтента на весь экран
       if (currentItem.mediaType == TemporaryMediaType.VIDEO) {
         val videoPlayer = LocalStoryVideoPlayer.current
         if (videoPlayer != null) {
@@ -719,21 +723,23 @@ fun TemporaryContentStoryViewer(
         Image(
           bitmap = bitmap,
           contentDescription = null,
-          contentScale = ContentScale.Fit,
+          contentScale = ContentScale.Crop, // Растягивает фото на весь экран без черных дыр
           modifier = Modifier.fillMaxSize()
         )
       }
 
+      // 2. Верхняя плашка с полосками и именем (с безопасным отступом от строки состояния)
       Column(
         modifier = Modifier
           .fillMaxWidth()
           .align(Alignment.TopCenter)
           .background(
             Brush.verticalGradient(
-              listOf(Color.Black.copy(alpha = 0.75f), Color.Transparent)
+              listOf(Color.Black.copy(alpha = 0.85f), Color.Transparent)
             )
           )
-          .padding(top = 16.dp, start = 14.dp, end = 14.dp, bottom = 24.dp)
+          .statusBarsPadding()
+          .padding(top = 8.dp, start = 14.dp, end = 14.dp, bottom = 24.dp)
       ) {
         Row(
           modifier = Modifier.fillMaxWidth(),
@@ -748,10 +754,10 @@ fun TemporaryContentStoryViewer(
             LinearProgressIndicator(
               progress = progress,
               color = Color.White,
-              backgroundColor = Color.White.copy(alpha = 0.3f),
+              backgroundColor = Color.White.copy(alpha = 0.35f),
               modifier = Modifier
                 .weight(1f)
-                .height(3.dp)
+                .height(3.5.dp)
                 .clip(CircleShape)
             )
           }
@@ -772,11 +778,11 @@ fun TemporaryContentStoryViewer(
               modifier = Modifier.size(18.dp)
             )
             Spacer(Modifier.width(6.dp))
-            val authorLabel = currentItem.authorDisplayName ?: "You"
+            val authorLabel = currentItem.authorDisplayName ?: "Contact"
             Text(
               text = "$authorLabel • ${currentItem.remainingTimeText(now)}",
               color = Color.White,
-              fontSize = 13.5.sp,
+              fontSize = 14.sp,
               fontWeight = FontWeight.Bold
             )
           }
@@ -811,19 +817,26 @@ fun TemporaryContentStoryViewer(
         }
       }
 
+      // 3. Подпись (с отступом от системной панели навигации Android)
       if (currentItem.caption.isNotBlank()) {
         Box(
           modifier = Modifier
             .fillMaxWidth()
             .align(Alignment.BottomCenter)
-            .background(Color.Black.copy(alpha = 0.65f))
-            .padding(horizontal = 20.dp, vertical = 18.dp),
+            .background(
+              Brush.verticalGradient(
+                listOf(Color.Transparent, Color.Black.copy(alpha = 0.85f))
+              )
+            )
+            .navigationBarsPadding()
+            .padding(horizontal = 20.dp, vertical = 20.dp),
           contentAlignment = Alignment.Center
         ) {
           Text(
             text = currentItem.caption,
             color = Color.White,
             fontSize = 15.sp,
+            fontWeight = FontWeight.Medium,
             textAlign = TextAlign.Center,
             maxLines = 3,
             overflow = TextOverflow.Ellipsis
