@@ -177,38 +177,61 @@ object TemporaryContentManager {
     }
   }
 
-  fun receiveContactTemporaryContent(
+fun receiveContactTemporaryContent(
     contactId: Long,
     displayName: String,
     bytes: ByteArray,
     mediaType: TemporaryMediaType,
     durationHours: Int,
-    caption: String = "",
-    createdAtMillis: Long = System.currentTimeMillis(),
-    audience: TemporaryAudience = TemporaryAudience.CONTACTS
-  ): TemporaryContentItem? {
-    if (storageDir == null) initStorage()
-    val dir = storageDir ?: return null
-
-    return try {
+    caption: String,
+    createdAtMillis: Long
+  ) {
+    try {
+      val dir = getStorageDir()
       val ext = if (mediaType == TemporaryMediaType.VIDEO) "mp4" else "jpg"
-      val id = UUID.randomUUID().toString()
-      val destFile = File(dir, "temp_${id}.$ext")
+      val id = "story_${contactId}_${System.currentTimeMillis()}"
+      val destFile = File(dir, "$id.$ext")
       destFile.writeBytes(bytes)
+
+      // Для видео создаем кадр превью
+      if (mediaType == TemporaryMediaType.VIDEO) {
+        try {
+          val retriever = android.media.MediaMetadataRetriever()
+          retriever.setDataSource(destFile.absolutePath)
+          val frame = retriever.getFrameAtTime(0)
+          if (frame != null) {
+            val thumbFile = File("${destFile.absolutePath}_thumb.jpg")
+            val stream = java.io.ByteArrayOutputStream()
+            frame.compress(android.graphics.Bitmap.CompressFormat.JPEG, 80, stream)
+            thumbFile.writeBytes(stream.toByteArray())
+          }
+          retriever.release()
+        } catch (_: Exception) {}
+      }
 
       val newItem = TemporaryContentItem(
         id = id,
+        authorContactId = contactId,
+        authorDisplayName = displayName,
         filePath = destFile.absolutePath,
         mediaType = mediaType,
         createdAtMillis = createdAtMillis,
-        expiresAtMillis = createdAtMillis + (durationHours * 3600_000L),
         durationHours = durationHours,
         caption = caption,
-        authorContactId = contactId,
-        authorDisplayName = displayName,
-        audience = audience
+        audience = TemporaryAudience.CONTACTS
       )
 
+      // Мгновенное обновление StateFlow для Compose (без перезагрузки приложения)
+      val currentList = _items.value.toMutableList()
+      currentList.removeAll { it.id == newItem.id }
+      currentList.add(0, newItem)
+      _items.value = currentList
+
+      saveMetadataToDisk()
+    } catch (e: Exception) {
+      Log.e("TempContent", "Failed to receive contact story: ${e.message}")
+    }
+  }
       val updated = (_items.value + newItem).sortedByDescending { it.createdAtMillis }
       _items.value = updated
       saveToDisk(updated)
