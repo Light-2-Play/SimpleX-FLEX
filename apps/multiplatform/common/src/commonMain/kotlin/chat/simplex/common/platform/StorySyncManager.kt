@@ -30,10 +30,6 @@ object StorySyncManager {
   private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
   private var observerJob: Job? = null
 
-  /**
-   * Фоновый наблюдатель: перехватывает служебные пакеты сторис моментально,
-   * скачивает медиафайл и сразу удаляет служебное сообщение из диалога.
-   */
   fun startBackgroundObserver(chatModel: ChatModel) {
     observerJob?.cancel()
     observerJob = scope.launch {
@@ -58,7 +54,6 @@ object StorySyncManager {
               text = text
             )
 
-            // Бесследно удаляем служебную команду из локального чата
             withBGApi {
               try {
                 chatModel.controller.apiDeleteChatItems(
@@ -77,48 +72,70 @@ object StorySyncManager {
     }
   }
 
-  fun publishAndBroadcastStory(
+  /**
+   * Опрос всех активных контактов при входе в раздел Temporary Content из списка чатов
+   */
+  fun requestStoriesFromAllContacts() {
+    scope.launch {
+      val directChats = chatModel.chats.value.filter {
+        val ci = it.chatInfo
+        ci is ChatInfo.Direct && ci.contact.active && ci.contact.ready
+      }
+      directChats.forEach { chat ->
+        sendHiddenServiceMessage(chat, STORY_REQ_PREFIX)
+      }
+    }
+  }
+
+  suspend fun publishAndBroadcastStoryWithProgress(
     file: File,
     item: TemporaryContentItem,
-    targetChats: List<Chat>? = null
-  ) {
-    scope.launch {
-      try {
-        // 1. Шифруем AES-256 и выгружаем в облако
-        val uploadResult = XftpStoryUploader.uploadEncryptedStory(file, item.durationHours) ?: run {
-          Log.e(TAG, "Failed to upload story")
-          return@launch
-        }
+    targetChats: List<Chat>? = null,
+    onProgress: (Int, String) -> Unit
+  ): Boolean = withContext(Dispatchers.IO) {
+    try {
+      onProgress(0, "Encrypting...")
 
-        // 2. Компактный дескриптор (~200 байт) без тяжелых Base64-вложений
-        val descriptor = StoryXftpDescriptor(
-          id = item.id,
-          downloadUrl = uploadResult.downloadUrl,
-          encryptionKey = uploadResult.keyBase64,
-          iv = uploadResult.ivBase64,
-          mediaType = item.mediaType.name,
-          durationHours = item.durationHours,
-          caption = item.caption,
-          createdAtMillis = item.createdAtMillis
-        )
-
-        val encodedMsg = STORY_PUSH_PREFIX + json.encodeToString(descriptor)
-
-        val recipients = targetChats ?: chatModel.chats.value.filter {
-          val ci = it.chatInfo
-          if (ci !is ChatInfo.Direct || !ci.contact.active || !ci.contact.ready) return@filter false
-          when (item.audience) {
-            TemporaryAudience.VERIFIED_USERS -> ci.contact.verified
-            TemporaryAudience.CONTACTS, TemporaryAudience.ALL_USERS -> true
-          }
-        }
-
-        recipients.forEach { chat ->
-          sendHiddenServiceMessage(chat, encodedMsg)
-        }
-      } catch (e: Exception) {
-        Log.e(TAG, "publishAndBroadcastStory error: ${e.message}")
+      val uploadResult = XftpStoryUploader.uploadEncryptedStory(file, item.durationHours) { pct ->
+        onProgress(pct, "Uploading: $pct%")
+      } ?: run {
+        onProgress(0, "Upload error")
+        return@withContext false
       }
+
+      onProgress(95, "Sending descriptor...")
+
+      val descriptor = StoryXftpDescriptor(
+        id = item.id,
+        downloadUrl = uploadResult.downloadUrl,
+        encryptionKey = uploadResult.keyBase64,
+        iv = uploadResult.ivBase64,
+        mediaType = item.mediaType.name,
+        durationHours = item.durationHours,
+        caption = item.caption,
+        createdAtMillis = item.createdAtMillis
+      )
+
+      val encodedMsg = STORY_PUSH_PREFIX + json.encodeToString(descriptor)
+
+      val recipients = targetChats ?: chatModel.chats.value.filter {
+        val ci = it.chatInfo
+        if (ci !is ChatInfo.Direct || !ci.contact.active || !ci.contact.ready) return@filter false
+        when (item.audience) {
+          TemporaryAudience.VERIFIED_USERS -> ci.contact.verified
+          TemporaryAudience.CONTACTS, TemporaryAudience.ALL_USERS -> true
+        }
+      }
+
+      recipients.forEach { chat ->
+        sendHiddenServiceMessage(chat, encodedMsg)
+      }
+
+      onProgress(100, "Done!")
+      true
+    } catch (e: Exception) {
+      Log.e(TAG, "publish error: ${e.message}")
+      false
     }
   }
 
@@ -151,10 +168,11 @@ object StorySyncManager {
           val file = File(story.filePath)
           if (!file.exists()) return@forEach
 
-          publishAndBroadcastStory(
+          publishAndBroadcastStoryWithProgress(
             file = file,
             item = story,
-            targetChats = listOf(targetChat)
+            targetChats = listOf(targetChat),
+            onProgress = { _, _ -> }
           )
         } catch (_: Exception) {}
       }
@@ -172,7 +190,6 @@ object StorySyncManager {
     when {
       cleanText.contains(STORY_PUSH_PREFIX) -> {
         if (senderContactId == null) return true
-        // Автоматическое фоновое скачивание и расшифровка
         scope.launch {
           try {
             val rawJson = cleanText.substringAfter(STORY_PUSH_PREFIX)
