@@ -704,7 +704,7 @@ fun TemporaryContentStoryViewer(
           }
         }
     ) {
-      // 1. Отображение медиаконтента на весь экран
+      // 1. Медиаконтент
       if (currentItem.mediaType == TemporaryMediaType.VIDEO) {
         val videoPlayer = LocalStoryVideoPlayer.current
         if (videoPlayer != null) {
@@ -723,12 +723,12 @@ fun TemporaryContentStoryViewer(
         Image(
           bitmap = bitmap,
           contentDescription = null,
-          contentScale = ContentScale.Crop, // Растягивает фото на весь экран без черных дыр
+          contentScale = ContentScale.Crop,
           modifier = Modifier.fillMaxSize()
         )
       }
 
-      // 2. Верхняя плашка с полосками и именем (с безопасным отступом от строки состояния)
+      // 2. Верхняя панель (с отступом от системного статус-бара)
       Column(
         modifier = Modifier
           .fillMaxWidth()
@@ -739,7 +739,7 @@ fun TemporaryContentStoryViewer(
             )
           )
           .statusBarsPadding()
-          .padding(top = 8.dp, start = 14.dp, end = 14.dp, bottom = 24.dp)
+          .padding(top = 10.dp, start = 14.dp, end = 14.dp, bottom = 24.dp)
       ) {
         Row(
           modifier = Modifier.fillMaxWidth(),
@@ -817,7 +817,7 @@ fun TemporaryContentStoryViewer(
         }
       }
 
-      // 3. Подпись (с отступом от системной панели навигации Android)
+      // 3. Подпись (с отступом от панели навигации)
       if (currentItem.caption.isNotBlank()) {
         Box(
           modifier = Modifier
@@ -1049,8 +1049,8 @@ private fun loadStoryBitmapSafe(filePath: String, mediaType: TemporaryMediaType)
     }
 
     if (file != null && file.exists()) {
-      val base64Str = java.util.Base64.getEncoder().encodeToString(file.readBytes())
-      base64ToBitmap(base64Str)
+      val bitmap = android.graphics.BitmapFactory.decodeFile(file.absolutePath) ?: return null
+      androidx.compose.ui.graphics.asImageBitmap(bitmap)
     } else null
   } catch (_: Exception) {
     null
