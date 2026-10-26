@@ -107,6 +107,18 @@ object StorySyncManager {
     }
   }
 
+private fun getLoadedFilePath(ciFile: CIFile): String? {
+    return try {
+      val name = ciFile.fileName
+      if (name.isNotBlank()) {
+        val path = getAppFilePath(name)
+        if (File(path).exists()) path else null
+      } else null
+    } catch (_: Exception) {
+      null
+    }
+  }
+  
   private fun removeStoryItemFromChat(chatModel: ChatModel, chat: Chat, item: ChatItem) {
     scope.launch {
       withContext(Dispatchers.Main) {
@@ -132,6 +144,10 @@ object StorySyncManager {
   /**
    * Отправка Фото и Видео через штатный XFTP-протокол SimpleX Chat
    */
+  /**
+   * Отправка Фото и Видео через штатный XFTP-протокол SimpleX Chat
+   * с защитой от contactDisabled и изолированной отправкой
+   */
   suspend fun publishAndBroadcastStoryWithProgress(
     file: File,
     item: TemporaryContentItem,
@@ -140,11 +156,25 @@ object StorySyncManager {
     try {
       onProgress(10, "Preparing XFTP transfer...")
 
-      val recipients = chatModel.chats.value.filter {
-        val ci = it.chatInfo
-        if (ci !is ChatInfo.Direct || !ci.contact.active || !ci.contact.ready) return@filter false
+      // Жесткий фильтр: исключаем контакты в статусе disabled, удаленные, не готовые к отправке
+      val recipients = chatModel.chats.value.filter { chat ->
+        val ci = chat.chatInfo
+        if (ci !is ChatInfo.Direct) return@filter false
+        val contact = ci.contact
+
+        // Проверяем полную готовность контакта к отправке
+        val isReadyToSend = contact.active && 
+                            contact.sndReady && 
+                            !contact.chatDeleted && 
+                            !ci.chatDeleted && 
+                            !contact.nextConnect && 
+                            !contact.nextConnectPrepared &&
+                            ci.sendMsgEnabled
+
+        if (!isReadyToSend) return@filter false
+
         when (item.audience) {
-          TemporaryAudience.VERIFIED_USERS -> ci.contact.verified
+          TemporaryAudience.VERIFIED_USERS -> contact.verified
           TemporaryAudience.CONTACTS, TemporaryAudience.ALL_USERS -> true
         }
       }
@@ -154,7 +184,7 @@ object StorySyncManager {
         return@withContext true
       }
 
-      // 1. Готовим миниатюру (до 10 КБ) для заголовка MCImage / MCVideo
+      // 1. Создаем миниатюру первого кадра/превью (до 10 КБ) для заголовка
       onProgress(25, "Generating preview...")
       val previewBase64 = generateSmallPreviewBase64(file, item.mediaType)
       val taggedCaption = "${STORY_TAG_PREFIX}${item.durationHours}] ${item.caption}".trim()
@@ -172,50 +202,63 @@ object StorySyncManager {
         )
       }
 
-      // 2. Для каждого получателя создаем файл в папке приложения и отдаем ядру SimpleX для XFTP-отправки
+      // 2. Отправляем каждому контакту индивидуально в изолированном блоке
       val total = recipients.size
+      var sentCount = 0
+
       recipients.forEachIndexed { index, chat ->
-        val progressPct = 35 + ((index + 1) * 60 / total)
-        onProgress(progressPct, "Uploading to XFTP (${index + 1}/$total)...")
+        val progressPct = 30 + ((index + 1) * 65 / total)
+        onProgress(progressPct, "Sending (${index + 1}/$total)...")
 
-        val ext = if (item.mediaType == TemporaryMediaType.VIDEO) "mp4" else "jpg"
-        val xftpFileName = "xftp_story_${System.currentTimeMillis()}_${index}.$ext"
-        val appFile = File(getAppFilePath(xftpFileName))
-        file.copyTo(appFile, overwrite = true)
+        try {
+          val ext = if (item.mediaType == TemporaryMediaType.VIDEO) "mp4" else "jpg"
+          val xftpFileName = "xftp_story_${System.currentTimeMillis()}_${chat.chatInfo.apiId}.$ext"
+          val targetPath = getAppFilePath(xftpFileName)
+          val appFile = File(targetPath)
+          file.copyTo(appFile, overwrite = true)
 
-        val cryptoFile = CryptoFile.plain(appFile.name)
-        val cInfo = chat.chatInfo
+          val cryptoFile = CryptoFile.plain(appFile.name)
+          val cInfo = chat.chatInfo
 
-        val sentItems = chatModel.controller.apiSendMessages(
-          rh = chat.remoteHostId,
-          type = cInfo.chatType,
-          id = cInfo.apiId,
-          scope = cInfo.groupChatScope(),
-          sendAsGroup = cInfo.sendAsGroup,
-          live = false,
-          ttl = null,
-          sign = false,
-          composedMessages = listOf(
-            ComposedMessage(
-              fileSource = cryptoFile,
-              quotedItemId = null,
-              msgContent = msgContent,
-              mentions = emptyMap()
+          val sentItems = chatModel.controller.apiSendMessages(
+            rh = chat.remoteHostId,
+            type = cInfo.chatType,
+            id = cInfo.apiId,
+            scope = cInfo.groupChatScope(),
+            sendAsGroup = cInfo.sendAsGroup,
+            live = false,
+            ttl = null,
+            sign = false,
+            composedMessages = listOf(
+              ComposedMessage(
+                fileSource = cryptoFile,
+                quotedItemId = null,
+                msgContent = msgContent,
+                mentions = emptyMap()
+              )
             )
           )
-        )
 
-        // Сразу убираем отправленный элемент из UI нашего чата (XFTP-выгрузка в ядре при этом продолжается)
-        sentItems?.forEach { aItem ->
-          handledItemIds.add(aItem.chatItem.id)
-          removeStoryItemFromChat(chatModel, chat, aItem.chatItem)
+          // Скрываем отправленный элемент из обычного чата
+          sentItems?.forEach { aItem ->
+            handledItemIds.add(aItem.chatItem.id)
+            removeStoryItemFromChat(chatModel, chat, aItem.chatItem)
+          }
+
+          if (!sentItems.isNullOrEmpty()) {
+            sentCount++
+          }
+        } catch (e: Exception) {
+          // Если конкретный контакт вернул contactDisabled или ошибку сети — 
+          // логируем и продолжаем отправку остальным без краша всего процесса
+          Log.e(TAG, "Failed sending story to ${chat.chatInfo.displayName}: ${e.message}")
         }
       }
 
-      onProgress(100, "Done!")
+      onProgress(100, if (sentCount > 0) "Done!" else "Saved locally")
       true
     } catch (e: Exception) {
-      Log.e(TAG, "XFTP Story publish error: ${e.message}")
+      Log.e(TAG, "General XFTP Story publish error: ${e.message}")
       false
     }
   }
