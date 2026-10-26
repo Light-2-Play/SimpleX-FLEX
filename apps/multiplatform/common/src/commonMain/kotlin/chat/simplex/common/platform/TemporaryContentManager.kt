@@ -137,6 +137,7 @@ object TemporaryContentManager {
       val destFile = File(dir, "temp_${id}.$ext")
       destFile.writeBytes(bytes)
 
+      // Привязываем сгенерированный в MainActivity кадр превью к видеофайлу
       if (mediaType == TemporaryMediaType.VIDEO) {
         val lastThumb = File(dir, "last_video_thumb.jpg")
         if (lastThumb.exists()) {
