@@ -34,7 +34,7 @@ object XftpStoryUploader {
       onProgress(5)
       val rawBytes = file.readBytes()
 
-      // 1. Локальное шифрование AES-256-GCM
+      // 1. Локальное шифрование файла (AES-256-GCM)
       val keyBytes = ByteArray(32).also { SecureRandom().nextBytes(it) }
       val iv = ByteArray(12).also { SecureRandom().nextBytes(it) }
 
@@ -43,7 +43,7 @@ object XftpStoryUploader {
       val encryptedBytes = cipher.doFinal(rawBytes)
       onProgress(15)
 
-      // 2. Выгрузка с расчетом прогресса в процентах (от 15% до 90%)
+      // 2. Загрузка чанками с расчетом процентов от 15% до 90%
       val uploadedUrl = uploadToTmpFiles(encryptedBytes) { pct ->
         val mapped = 15 + ((pct * 75) / 100)
         onProgress(mapped.coerceIn(15, 90))
@@ -68,9 +68,9 @@ object XftpStoryUploader {
     }
   }
 
-  private fun uploadToTmpFiles(data: ByteArray, onUploadProgress: (Int) -> Unit): String? {
+  private fun uploadToTmpFiles(data: ByteArray, onChunkProgress: (Int) -> Unit): String? {
     return try {
-      val boundary = "===TmpStory${System.currentTimeMillis()}==="
+      val boundary = "===StoryUpload${System.currentTimeMillis()}==="
       val conn = (URL("https://tmpfiles.org/api/v1/upload").openConnection() as HttpURLConnection).apply {
         requestMethod = "POST"
         doOutput = true
@@ -85,11 +85,10 @@ object XftpStoryUploader {
         val fileId = UUID.randomUUID().toString()
 
         writer.append("--$boundary\r\n")
-        writer.append("Content-Disposition: form-data; name=\"file\"; filename=\"story_$fileId.bin\"\r\n")
+        writer.append("Content-Disposition: form-data; name=\"file\"; filename=\"enc_$fileId.bin\"\r\n")
         writer.append("Content-Type: application/octet-stream\r\n\r\n")
         writer.flush()
 
-        // Потоковая запись с подсчетом процентов
         var offset = 0
         val total = data.size
         val chunkSize = 16384 // 16 KB
@@ -98,7 +97,7 @@ object XftpStoryUploader {
           val len = minOf(chunkSize, total - offset)
           os.write(data, offset, len)
           offset += len
-          onUploadProgress((offset * 100L / total).toInt())
+          onChunkProgress((offset * 100L / total).toInt())
         }
         os.flush()
 
@@ -117,7 +116,7 @@ object XftpStoryUploader {
     }
   }
 
-  private fun uploadToLitterbox(data: ByteArray, durationHours: Int, onUploadProgress: (Int) -> Unit): String? {
+  private fun uploadToLitterbox(data: ByteArray, durationHours: Int, onChunkProgress: (Int) -> Unit): String? {
     return try {
       val boundary = "===LitterStory${System.currentTimeMillis()}==="
       val conn = (URL("https://litterbox.catbox.moe/resources/internals/api.php").openConnection() as HttpURLConnection).apply {
@@ -133,17 +132,9 @@ object XftpStoryUploader {
 
       conn.outputStream.use { os ->
         val writer = PrintWriter(OutputStreamWriter(os, "UTF-8"), true)
-
-        writer.append("--$boundary\r\n")
-        writer.append("Content-Disposition: form-data; name=\"reqtype\"\r\n\r\n")
-        writer.append("fileupload\r\n")
-
-        writer.append("--$boundary\r\n")
-        writer.append("Content-Disposition: form-data; name=\"time\"\r\n\r\n")
-        writer.append("$timeParam\r\n")
-
-        writer.append("--$boundary\r\n")
-        writer.append("Content-Disposition: form-data; name=\"fileToUpload\"; filename=\"story.bin\"\r\n")
+        writer.append("--$boundary\r\nContent-Disposition: form-data; name=\"reqtype\"\r\n\r\nfileupload\r\n")
+        writer.append("--$boundary\r\nContent-Disposition: form-data; name=\"time\"\r\n\r\n$timeParam\r\n")
+        writer.append("--$boundary\r\nContent-Disposition: form-data; name=\"fileToUpload\"; filename=\"enc.bin\"\r\n")
         writer.append("Content-Type: application/octet-stream\r\n\r\n")
         writer.flush()
 
@@ -155,7 +146,7 @@ object XftpStoryUploader {
           val len = minOf(chunkSize, total - offset)
           os.write(data, offset, len)
           offset += len
-          onUploadProgress((offset * 100L / total).toInt())
+          onChunkProgress((offset * 100L / total).toInt())
         }
         os.flush()
 
@@ -172,21 +163,16 @@ object XftpStoryUploader {
     }
   }
 
+  /**
+   * Скачивание файла с ручной обработкой редиректов (301, 302, 307) и расшифровка
+   */
   suspend fun downloadAndDecryptStory(
     downloadUrl: String,
     keyBase64: String,
     ivBase64: String
   ): ByteArray? = withContext(Dispatchers.IO) {
     try {
-      val conn = (URL(downloadUrl).openConnection() as HttpURLConnection).apply {
-        requestMethod = "GET"
-        setRequestProperty("User-Agent", "Mozilla/5.0")
-        connectTimeout = 25_000
-        readTimeout = 60_000
-        instanceFollowRedirects = true
-      }
-
-      val encryptedBytes = conn.inputStream.use { it.readBytes() }
+      val encryptedBytes = downloadBytesWithRedirects(downloadUrl) ?: return@withContext null
       val keyBytes = Base64.getDecoder().decode(keyBase64)
       val iv = Base64.getDecoder().decode(ivBase64)
 
@@ -197,5 +183,35 @@ object XftpStoryUploader {
       Log.e("XftpUploader", "Download/Decrypt failed: ${e.message}")
       null
     }
+  }
+
+  private fun downloadBytesWithRedirects(initialUrl: String): ByteArray? {
+    var currentUrl = initialUrl
+    var redirectCount = 0
+
+    while (redirectCount < 6) {
+      val conn = (URL(currentUrl).openConnection() as HttpURLConnection).apply {
+        requestMethod = "GET"
+        setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 14)")
+        connectTimeout = 25_000
+        readTimeout = 60_000
+        instanceFollowRedirects = false // Ручной контроль редиректов
+      }
+
+      val code = conn.responseCode
+      if (code in 300..399) {
+        val location = conn.getHeaderField("Location") ?: return null
+        currentUrl = if (location.startsWith("http")) location else URL(URL(currentUrl), location).toString()
+        redirectCount++
+        conn.disconnect()
+        continue
+      }
+
+      if (code in 200..299) {
+        return conn.inputStream.use { it.readBytes() }
+      }
+      return null
+    }
+    return null
   }
 }
