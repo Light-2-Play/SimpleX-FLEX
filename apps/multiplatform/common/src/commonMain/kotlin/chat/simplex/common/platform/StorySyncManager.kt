@@ -10,13 +10,16 @@ import java.io.File
 import java.util.Base64
 
 @Serializable
-data class StorySyncPayload(
+data class StoryXftpDescriptor(
   val id: String,
+  val downloadUrl: String,
+  val encryptionKey: String, // Base64 AES-256 ключ
+  val iv: String,            // Вектор инициализации
   val mediaType: String,
   val durationHours: Int,
   val caption: String,
   val createdAtMillis: Long,
-  val base64Data: String
+  val thumbBase64: String? = null // Быстрое превью для кружка
 )
 
 object StorySyncManager {
@@ -27,142 +30,39 @@ object StorySyncManager {
   private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
   /**
-   * Рассылка созданной истории контактам с учётом аудитории (Verified / Contacts / All)
+   * Публикация истории через XFTP:
+   * 1. Шифрование и загрузка медиа на XFTP
+   * 2. Рассылка лёгкого дескриптора выбранным контактам
    */
-  fun broadcastStory(bytes: ByteArray, item: TemporaryContentItem) {
+  fun publishAndBroadcastStory(
+    file: File,
+    item: TemporaryContentItem,
+    thumbBytes: ByteArray?
+  ) {
     scope.launch {
       try {
-        val payload = StorySyncPayload(
+        // 1. Шифруем и загружаем на XFTP
+        val uploadResult = XftpStoryUploader.uploadEncryptedStory(file) ?: run {
+          Log.e(TAG, "Failed to upload story to XFTP")
+          return@launch
+        }
+
+        // 2. Создаем компактный дескриптор (< 1 КБ)
+        val descriptor = StoryXftpDescriptor(
           id = item.id,
+          downloadUrl = uploadResult.downloadUrl,
+          encryptionKey = uploadResult.keyBase64,
+          iv = uploadResult.ivBase64,
           mediaType = item.mediaType.name,
           durationHours = item.durationHours,
           caption = item.caption,
           createdAtMillis = item.createdAtMillis,
-          base64Data = Base64.getEncoder().encodeToString(bytes)
+          thumbBase64 = thumbBytes?.let { Base64.getEncoder().encodeToString(it) }
         )
-        val encodedMsg = STORY_PUSH_PREFIX + json.encodeToString(payload)
 
+        val encodedMsg = STORY_PUSH_PREFIX + json.encodeToString(descriptor)
+
+        // 3. Фильтруем получателей по аудитории
         val directChats = chatModel.chats.value.filter {
           val ci = it.chatInfo
-          if (ci !is ChatInfo.Direct || !ci.contact.active || !ci.contact.ready) return@filter false
-          when (item.audience) {
-            TemporaryAudience.VERIFIED_USERS -> ci.contact.verified
-            TemporaryAudience.CONTACTS, TemporaryAudience.ALL_USERS -> true
-          }
-        }
-
-        // TODO: подключим точный метод отправки после проверки ChatController.kt
-        /*
-        directChats.forEach { chat ->
-          withBGApi {
-            // chatModel.controller.apiSendMsg(...)
-          }
-        }
-        */
-      } catch (e: Exception) {
-        Log.e(TAG, "Error broadcasting story: ${e.message}")
-      }
-    }
-  }
-
-  /**
-   * Запрос историй контакта при открытии профиля
-   */
-  fun requestContactStories(contactId: Long) {
-    scope.launch {
-      val targetChat = chatModel.chats.value.firstOrNull {
-        (it.chatInfo as? ChatInfo.Direct)?.contact?.contactId == contactId
-      } ?: return@launch
-
-      // TODO: подключим точный метод отправки после проверки ChatController.kt
-      /*
-      withBGApi {
-        // chatModel.controller.apiSendMsg(...)
-      }
-      */
-    }
-  }
-
-  /**
-   * Ответ собеседнику на его запрос историй
-   */
-  fun respondToStoryRequest(remoteHostId: Long?, chatId: String) {
-    scope.launch {
-      val targetChat = chatModel.chats.value.firstOrNull { it.id == chatId } ?: return@launch
-      val myStories = TemporaryContentManager.getActiveItemsFor(null)
-      if (myStories.isEmpty()) return@launch
-
-      val contact = (targetChat.chatInfo as? ChatInfo.Direct)?.contact
-
-      myStories.forEach { story ->
-        val canSend = when (story.audience) {
-          TemporaryAudience.VERIFIED_USERS -> contact?.verified == true
-          TemporaryAudience.CONTACTS, TemporaryAudience.ALL_USERS -> true
-        }
-        if (!canSend) return@forEach
-
-        try {
-          val file = File(story.filePath)
-          if (!file.exists()) return@forEach
-          val bytes = file.readBytes()
-          val payload = StorySyncPayload(
-            id = story.id,
-            mediaType = story.mediaType.name,
-            durationHours = story.durationHours,
-            caption = story.caption,
-            createdAtMillis = story.createdAtMillis,
-            base64Data = Base64.getEncoder().encodeToString(bytes)
-          )
-          val encodedMsg = STORY_PUSH_PREFIX + json.encodeToString(payload)
-
-          // TODO: подключим точный метод отправки после проверки ChatController.kt
-          /*
-          withBGApi {
-            // chatModel.controller.apiSendMsg(...)
-          }
-          */
-        } catch (_: Exception) {}
-      }
-    }
-  }
-
-  fun handleIncomingMessage(
-    remoteHostId: Long?,
-    chatId: String,
-    senderContactId: Long?,
-    senderDisplayName: String?,
-    text: String
-  ): Boolean {
-    when {
-      text.startsWith(STORY_PUSH_PREFIX) -> {
-        if (senderContactId == null) return true
-        scope.launch {
-          try {
-            val rawJson = text.removePrefix(STORY_PUSH_PREFIX)
-            val payload = json.decodeFromString<StorySyncPayload>(rawJson)
-            val bytes = Base64.getDecoder().decode(payload.base64Data)
-            val mediaType = TemporaryMediaType.valueOf(payload.mediaType)
-
-            TemporaryContentManager.receiveContactTemporaryContent(
-              contactId = senderContactId,
-              displayName = senderDisplayName ?: "Contact",
-              bytes = bytes,
-              mediaType = mediaType,
-              durationHours = payload.durationHours,
-              caption = payload.caption,
-              createdAtMillis = payload.createdAtMillis
-            )
-          } catch (e: Exception) {
-            Log.e(TAG, "receive story error: ${e.message}")
-          }
-        }
-        return true
-      }
-      text == STORY_REQ_PREFIX -> {
-        respondToStoryRequest(remoteHostId, chatId)
-        return true
-      }
-      else -> return false
-    }
-  }
-}
+          if (ci !is ChatInfo.Direct || !ci
