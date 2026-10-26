@@ -543,10 +543,30 @@ fun ChatInfoLayout(
   val scrollState = rememberScrollState()
 
   Column(
-    Modifier
+    modifier = Modifier
       .fillMaxSize()
-      .verticalScroll(scrollState)
+      .statusBarsPadding()
+      .verticalScroll(scrollState),
+    horizontalAlignment = Alignment.CenterHorizontally
   ) {
+    // Верхняя панель со стрелкой "Назад" (убирает плавающую кнопку из угла)
+    Box(
+      modifier = Modifier
+        .fillMaxWidth()
+        .padding(horizontal = 8.dp, vertical = 4.dp)
+    ) {
+      IconButton(
+        onClick = close,
+        modifier = Modifier.align(Alignment.CenterStart)
+      ) {
+        Icon(
+          painter = painterResource(MR.images.ic_arrow_back),
+          contentDescription = stringResource(MR.strings.back),
+          tint = MaterialTheme.colors.primary
+        )
+      }
+    }
+
     ChatInfoHeader(chat.chatInfo, contact)
 
     LocalAliasEditor(
@@ -705,14 +725,16 @@ fun ChatInfoLayout(
   }
 }
 
-
 // =====================================================================
-// ЗАГОЛОВОК ПРОФИЛЯ СО СВЕТЯЩЕЙСЯ АВАТАРКОЙ STORYAVATARCONTAINER
+// ЗАГОЛОВОК ПРОФИЛЯ С ЦЕНТРИРОВАНИЕМ АВАТАРКИ И ИМЕНИ
 // =====================================================================
 @Composable
 fun ChatInfoHeader(cInfo: ChatInfo, contact: Contact) {
   Column(
-    Modifier.padding(horizontal = DEFAULT_PADDING),
+    modifier = Modifier
+      .fillMaxWidth()
+      .padding(top = 8.dp)
+      .padding(horizontal = DEFAULT_PADDING),
     horizontalAlignment = Alignment.CenterHorizontally
   ) {
     StoryAvatarContainer(
@@ -721,6 +743,7 @@ fun ChatInfoHeader(cInfo: ChatInfo, contact: Contact) {
     ) {
       ChatInfoImage(cInfo, size = 192.dp, iconColor = if (isInDarkTheme()) GroupDark else SettingsSecondaryLight)
     }
+    Spacer(Modifier.height(14.dp))
     val displayName = contact.profile.displayName.trim()
     val badge = cInfo.nameBadge
     val text = buildAnnotatedString {
@@ -761,7 +784,10 @@ fun ChatInfoHeader(cInfo: ChatInfo, contact: Contact) {
       textAlign = TextAlign.Center,
       maxLines = 3,
       overflow = TextOverflow.Ellipsis,
-      modifier = Modifier.combinedClickable(onClick = copyDisplayName, onLongClick = copyDisplayName).onRightClick(copyDisplayName)
+      modifier = Modifier
+        .fillMaxWidth()
+        .combinedClickable(onClick = copyDisplayName, onLongClick = copyDisplayName)
+        .onRightClick(copyDisplayName)
     )
     ChatInfoDescription(cInfo, displayName, copyNameToClipboard)
     ContactSimplexNameView(contact)
@@ -958,10 +984,16 @@ private fun ContactStoryTile(
 }
 
 private fun loadContactStoryBitmapSafe(filePath: String, mediaType: TemporaryMediaType): ImageBitmap? {
-  if (mediaType != TemporaryMediaType.PHOTO) return null
   return try {
-    val file = File(filePath)
-    if (file.exists()) {
+    val file = if (mediaType == TemporaryMediaType.VIDEO) {
+      val thumb = File("${filePath}_thumb.jpg")
+      if (thumb.exists()) thumb else null
+    } else {
+      val f = File(filePath)
+      if (f.exists()) f else null
+    }
+
+    if (file != null && file.exists() && file.length() > 0) {
       val base64Str = java.util.Base64.getEncoder().encodeToString(file.readBytes())
       base64ToBitmap(base64Str)
     } else null
