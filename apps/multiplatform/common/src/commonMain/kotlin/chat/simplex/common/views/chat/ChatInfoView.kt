@@ -60,6 +60,8 @@ import kotlinx.coroutines.launch
 import kotlinx.datetime.Clock
 import kotlinx.serialization.encodeToString
 import java.io.File
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowBack
 
 @Composable
 fun ChatInfoView(
@@ -560,7 +562,7 @@ fun ChatInfoLayout(
         modifier = Modifier.align(Alignment.CenterStart)
       ) {
         Icon(
-          painter = painterResource(MR.images.ic_arrow_back),
+          imageVector = Icons.Default.ArrowBack,
           contentDescription = stringResource(MR.strings.back),
           tint = MaterialTheme.colors.primary
         )
