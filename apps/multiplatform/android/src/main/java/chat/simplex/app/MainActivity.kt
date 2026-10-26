@@ -256,21 +256,20 @@ class MainActivity: FragmentActivity() {
               android.widget.VideoView(ctx).apply {
                 setZOrderMediaOverlay(true)
                 val file = java.io.File(filePath)
-                if (file.exists()) {
-                  setVideoURI(android.net.Uri.fromFile(file))
+                if (file.exists() && file.length() > 0) {
+                  setVideoPath(file.absolutePath)
                 }
                 setOnPreparedListener { mp ->
                   mp.isLooping = true
                   start()
                 }
                 setOnErrorListener { _, what, extra ->
-                  // Возвращаем true, чтобы подавить системный алерт "Не удается воспроизвести видео"
-                  android.util.Log.e("StoryVideo", "VideoView playback error: $what, $extra")
+                  android.util.Log.e("StoryVideo", "VideoView error: $what, $extra")
                   true
                 }
               }
             },
-            update = { /* Плеер стартует автоматически через setOnPreparedListener */ },
+            update = {},
             modifier = modifier
           )
         }
