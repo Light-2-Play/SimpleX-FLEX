@@ -1049,8 +1049,8 @@ private fun loadStoryBitmapSafe(filePath: String, mediaType: TemporaryMediaType)
     }
 
     if (file != null && file.exists()) {
-      val bitmap = android.graphics.BitmapFactory.decodeFile(file.absolutePath) ?: return null
-      androidx.compose.ui.graphics.asImageBitmap(bitmap)
+      val base64Str = java.util.Base64.getEncoder().encodeToString(file.readBytes())
+      base64ToBitmap(base64Str)
     } else null
   } catch (_: Exception) {
     null
