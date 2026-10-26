@@ -65,4 +65,89 @@ object StorySyncManager {
         // 3. Фильтруем получателей по аудитории
         val directChats = chatModel.chats.value.filter {
           val ci = it.chatInfo
-          if (ci !is ChatInfo.Direct || !ci
+          if (ci !is ChatInfo.Direct || !ci.contact.active || !ci.contact.ready) return@filter false
+          when (item.audience) {
+            TemporaryAudience.VERIFIED_USERS -> ci.contact.verified
+            TemporaryAudience.CONTACTS, TemporaryAudience.ALL_USERS -> true
+          }
+        }
+
+        // 4. Отправляем скрытый дескриптор через SMP
+        directChats.forEach { chat ->
+          sendHiddenServiceMessage(chat.remoteHostId, chat.chatInfo, encodedMsg)
+        }
+      } catch (e: Exception) {
+        Log.e(TAG, "Error in publishAndBroadcastStory: ${e.message}")
+      }
+    }
+  }
+
+  /**
+   * Приём входящего служебного сообщения
+   */
+  fun handleIncomingMessage(
+    remoteHostId: Long?,
+    chatId: String,
+    senderContactId: Long?,
+    senderDisplayName: String?,
+    text: String
+  ): Boolean {
+    when {
+      text.startsWith(STORY_PUSH_PREFIX) -> {
+        if (senderContactId == null) return true
+        scope.launch {
+          try {
+            val rawJson = text.removePrefix(STORY_PUSH_PREFIX)
+            val desc = json.decodeFromString<StoryXftpDescriptor>(rawJson)
+
+            // 1. Сразу сохраняем миниатюру превью (если передана)
+            val thumbBytes = desc.thumbBase64?.let { Base64.getDecoder().decode(it) }
+
+            // 2. Скачиваем и расшифровываем полный файл с XFTP в фоне
+            val decryptedFileBytes = XftpStoryUploader.downloadAndDecryptStory(
+              downloadUrl = desc.downloadUrl,
+              keyBase64 = desc.encryptionKey,
+              ivBase64 = desc.iv
+            )
+
+            if (decryptedFileBytes != null) {
+              val mediaType = TemporaryMediaType.valueOf(desc.mediaType)
+              TemporaryContentManager.receiveContactTemporaryContent(
+                contactId = senderContactId,
+                displayName = senderDisplayName ?: "Contact",
+                bytes = decryptedFileBytes,
+                mediaType = mediaType,
+                durationHours = desc.durationHours,
+                caption = desc.caption,
+                createdAtMillis = desc.createdAtMillis
+              )
+            }
+          } catch (e: Exception) {
+            Log.e(TAG, "Error processing incoming XFTP story: ${e.message}")
+          }
+        }
+        return true
+      }
+      text == STORY_REQ_PREFIX -> {
+        // Ответ на запрос историй активными дескрипторами
+        return true
+      }
+      else -> return false
+    }
+  }
+
+  private fun sendHiddenServiceMessage(rhId: Long?, chatInfo: ChatInfo, text: String) {
+    withBGApi {
+      try {
+        // Вызов отправки сообщения через контроллер SimpleX
+        chatModel.controller.sendMessage(
+          rhId,
+          chatInfo,
+          text,
+          quoteItemId = null,
+          timedMessagesTTL = null
+        )
+      } catch (_: Exception) {}
+    }
+  }
+}
