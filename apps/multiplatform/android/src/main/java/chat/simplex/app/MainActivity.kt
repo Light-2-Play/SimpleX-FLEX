@@ -251,7 +251,9 @@ class MainActivity: FragmentActivity() {
           androidx.compose.ui.viewinterop.AndroidView(
             factory = { ctx ->
               VideoView(ctx).apply {
-                setVideoPath(filePath)
+                // Обязательно для отображения видео поверх Compose Dialog:
+                setZOrderMediaOverlay(true)
+                setVideoURI(Uri.fromFile(File(filePath)))
                 setOnPreparedListener { mp ->
                   mp.isLooping = true
                   start()
