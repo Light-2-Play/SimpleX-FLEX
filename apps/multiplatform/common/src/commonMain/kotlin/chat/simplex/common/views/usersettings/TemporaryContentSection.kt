@@ -837,6 +837,9 @@ fun TemporaryContentStoryViewer(
 // =====================================================================
 // 5. ГЛАВНЫЙ ЭКРАН ВСЕХ ИСТОРИЙ (ДЛЯ СПИСКА ЧАТОВ)
 // =====================================================================
+// =====================================================================
+// 5. ГЛАВНЫЙ ЭКРАН ВСЕХ ИСТОРИЙ (ДЛЯ СПИСКА ЧАТОВ)
+// =====================================================================
 @Composable
 fun AllStoriesFeedView(close: () -> Unit) {
   val items by TemporaryContentManager.items.collectAsState()
@@ -844,14 +847,13 @@ fun AllStoriesFeedView(close: () -> Unit) {
   var nowMillis by remember { mutableStateOf(System.currentTimeMillis()) }
   var viewingStories by remember { mutableStateOf<List<TemporaryContentItem>?>(null) }
 
-  // Опрашиваем всех контактов при открытии раздела
- LaunchedEffect(Unit) {
+  LaunchedEffect(Unit) {
     while (true) {
       delay(15_000L)
       nowMillis = System.currentTimeMillis()
     }
   }
- 
+
   val myStories = items.filter { it.authorContactId == null }.sortedBy { it.createdAtMillis }
   val contactStories = items.filter { it.authorContactId != null }
     .groupBy { it.authorContactId }
@@ -864,7 +866,7 @@ fun AllStoriesFeedView(close: () -> Unit) {
     ColumnWithScrollBar {
       AppBarTitle("Temporary Content")
 
-      // 1. Блок добавления и просмотра своих историй
+      // 1. Блок своего контента
       Surface(
         shape = RoundedCornerShape(24.dp),
         color = primary.copy(alpha = 0.05f),
@@ -925,27 +927,40 @@ fun AllStoriesFeedView(close: () -> Unit) {
         color = MaterialTheme.colors.onSurface.copy(alpha = 0.08f)
       )
 
-      // 2. Блок входящих историй от контактов
+      // 2. Блок RECENT UPDATES (отображается ВСЕГДА)
+      Text(
+        text = "RECENT UPDATES",
+        fontSize = 12.sp,
+        fontWeight = FontWeight.Bold,
+        letterSpacing = 1.sp,
+        color = primary,
+        modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp)
+      )
+
       if (contactStories.isEmpty()) {
-        Box(modifier = Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) {
-          Text(
-            text = "No updates from contacts yet.",
-            color = MaterialTheme.colors.secondary,
-            fontSize = 14.sp
-          )
+        Surface(
+          shape = RoundedCornerShape(20.dp),
+          color = primary.copy(alpha = 0.04f),
+          modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 6.dp)
+        ) {
+          Box(
+            modifier = Modifier
+              .fillMaxWidth()
+              .padding(24.dp),
+            contentAlignment = Alignment.Center
+          ) {
+            Text(
+              text = "No updates from contacts yet",
+              color = MaterialTheme.colors.secondary,
+              fontSize = 14.sp
+            )
+          }
         }
       } else {
-        Text(
-          text = "RECENT UPDATES",
-          fontSize = 12.sp,
-          fontWeight = FontWeight.Bold,
-          letterSpacing = 1.sp,
-          color = primary,
-          modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp)
-        )
-
         contactStories.forEach { userStories ->
-          val authorName = userStories.first().authorDisplayName ?: "Unknown Contact"
+          val authorName = userStories.first().authorDisplayName ?: "Contact"
           Row(
             modifier = Modifier
               .fillMaxWidth()
@@ -978,7 +993,7 @@ fun AllStoriesFeedView(close: () -> Unit) {
                 color = MaterialTheme.colors.onSurface
               )
               Text(
-                text = "${userStories.size} new • expires in ${userStories.first().remainingTimeText(nowMillis)}",
+                text = "${userStories.size} active • expires in ${userStories.first().remainingTimeText(nowMillis)}",
                 fontSize = 13.sp,
                 color = MaterialTheme.colors.onSurface.copy(alpha = 0.65f)
               )
@@ -986,6 +1001,7 @@ fun AllStoriesFeedView(close: () -> Unit) {
           }
         }
       }
+
       Spacer(Modifier.navigationBarsPadding().height(24.dp))
     }
   }
