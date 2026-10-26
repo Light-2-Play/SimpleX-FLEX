@@ -181,11 +181,11 @@ object StorySyncManager {
           sign = false,
           composedMessages = listOf(
             ComposedMessage(
-              file = null,
-              quoted = null,
-              mc = MsgContent.MCText(text),
-              mentions = emptyMap()
-            )
+  fileSource = null,
+  quotedItemId = null,
+  msgContent = MsgContent.MCText(text),
+  mentions = emptyMap()
+)
           )
         )
       } catch (e: Exception) {
