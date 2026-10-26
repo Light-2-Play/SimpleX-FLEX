@@ -27,7 +27,7 @@ object StorySyncManager {
   private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
   /**
-   * Рассылка созданной истории контактам с учётом выбранной аудитории (Verified / Contacts / All)
+   * Рассылка созданной истории контактам с учётом аудитории (Verified / Contacts / All)
    */
   fun broadcastStory(bytes: ByteArray, item: TemporaryContentItem) {
     scope.launch {
@@ -51,17 +51,14 @@ object StorySyncManager {
           }
         }
 
+        // TODO: подключим точный метод отправки после проверки ChatController.kt
+        /*
         directChats.forEach { chat ->
           withBGApi {
-            chatModel.controller.apiSendTextMessage(
-              chat.remoteHostId,
-              chat.chatInfo.chatType,
-              chat.chatInfo.apiId,
-              null,
-              encodedMsg
-            )
+            // chatModel.controller.apiSendMsg(...)
           }
         }
+        */
       } catch (e: Exception) {
         Log.e(TAG, "Error broadcasting story: ${e.message}")
       }
@@ -77,15 +74,12 @@ object StorySyncManager {
         (it.chatInfo as? ChatInfo.Direct)?.contact?.contactId == contactId
       } ?: return@launch
 
+      // TODO: подключим точный метод отправки после проверки ChatController.kt
+      /*
       withBGApi {
-        chatModel.controller.apiSendTextMessage(
-          targetChat.remoteHostId,
-          targetChat.chatInfo.chatType,
-          targetChat.chatInfo.apiId,
-          null,
-          STORY_REQ_PREFIX
-        )
+        // chatModel.controller.apiSendMsg(...)
       }
+      */
     }
   }
 
@@ -120,15 +114,13 @@ object StorySyncManager {
             base64Data = Base64.getEncoder().encodeToString(bytes)
           )
           val encodedMsg = STORY_PUSH_PREFIX + json.encodeToString(payload)
+
+          // TODO: подключим точный метод отправки после проверки ChatController.kt
+          /*
           withBGApi {
-            chatModel.controller.apiSendTextMessage(
-              remoteHostId,
-              targetChat.chatInfo.chatType,
-              targetChat.chatInfo.apiId,
-              null,
-              encodedMsg
-            )
+            // chatModel.controller.apiSendMsg(...)
           }
+          */
         } catch (_: Exception) {}
       }
     }
