@@ -1,5 +1,7 @@
 package chat.simplex.common.views.usersettings
 
+import SectionBottomSpacer
+import SectionDividerSpaced
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.*
@@ -874,8 +876,10 @@ fun AllStoriesFeedView(close: () -> Unit) {
         }
       }
 
-      SectionDividerSpaced()
-
+     Divider(
+  modifier = Modifier.padding(vertical = 12.dp),
+  color = MaterialTheme.colors.onSurface.copy(alpha = 0.08f)
+)
       // 2. Блок чужих историй
       if (contactStories.isEmpty()) {
         Box(modifier = Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) {
@@ -937,7 +941,7 @@ fun AllStoriesFeedView(close: () -> Unit) {
           }
         }
       }
-      SectionBottomSpacer()
+     Spacer(Modifier.navigationBarsPadding().height(24.dp))
     }
   }
 
