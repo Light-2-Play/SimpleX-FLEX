@@ -2,7 +2,7 @@ package chat.simplex.common.platform
 
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import java.io.File
+import java.io.*
 import java.net.HttpURLConnection
 import java.net.URL
 import java.security.SecureRandom
@@ -19,40 +19,75 @@ data class EncryptedUploadResult(
 )
 
 object XftpStoryUploader {
-  private const val DEFAULT_XFTP_SERVER = "https://xftp.simplex.im/files"
+  // Публичный сервис временного размещения с авто-удалением через 24 часа
+  private const val UPLOAD_API = "https://litterbox.catbox.moe/resources/internals/api.php"
 
-  suspend fun uploadEncryptedStory(file: File): EncryptedUploadResult? = withContext(Dispatchers.IO) {
+  suspend fun uploadEncryptedStory(file: File, durationHours: Int): EncryptedUploadResult? = withContext(Dispatchers.IO) {
     try {
       val rawBytes = file.readBytes()
+
+      // 1. Генерация ключа AES-256 и IV (96 бит)
       val keyBytes = ByteArray(32).also { SecureRandom().nextBytes(it) }
       val iv = ByteArray(12).also { SecureRandom().nextBytes(it) }
 
+      // 2. Шифрование файла на устройстве
       val cipher = Cipher.getInstance("AES/GCM/NoPadding")
-      val keySpec = SecretKeySpec(keyBytes, "AES")
-      val gcmSpec = GCMParameterSpec(128, iv)
-      cipher.init(Cipher.ENCRYPT_MODE, keySpec, gcmSpec)
+      cipher.init(Cipher.ENCRYPT_MODE, SecretKeySpec(keyBytes, "AES"), GCMParameterSpec(128, iv))
       val encryptedBytes = cipher.doFinal(rawBytes)
 
-      val uploadId = UUID.randomUUID().toString()
-      val targetUrl = "$DEFAULT_XFTP_SERVER/$uploadId"
-      val url = URL(targetUrl)
-
-      val conn = (url.openConnection() as HttpURLConnection).apply {
+      // 3. Загрузка зашифрованного шума через Multipart POST
+      val boundary = "===StoryBoundary${System.currentTimeMillis()}==="
+      val conn = (URL(UPLOAD_API).openConnection() as HttpURLConnection).apply {
         requestMethod = "POST"
         doOutput = true
-        setRequestProperty("Content-Type", "application/octet-stream")
-        connectTimeout = 15_000
-        readTimeout = 30_000
+        setRequestProperty("Content-Type", "multipart/form-data; boundary=$boundary")
+        setRequestProperty("User-Agent", "SimpleX-Stories/1.0")
+        connectTimeout = 30_000
+        readTimeout = 60_000
       }
 
-      conn.outputStream.use { it.write(encryptedBytes) }
+      val timeParam = when {
+        durationHours <= 1 -> "1h"
+        durationHours <= 12 -> "12h"
+        else -> "24h"
+      }
+
+      conn.outputStream.use { os ->
+        val writer = PrintWriter(OutputStreamWriter(os, "UTF-8"), true)
+
+        // reqtype = fileupload
+        writer.append("--$boundary\r\n")
+        writer.append("Content-Disposition: form-data; name=\"reqtype\"\r\n\r\n")
+        writer.append("fileupload\r\n")
+
+        // time = 1h / 12h / 24h
+        writer.append("--$boundary\r\n")
+        writer.append("Content-Disposition: form-data; name=\"time\"\r\n\r\n")
+        writer.append("$timeParam\r\n")
+
+        // fileToUpload
+        val fileId = UUID.randomUUID().toString()
+        writer.append("--$boundary\r\n")
+        writer.append("Content-Disposition: form-data; name=\"fileToUpload\"; filename=\"encrypted_$fileId.bin\"\r\n")
+        writer.append("Content-Type: application/octet-stream\r\n\r\n")
+        writer.flush()
+
+        os.write(encryptedBytes)
+        os.flush()
+
+        writer.append("\r\n--$boundary--\r\n")
+        writer.flush()
+      }
 
       if (conn.responseCode in 200..299) {
-        EncryptedUploadResult(
-          downloadUrl = targetUrl,
-          keyBase64 = Base64.getEncoder().encodeToString(keyBytes),
-          ivBase64 = Base64.getEncoder().encodeToString(iv)
-        )
+        val resultUrl = conn.inputStream.bufferedReader().use { it.readText().trim() }
+        if (resultUrl.startsWith("http")) {
+          EncryptedUploadResult(
+            downloadUrl = resultUrl,
+            keyBase64 = Base64.getEncoder().encodeToString(keyBytes),
+            ivBase64 = Base64.getEncoder().encodeToString(iv)
+          )
+        } else null
       } else null
     } catch (e: Exception) {
       Log.e("XftpUploader", "Upload failed: ${e.message}")
@@ -66,11 +101,11 @@ object XftpStoryUploader {
     ivBase64: String
   ): ByteArray? = withContext(Dispatchers.IO) {
     try {
-      val url = URL(downloadUrl)
-      val conn = (url.openConnection() as HttpURLConnection).apply {
+      val conn = (URL(downloadUrl).openConnection() as HttpURLConnection).apply {
         requestMethod = "GET"
-        connectTimeout = 15_000
-        readTimeout = 30_000
+        setRequestProperty("User-Agent", "SimpleX-Stories/1.0")
+        connectTimeout = 20_000
+        readTimeout = 60_000
       }
 
       val encryptedBytes = conn.inputStream.use { it.readBytes() }
@@ -78,10 +113,7 @@ object XftpStoryUploader {
       val iv = Base64.getDecoder().decode(ivBase64)
 
       val cipher = Cipher.getInstance("AES/GCM/NoPadding")
-      val keySpec = SecretKeySpec(keyBytes, "AES")
-      val gcmSpec = GCMParameterSpec(128, iv)
-      cipher.init(Cipher.DECRYPT_MODE, keySpec, gcmSpec)
-
+      cipher.init(Cipher.DECRYPT_MODE, SecretKeySpec(keyBytes, "AES"), GCMParameterSpec(128, iv))
       cipher.doFinal(encryptedBytes)
     } catch (e: Exception) {
       Log.e("XftpUploader", "Download/Decrypt failed: ${e.message}")
