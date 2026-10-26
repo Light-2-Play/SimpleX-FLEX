@@ -788,6 +788,178 @@ fun TemporaryContentStoryViewer(
   }
 }
 
+// =====================================================================
+// 5. ГЛАВНЫЙ ЭКРАН ВСЕХ ИСТОРИЙ (ДЛЯ СПИСКА ЧАТОВ)
+// =====================================================================
+@Composable
+fun AllStoriesFeedView(close: () -> Unit) {
+  val items by TemporaryContentManager.items.collectAsState()
+  var showAddDialog by remember { mutableStateOf(false) }
+  var nowMillis by remember { mutableStateOf(System.currentTimeMillis()) }
+  var viewingStories by remember { mutableStateOf<List<TemporaryContentItem>?>(null) }
+
+  LaunchedEffect(Unit) {
+    while (true) {
+      delay(15_000L)
+      nowMillis = System.currentTimeMillis()
+    }
+  }
+
+  // Группируем истории: null = свои, остальные = контакты
+  val myStories = items.filter { it.authorContactId == null }.sortedBy { it.createdAtMillis }
+  val contactStories = items.filter { it.authorContactId != null }
+    .groupBy { it.authorContactId }
+    .values.map { list -> list.sortedBy { it.createdAtMillis } }
+    .sortedByDescending { it.last().createdAtMillis }
+
+  val primary = MaterialTheme.colors.primary
+
+  ModalView(close = close, cardScreen = true) {
+    ColumnWithScrollBar {
+      AppBarTitle("Temporary Content")
+
+      // 1. Блок добавления и просмотра своих историй
+      Surface(
+        shape = RoundedCornerShape(24.dp),
+        color = primary.copy(alpha = 0.05f),
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)
+      ) {
+        Row(
+          modifier = Modifier.clickable {
+            if (myStories.isNotEmpty()) {
+              viewingStories = myStories
+            } else {
+              showAddDialog = true
+            }
+          }.padding(16.dp),
+          verticalAlignment = Alignment.CenterVertically
+        ) {
+          Box(
+            modifier = Modifier
+              .size(56.dp)
+              .clip(CircleShape)
+              .background(if (myStories.isNotEmpty()) primary else primary.copy(alpha = 0.15f))
+              .border(2.dp, primary.copy(alpha = 0.3f), CircleShape),
+            contentAlignment = Alignment.Center
+          ) {
+            Icon(
+              painter = painterResource(if (myStories.isNotEmpty()) MR.images.ic_play_arrow_filled else MR.images.ic_add),
+              contentDescription = null,
+              tint = if (myStories.isNotEmpty()) Color.White else primary,
+              modifier = Modifier.size(24.dp)
+            )
+          }
+          Spacer(Modifier.width(16.dp))
+          Column(modifier = Modifier.weight(1f)) {
+            Text(
+              text = "My Content",
+              fontSize = 17.sp,
+              fontWeight = FontWeight.Bold,
+              color = MaterialTheme.colors.onSurface
+            )
+            Text(
+              text = if (myStories.isNotEmpty()) "${myStories.size} active • Tap to view" else "Tap to add photo or video",
+              fontSize = 13.sp,
+              color = MaterialTheme.colors.onSurface.copy(alpha = 0.65f)
+            )
+          }
+          if (myStories.isNotEmpty()) {
+            IconButton(
+              onClick = { showAddDialog = true },
+              modifier = Modifier.background(primary.copy(alpha = 0.1f), CircleShape)
+            ) {
+              Icon(painterResource(MR.images.ic_add), null, tint = primary)
+            }
+          }
+        }
+      }
+
+      SectionDividerSpaced()
+
+      // 2. Блок чужих историй
+      if (contactStories.isEmpty()) {
+        Box(modifier = Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) {
+          Text(
+            text = "No updates from contacts yet.",
+            color = MaterialTheme.colors.secondary,
+            fontSize = 14.sp
+          )
+        }
+      } else {
+        Text(
+          text = "RECENT UPDATES",
+          fontSize = 12.sp,
+          fontWeight = FontWeight.Bold,
+          letterSpacing = 1.sp,
+          color = primary,
+          modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp)
+        )
+        
+        contactStories.forEach { userStories ->
+          val authorName = userStories.first().authorDisplayName ?: "Unknown Contact"
+          Row(
+            modifier = Modifier
+              .fillMaxWidth()
+              .clickable { viewingStories = userStories }
+              .padding(horizontal = 16.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically
+          ) {
+            Box(
+              modifier = Modifier
+                .size(56.dp)
+                .clip(CircleShape)
+                .border(2.5.dp, Brush.linearGradient(listOf(primary, Color(0xFFFF6D00))), CircleShape)
+                .padding(4.dp)
+                .background(Color(0xFF1E1E24), CircleShape),
+              contentAlignment = Alignment.Center
+            ) {
+              Icon(
+                painter = painterResource(MR.images.ic_person),
+                contentDescription = null,
+                tint = Color.White.copy(alpha = 0.7f),
+                modifier = Modifier.size(28.dp)
+              )
+            }
+            Spacer(Modifier.width(16.dp))
+            Column(modifier = Modifier.weight(1f)) {
+              Text(
+                text = authorName,
+                fontSize = 17.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colors.onSurface
+              )
+              Text(
+                text = "${userStories.size} new • expires in ${userStories.first().remainingTimeText(nowMillis)}",
+                fontSize = 13.sp,
+                color = MaterialTheme.colors.onSurface.copy(alpha = 0.65f)
+              )
+            }
+          }
+        }
+      }
+      SectionBottomSpacer()
+    }
+  }
+
+  if (showAddDialog) {
+    AddTemporaryContentDialog(
+      onDismiss = { showAddDialog = false },
+      onPublished = {
+        showAddDialog = false
+        nowMillis = System.currentTimeMillis()
+      }
+    )
+  }
+
+  viewingStories?.let { storiesToView ->
+    TemporaryContentStoryViewer(
+      items = storiesToView,
+      initialIndex = 0,
+      onDismiss = { viewingStories = null }
+    )
+  }
+}
+
 private fun loadStoryBitmapSafe(filePath: String, mediaType: TemporaryMediaType): ImageBitmap? {
   return try {
     val file = if (mediaType == TemporaryMediaType.VIDEO) {
