@@ -27,42 +27,8 @@ object StorySyncManager {
   private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
   /**
-   * Подготовка и сохранение входящей истории
+   * Рассылка созданной истории контактам с учётом выбранной аудитории (Verified / Contacts / All)
    */
-  fun receiveStoryPayload(
-    senderContactId: Long,
-    senderDisplayName: String,
-    rawJson: String
-  ) {
-    scope.launch {
-      try {
-        val payload = json.decodeFromString<StorySyncPayload>(rawJson)
-        val bytes = Base64.getDecoder().decode(payload.base64Data)
-        val mediaType = TemporaryMediaType.valueOf(payload.mediaType)
-
-        TemporaryContentManager.receiveContactTemporaryContent(
-          contactId = senderContactId,
-          displayName = senderDisplayName,
-          bytes = bytes,
-          mediaType = mediaType,
-          durationHours = payload.durationHours,
-          caption = payload.caption,
-          createdAtMillis = payload.createdAtMillis
-        )
-      } catch (e: Exception) {
-        Log.e("StorySync", "Error parsing story payload: ${e.message}")
-      }
-    }
-  }
-
-  /**
-   * Запрос историй контакта при открытии профиля
-   */
-  fun requestContactStories(contactId: Long) {
-    // Триггер фонового обновления историй контакта
-    TemporaryContentManager.purgeExpired()
-  }
-
   fun broadcastStory(bytes: ByteArray, item: TemporaryContentItem) {
     scope.launch {
       try {
@@ -76,30 +42,135 @@ object StorySyncManager {
         )
         val encodedMsg = STORY_PUSH_PREFIX + json.encodeToString(payload)
 
-        // Фильтрация контактов по выбранной аудитории (Verified Users / Contacts / All Users)
         val directChats = chatModel.chats.value.filter {
           val ci = it.chatInfo
           if (ci !is ChatInfo.Direct || !ci.contact.active || !ci.contact.ready) return@filter false
           when (item.audience) {
             TemporaryAudience.VERIFIED_USERS -> ci.contact.verified
-            TemporaryAudience.CONTACTS -> true
-            TemporaryAudience.ALL_USERS -> true
+            TemporaryAudience.CONTACTS, TemporaryAudience.ALL_USERS -> true
           }
         }
 
         directChats.forEach { chat ->
           withBGApi {
-            chatModel.controller.apiSendTextMessage(
+            chatModel.controller.sendMessage(
               chat.remoteHostId,
-              chat.chatInfo.chatType,
-              chat.chatInfo.apiId,
-              null,
-              encodedMsg
+              chat.chatInfo,
+              encodedMsg,
+              quoteItemId = null,
+              timedMessagesTTL = null
             )
           }
         }
       } catch (e: Exception) {
-        Log.e("StorySync", "Error broadcasting story: ${e.message}")
+        Log.e(TAG, "Error broadcasting story: ${e.message}")
       }
     }
   }
+
+  /**
+   * Автоматический тихий запрос историй при входе в профиль контакта
+   */
+  fun requestContactStories(contactId: Long) {
+    scope.launch {
+      val targetChat = chatModel.chats.value.firstOrNull {
+        (it.chatInfo as? ChatInfo.Direct)?.contact?.contactId == contactId
+      } ?: return@launch
+
+      withBGApi {
+        chatModel.controller.sendMessage(
+          targetChat.remoteHostId,
+          targetChat.chatInfo,
+          STORY_REQ_PREFIX,
+          quoteItemId = null,
+          timedMessagesTTL = null
+        )
+      }
+    }
+  }
+
+  /**
+   * Ответ собеседнику на его запрос историй
+   */
+  fun respondToStoryRequest(remoteHostId: Long?, chatId: String) {
+    scope.launch {
+      val targetChat = chatModel.chats.value.firstOrNull { it.id == chatId } ?: return@launch
+      val myStories = TemporaryContentManager.getActiveItemsFor(null)
+      if (myStories.isEmpty()) return@launch
+
+      val contact = (targetChat.chatInfo as? ChatInfo.Direct)?.contact
+
+      myStories.forEach { story ->
+        val canSend = when (story.audience) {
+          TemporaryAudience.VERIFIED_USERS -> contact?.verified == true
+          TemporaryAudience.CONTACTS, TemporaryAudience.ALL_USERS -> true
+        }
+        if (!canSend) return@forEach
+
+        try {
+          val file = File(story.filePath)
+          if (!file.exists()) return@forEach
+          val bytes = file.readBytes()
+          val payload = StorySyncPayload(
+            id = story.id,
+            mediaType = story.mediaType.name,
+            durationHours = story.durationHours,
+            caption = story.caption,
+            createdAtMillis = story.createdAtMillis,
+            base64Data = Base64.getEncoder().encodeToString(bytes)
+          )
+          val encodedMsg = STORY_PUSH_PREFIX + json.encodeToString(payload)
+          withBGApi {
+            chatModel.controller.sendMessage(
+              remoteHostId,
+              targetChat.chatInfo,
+              encodedMsg,
+              quoteItemId = null,
+              timedMessagesTTL = null
+            )
+          }
+        } catch (_: Exception) {}
+      }
+    }
+  }
+
+  fun handleIncomingMessage(
+    remoteHostId: Long?,
+    chatId: String,
+    senderContactId: Long?,
+    senderDisplayName: String?,
+    text: String
+  ): Boolean {
+    when {
+      text.startsWith(STORY_PUSH_PREFIX) -> {
+        if (senderContactId == null) return true
+        scope.launch {
+          try {
+            val rawJson = text.removePrefix(STORY_PUSH_PREFIX)
+            val payload = json.decodeFromString<StorySyncPayload>(rawJson)
+            val bytes = Base64.getDecoder().decode(payload.base64Data)
+            val mediaType = TemporaryMediaType.valueOf(payload.mediaType)
+
+            TemporaryContentManager.receiveContactTemporaryContent(
+              contactId = senderContactId,
+              displayName = senderDisplayName ?: "Contact",
+              bytes = bytes,
+              mediaType = mediaType,
+              durationHours = payload.durationHours,
+              caption = payload.caption,
+              createdAtMillis = payload.createdAtMillis
+            )
+          } catch (e: Exception) {
+            Log.e(TAG, "receive story error: ${e.message}")
+          }
+        }
+        return true
+      }
+      text == STORY_REQ_PREFIX -> {
+        respondToStoryRequest(remoteHostId, chatId)
+        return true
+      }
+      else -> return false
+    }
+  }
+}
