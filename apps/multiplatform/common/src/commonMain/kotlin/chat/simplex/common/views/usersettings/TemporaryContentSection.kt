@@ -575,11 +575,12 @@ private fun AddTemporaryContentDialog(
             Text("Cancel", color = primary, fontWeight = FontWeight.SemiBold)
           }
           Spacer(Modifier.width(8.dp))
-       Button(
+      Button(
             onClick = {
               val rawBytes = selectedBytes ?: return@Button
               RichHaptics.perform(HapticPattern.SUCCESS)
 
+              // 1. Локальное сохранение
               val newItem = TemporaryContentManager.addContentFromBytes(
                 bytes = rawBytes,
                 mediaType = selectedMediaType,
@@ -588,15 +589,12 @@ private fun AddTemporaryContentDialog(
                 audience = selectedAudience
               )
 
+              // 2. Отправка в сеть через защищенный загрузчик
               if (newItem != null) {
                 val mediaFile = File(newItem.filePath)
-                val thumbFile = File("${newItem.filePath}_thumb.jpg")
-                val thumbBytes = if (thumbFile.exists()) thumbFile.readBytes() else null
-
                 StorySyncManager.publishAndBroadcastStory(
                   file = mediaFile,
-                  item = newItem,
-                  thumbBytes = thumbBytes
+                  item = newItem
                 )
               }
 
