@@ -53,12 +53,12 @@ object StorySyncManager {
 
         directChats.forEach { chat ->
           withBGApi {
-            chatModel.controller.sendMessage(
+            chatModel.controller.apiSendTextMessage(
               chat.remoteHostId,
-              chat.chatInfo,
-              encodedMsg,
-              quoteItemId = null,
-              timedMessagesTTL = null
+              chat.chatInfo.chatType,
+              chat.chatInfo.apiId,
+              null,
+              encodedMsg
             )
           }
         }
@@ -69,7 +69,7 @@ object StorySyncManager {
   }
 
   /**
-   * Автоматический тихий запрос историй при входе в профиль контакта
+   * Запрос историй контакта при открытии профиля
    */
   fun requestContactStories(contactId: Long) {
     scope.launch {
@@ -78,12 +78,12 @@ object StorySyncManager {
       } ?: return@launch
 
       withBGApi {
-        chatModel.controller.sendMessage(
+        chatModel.controller.apiSendTextMessage(
           targetChat.remoteHostId,
-          targetChat.chatInfo,
-          STORY_REQ_PREFIX,
-          quoteItemId = null,
-          timedMessagesTTL = null
+          targetChat.chatInfo.chatType,
+          targetChat.chatInfo.apiId,
+          null,
+          STORY_REQ_PREFIX
         )
       }
     }
@@ -121,12 +121,12 @@ object StorySyncManager {
           )
           val encodedMsg = STORY_PUSH_PREFIX + json.encodeToString(payload)
           withBGApi {
-            chatModel.controller.sendMessage(
+            chatModel.controller.apiSendTextMessage(
               remoteHostId,
-              targetChat.chatInfo,
-              encodedMsg,
-              quoteItemId = null,
-              timedMessagesTTL = null
+              targetChat.chatInfo.chatType,
+              targetChat.chatInfo.apiId,
+              null,
+              encodedMsg
             )
           }
         } catch (_: Exception) {}
