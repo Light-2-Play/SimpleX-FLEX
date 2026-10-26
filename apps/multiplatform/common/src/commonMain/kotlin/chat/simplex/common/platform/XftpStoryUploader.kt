@@ -2,9 +2,6 @@ package chat.simplex.common.platform
 
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.jsonPrimitive
 import java.io.*
 import java.net.HttpURLConnection
 import java.net.URL
@@ -32,7 +29,6 @@ object XftpStoryUploader {
       onProgress(5)
       val rawBytes = file.readBytes()
 
-      // 1. Локальное шифрование AES-256-GCM
       val keyBytes = ByteArray(32).also { SecureRandom().nextBytes(it) }
       val iv = ByteArray(12).also { SecureRandom().nextBytes(it) }
 
@@ -41,11 +37,7 @@ object XftpStoryUploader {
       val encryptedBytes = cipher.doFinal(rawBytes)
       onProgress(15)
 
-      // 2. Выгрузка зашифрованного шума
-      val uploadedUrl = uploadTo0x0(encryptedBytes) { pct ->
-        val mapped = 15 + ((pct * 75) / 100)
-        onProgress(mapped.coerceIn(15, 90))
-      } ?: uploadToTmpFiles(encryptedBytes) { pct ->
+      val uploadedUrl = uploadToUguu(encryptedBytes) { pct ->
         val mapped = 15 + ((pct * 75) / 100)
         onProgress(mapped.coerceIn(15, 90))
       }
@@ -66,15 +58,15 @@ object XftpStoryUploader {
     }
   }
 
-  private fun uploadTo0x0(data: ByteArray, onChunkProgress: (Int) -> Unit): String? {
+  private fun uploadToUguu(data: ByteArray, onChunkProgress: (Int) -> Unit): String? {
     return try {
-      val boundary = "===Story0x0${System.currentTimeMillis()}==="
-      val conn = (URL("https://0x0.st").openConnection() as HttpURLConnection).apply {
+      val boundary = "===UguuStory${System.currentTimeMillis()}==="
+      val conn = (URL("https://uguu.se/upload.php").openConnection() as HttpURLConnection).apply {
         requestMethod = "POST"
         doOutput = true
         setRequestProperty("Content-Type", "multipart/form-data; boundary=$boundary")
-        setRequestProperty("User-Agent", "curl/7.88.1")
-        connectTimeout = 25_000
+        setRequestProperty("User-Agent", "Mozilla/5.0 (Android 14; Mobile)")
+        connectTimeout = 30_000
         readTimeout = 60_000
       }
 
@@ -83,53 +75,7 @@ object XftpStoryUploader {
         val fileId = UUID.randomUUID().toString()
 
         writer.append("--$boundary\r\n")
-        writer.append("Content-Disposition: form-data; name=\"file\"; filename=\"story_$fileId.bin\"\r\n")
-        writer.append("Content-Type: application/octet-stream\r\n\r\n")
-        writer.flush()
-
-        var offset = 0
-        val total = data.size
-        val chunkSize = 16384
-
-        while (offset < total) {
-          val len = minOf(chunkSize, total - offset)
-          os.write(data, offset, len)
-          offset += len
-          onChunkProgress((offset * 100L / total).toInt())
-        }
-        os.flush()
-
-        writer.append("\r\n--$boundary--\r\n")
-        writer.flush()
-      }
-
-      if (conn.responseCode in 200..299) {
-        val resultUrl = conn.inputStream.bufferedReader().use { it.readText().trim() }
-        if (resultUrl.startsWith("http")) resultUrl else null
-      } else null
-    } catch (_: Exception) {
-      null
-    }
-  }
-
-  private fun uploadToTmpFiles(data: ByteArray, onChunkProgress: (Int) -> Unit): String? {
-    return try {
-      val boundary = "===StoryTmp${System.currentTimeMillis()}==="
-      val conn = (URL("https://tmpfiles.org/api/v1/upload").openConnection() as HttpURLConnection).apply {
-        requestMethod = "POST"
-        doOutput = true
-        setRequestProperty("Content-Type", "multipart/form-data; boundary=$boundary")
-        setRequestProperty("User-Agent", "SimpleX-FLEX/1.0")
-        connectTimeout = 25_000
-        readTimeout = 60_000
-      }
-
-      conn.outputStream.use { os ->
-        val writer = PrintWriter(OutputStreamWriter(os, "UTF-8"), true)
-        val fileId = UUID.randomUUID().toString()
-
-        writer.append("--$boundary\r\n")
-        writer.append("Content-Disposition: form-data; name=\"file\"; filename=\"story_$fileId.bin\"\r\n")
+        writer.append("Content-Disposition: form-data; name=\"files[]\"; filename=\"enc_$fileId.bin\"\r\n")
         writer.append("Content-Type: application/octet-stream\r\n\r\n")
         writer.flush()
 
@@ -151,9 +97,13 @@ object XftpStoryUploader {
 
       if (conn.responseCode in 200..299) {
         val response = conn.inputStream.bufferedReader().use { it.readText() }
-        val json = Json.parseToJsonElement(response).jsonObject
-        val rawUrl = json["data"]?.jsonObject?.get("url")?.jsonPrimitive?.content
-        rawUrl?.replace("tmpfiles.org/", "tmpfiles.org/dl/")
+        // Uguu возвращает прямой URL или JSON с полем url
+        val url = if (response.contains("\"url\":")) {
+          response.substringAfter("\"url\":\"").substringBefore("\"").replace("\\/", "/")
+        } else {
+          response.trim()
+        }
+        if (url.startsWith("http")) url else null
       } else null
     } catch (_: Exception) {
       null
@@ -186,7 +136,7 @@ object XftpStoryUploader {
     while (redirectCount < 6) {
       val conn = (URL(currentUrl).openConnection() as HttpURLConnection).apply {
         requestMethod = "GET"
-        setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 14)")
+        setRequestProperty("User-Agent", "Mozilla/5.0 (Android 14; Mobile)")
         connectTimeout = 25_000
         readTimeout = 60_000
         instanceFollowRedirects = false
