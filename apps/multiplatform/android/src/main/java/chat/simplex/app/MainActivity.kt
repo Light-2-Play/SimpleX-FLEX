@@ -40,6 +40,7 @@ import chat.simplex.common.views.helpers.*
 import chat.simplex.common.views.onboarding.*
 import chat.simplex.common.platform.*
 import chat.simplex.res.MR
+import java.io.File
 import java.lang.ref.WeakReference
 import chat.simplex.app.SingBoxService
 import chat.simplex.common.views.chat.item.LocalVoiceTranscriptionWidget
@@ -51,6 +52,9 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import android.media.MediaMetadataRetriever
+import android.widget.VideoView
+import chat.simplex.common.views.usersettings.LocalStoryVideoPlayer
 
 var showSingBoxDialogState = mutableStateOf(false)
 var openByeDpiDialog: (() -> Unit)? = null
@@ -72,6 +76,28 @@ class MainActivity: FragmentActivity() {
     if (uri != null && cb != null) {
       try {
         val bytes = contentResolver.openInputStream(uri)?.use { it.readBytes() }
+
+        // Создание превью первого кадра при выборе видеофайла
+        val isVideo = contentResolver.getType(uri)?.startsWith("video/") == true
+        if (isVideo) {
+          try {
+            val retriever = MediaMetadataRetriever()
+            retriever.setDataSource(applicationContext, uri)
+            val frame = retriever.getFrameAtTime(0)
+            if (frame != null) {
+              val thumbDir = File(getAppFilePath(""), "temporary_content")
+              if (!thumbDir.exists()) thumbDir.mkdirs()
+              val thumbFile = File(thumbDir, "last_video_thumb.jpg")
+              val stream = java.io.ByteArrayOutputStream()
+              frame.compress(android.graphics.Bitmap.CompressFormat.JPEG, 75, stream)
+              thumbFile.writeBytes(stream.toByteArray())
+            }
+            retriever.release()
+          } catch (e: Exception) {
+            Log.e("MainActivity", "Failed to extract video thumbnail: ${e.message}")
+          }
+        }
+
         cb(bytes)
       } catch (_: Exception) {
         cb(null)
@@ -105,12 +131,12 @@ class MainActivity: FragmentActivity() {
     mainActivity = WeakReference(this)
     super.onCreate(savedInstanceState)
 
-chat.simplex.common.views.usersettings.TemporaryContentPickerBridge.pickMedia = { mediaType, callback ->
+    chat.simplex.common.views.usersettings.TemporaryContentPickerBridge.pickMedia = { mediaType, callback ->
       tempContentCallback = callback
       val mime = if (mediaType == chat.simplex.common.platform.TemporaryMediaType.VIDEO) "video/*" else "image/*"
       tempMediaLauncher.launch(mime)
     }
-    
+
     openByeDpiDialog = {
       showSingBoxDialogState.value = true
     }
@@ -219,6 +245,26 @@ chat.simplex.common.views.usersettings.TemporaryContentPickerBridge.pickMedia = 
               )
             )
           }
+        },
+        // Подключение нативного воспроизведения видео внутри сторис
+        LocalStoryVideoPlayer provides { filePath, modifier ->
+          androidx.compose.ui.viewinterop.AndroidView(
+            factory = { ctx ->
+              VideoView(ctx).apply {
+                setVideoPath(filePath)
+                setOnPreparedListener { mp ->
+                  mp.isLooping = true
+                  start()
+                }
+              }
+            },
+            update = { videoView ->
+              if (!videoView.isPlaying) {
+                videoView.start()
+              }
+            },
+            modifier = modifier
+          )
         }
       ) {
         SingBoxComposeDialogs(this@MainActivity)
@@ -335,7 +381,7 @@ fun rememberDirectMonetColors(context: android.content.Context = androidx.compos
           onSurface = Color(ContextCompat.getColor(context, android.R.color.system_neutral1_50)),
           onSurfaceVariant = Color(ContextCompat.getColor(context, android.R.color.system_accent2_200)),
           primary = primary,
-          onPrimary = Color(ContextCompat.getColor(context, android.R.color.system_accent1_900)),
+          onPrimary = Color.White,
           primaryContainer = Color(ContextCompat.getColor(context, android.R.color.system_accent1_700)).copy(alpha = 0.55f),
           onPrimaryContainer = Color(ContextCompat.getColor(context, android.R.color.system_accent1_100)),
           outline = primary.copy(alpha = 0.25f)
