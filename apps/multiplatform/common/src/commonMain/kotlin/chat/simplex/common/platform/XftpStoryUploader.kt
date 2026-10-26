@@ -1,83 +1,196 @@
 package chat.simplex.common.platform
 
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
+import chat.simplex.common.model.*
+import chat.simplex.common.views.helpers.withBGApi
+import kotlinx.coroutines.*
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
 import java.io.File
-import java.net.HttpURLConnection
-import java.net.URL
-import java.security.SecureRandom
 import java.util.Base64
-import java.util.UUID
-import javax.crypto.Cipher
-import javax.crypto.spec.GCMParameterSpec
-import javax.crypto.spec.SecretKeySpec
 
-data class EncryptedUploadResult(
+@Serializable
+data class StoryXftpDescriptor(
+  val id: String,
   val downloadUrl: String,
-  val keyBase64: String,
-  val ivBase64: String
+  val encryptionKey: String,
+  val iv: String,
+  val mediaType: String,
+  val durationHours: Int,
+  val caption: String,
+  val createdAtMillis: Long,
+  val thumbBase64: String? = null
 )
 
-object XftpStoryUploader {
-  private const val DEFAULT_XFTP_SERVER = "https://xftp.simplex.im/files"
+object StorySyncManager {
+  const val STORY_PUSH_PREFIX = "__SIMPLEX_STORY_PUSH__:"
+  const val STORY_REQ_PREFIX = "__SIMPLEX_STORY_REQ__"
 
-  suspend fun uploadEncryptedStory(file: File): EncryptedUploadResult? = withContext(Dispatchers.IO) {
-    try {
-      val rawBytes = file.readBytes()
-      val keyBytes = ByteArray(32).also { SecureRandom().nextBytes(it) }
-      val iv = ByteArray(12).also { SecureRandom().nextBytes(it) }
+  private val json = Json { ignoreUnknownKeys = true }
+  private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
-      val cipher = Cipher.getInstance("AES/GCM/NoPadding")
-      cipher.init(Cipher.ENCRYPT_MODE, SecretKeySpec(keyBytes, "AES"), GCMParameterSpec(128, iv))
-      val encryptedBytes = cipher.doFinal(rawBytes)
+  /**
+   * Загрузка файла на XFTP и отправка компактного дескриптора (< 500 байт) контактам
+   */
+  fun publishAndBroadcastStory(
+    file: File,
+    item: TemporaryContentItem,
+    thumbBytes: ByteArray?,
+    targetChats: List<Chat>? = null
+  ) {
+    scope.launch {
+      try {
+        val uploadResult = XftpStoryUploader.uploadEncryptedStory(file) ?: run {
+          Log.e(TAG, "Failed to upload story to XFTP")
+          return@launch
+        }
 
-      val uploadId = UUID.randomUUID().toString()
-      val targetUrl = "$DEFAULT_XFTP_SERVER/$uploadId"
-      val conn = (URL(targetUrl).openConnection() as HttpURLConnection).apply {
-        requestMethod = "POST"
-        doOutput = true
-        setRequestProperty("Content-Type", "application/octet-stream")
-        connectTimeout = 15_000
-        readTimeout = 30_000
-      }
-
-      conn.outputStream.use { it.write(encryptedBytes) }
-
-      if (conn.responseCode in 200..299) {
-        EncryptedUploadResult(
-          downloadUrl = targetUrl,
-          keyBase64 = Base64.getEncoder().encodeToString(keyBytes),
-          ivBase64 = Base64.getEncoder().encodeToString(iv)
+        val descriptor = StoryXftpDescriptor(
+          id = item.id,
+          downloadUrl = uploadResult.downloadUrl,
+          encryptionKey = uploadResult.keyBase64,
+          iv = uploadResult.ivBase64,
+          mediaType = item.mediaType.name,
+          durationHours = item.durationHours,
+          caption = item.caption,
+          createdAtMillis = item.createdAtMillis,
+          thumbBase64 = thumbBytes?.let { Base64.getEncoder().encodeToString(it) }
         )
-      } else null
-    } catch (e: Exception) {
-      Log.e("XftpUploader", "Upload failed: ${e.message}")
-      null
+
+        val encodedMsg = STORY_PUSH_PREFIX + json.encodeToString(descriptor)
+
+        val recipients = targetChats ?: chatModel.chats.value.filter {
+          val ci = it.chatInfo
+          if (ci !is ChatInfo.Direct || !ci.contact.active || !ci.contact.ready) return@filter false
+          when (item.audience) {
+            TemporaryAudience.VERIFIED_USERS -> ci.contact.verified
+            TemporaryAudience.CONTACTS, TemporaryAudience.ALL_USERS -> true
+          }
+        }
+
+        recipients.forEach { chat ->
+          sendHiddenServiceMessage(chat, encodedMsg)
+        }
+      } catch (e: Exception) {
+        Log.e(TAG, "publishAndBroadcastStory error: ${e.message}")
+      }
     }
   }
 
-  suspend fun downloadAndDecryptStory(
-    downloadUrl: String,
-    keyBase64: String,
-    ivBase64: String
-  ): ByteArray? = withContext(Dispatchers.IO) {
-    try {
-      val conn = (URL(downloadUrl).openConnection() as HttpURLConnection).apply {
-        requestMethod = "GET"
-        connectTimeout = 15_000
-        readTimeout = 30_000
+  fun requestContactStories(contactId: Long) {
+    scope.launch {
+      val targetChat = chatModel.chats.value.firstOrNull {
+        (it.chatInfo as? ChatInfo.Direct)?.contact?.contactId == contactId
+      } ?: return@launch
+
+      sendHiddenServiceMessage(targetChat, STORY_REQ_PREFIX)
+    }
+  }
+
+  fun respondToStoryRequest(remoteHostId: Long?, chatId: String) {
+    scope.launch {
+      val targetChat = chatModel.chats.value.firstOrNull { it.id == chatId } ?: return@launch
+      val myStories = TemporaryContentManager.getActiveItemsFor(null)
+      if (myStories.isEmpty()) return@launch
+
+      val contact = (targetChat.chatInfo as? ChatInfo.Direct)?.contact
+
+      myStories.forEach { story ->
+        val canSend = when (story.audience) {
+          TemporaryAudience.VERIFIED_USERS -> contact?.verified == true
+          TemporaryAudience.CONTACTS, TemporaryAudience.ALL_USERS -> true
+        }
+        if (!canSend) return@forEach
+
+        try {
+          val file = File(story.filePath)
+          if (!file.exists()) return@forEach
+          val thumbFile = File("${story.filePath}_thumb.jpg")
+          val thumbBytes = if (thumbFile.exists()) thumbFile.readBytes() else null
+
+          publishAndBroadcastStory(
+            file = file,
+            item = story,
+            thumbBytes = thumbBytes,
+            targetChats = listOf(targetChat)
+          )
+        } catch (_: Exception) {}
       }
+    }
+  }
 
-      val encryptedBytes = conn.inputStream.use { it.readBytes() }
-      val keyBytes = Base64.getDecoder().decode(keyBase64)
-      val iv = Base64.getDecoder().decode(ivBase64)
+  fun handleIncomingMessage(
+    remoteHostId: Long?,
+    chatId: String,
+    senderContactId: Long?,
+    senderDisplayName: String?,
+    text: String
+  ): Boolean {
+    when {
+      text.startsWith(STORY_PUSH_PREFIX) -> {
+        if (senderContactId == null) return true
+        scope.launch {
+          try {
+            val rawJson = text.removePrefix(STORY_PUSH_PREFIX)
+            val desc = json.decodeFromString<StoryXftpDescriptor>(rawJson)
 
-      val cipher = Cipher.getInstance("AES/GCM/NoPadding")
-      cipher.init(Cipher.DECRYPT_MODE, SecretKeySpec(keyBytes, "AES"), GCMParameterSpec(128, iv))
-      cipher.doFinal(encryptedBytes)
-    } catch (e: Exception) {
-      Log.e("XftpUploader", "Download failed: ${e.message}")
-      null
+            val decryptedFileBytes = XftpStoryUploader.downloadAndDecryptStory(
+              downloadUrl = desc.downloadUrl,
+              keyBase64 = desc.encryptionKey,
+              ivBase64 = desc.iv
+            )
+
+            if (decryptedFileBytes != null) {
+              val mediaType = TemporaryMediaType.valueOf(desc.mediaType)
+              TemporaryContentManager.receiveContactTemporaryContent(
+                contactId = senderContactId,
+                displayName = senderDisplayName ?: "Contact",
+                bytes = decryptedFileBytes,
+                mediaType = mediaType,
+                durationHours = desc.durationHours,
+                caption = desc.caption,
+                createdAtMillis = desc.createdAtMillis
+              )
+            }
+          } catch (e: Exception) {
+            Log.e(TAG, "Error receiving XFTP story: ${e.message}")
+          }
+        }
+        return true
+      }
+      text == STORY_REQ_PREFIX -> {
+        respondToStoryRequest(remoteHostId, chatId)
+        return true
+      }
+      else -> return false
+    }
+  }
+
+  private fun sendHiddenServiceMessage(chat: Chat, text: String) {
+    withBGApi {
+      try {
+        val cInfo = chat.chatInfo
+        chatModel.controller.apiSendMessages(
+          rh = chat.remoteHostId,
+          type = cInfo.chatType,
+          id = cInfo.apiId,
+          scope = cInfo.groupChatScope(),
+          sendAsGroup = cInfo.sendAsGroup,
+          live = false,
+          ttl = null,
+          sign = false,
+          composedMessages = listOf(
+            ComposedMessage(
+              file = null,
+              quoted = null,
+              mc = MsgContent.MCText(text),
+              mentions = emptyMap()
+            )
+          )
+        )
+      } catch (e: Exception) {
+        Log.e(TAG, "Failed to send hidden story service message: ${e.message}")
+      }
     }
   }
 }
