@@ -137,14 +137,20 @@ object TemporaryContentManager {
       val destFile = File(dir, "temp_${id}.$ext")
       destFile.writeBytes(bytes)
 
-      // Привязываем сгенерированный в MainActivity кадр превью к видеофайлу
+      // Автоматическое создание превью первого кадра для полученного видео
       if (mediaType == TemporaryMediaType.VIDEO) {
-        val lastThumb = File(dir, "last_video_thumb.jpg")
-        if (lastThumb.exists()) {
-          val storyThumb = File("${destFile.absolutePath}_thumb.jpg")
-          lastThumb.copyTo(storyThumb, overwrite = true)
-          lastThumb.delete()
-        }
+        try {
+          val retriever = android.media.MediaMetadataRetriever()
+          retriever.setDataSource(destFile.absolutePath)
+          val frame = retriever.getFrameAtTime(0)
+          if (frame != null) {
+            val thumbFile = File("${destFile.absolutePath}_thumb.jpg")
+            val stream = java.io.ByteArrayOutputStream()
+            frame.compress(android.graphics.Bitmap.CompressFormat.JPEG, 75, stream)
+            thumbFile.writeBytes(stream.toByteArray())
+          }
+          retriever.release()
+        } catch (_: Exception) {}
       }
 
       val now = System.currentTimeMillis()
