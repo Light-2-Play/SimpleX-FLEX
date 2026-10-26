@@ -250,24 +250,27 @@ class MainActivity: FragmentActivity() {
           }
         },
         // Подключение нативного воспроизведения видео внутри сторис
-        LocalStoryVideoPlayer provides { filePath, modifier ->
+       LocalStoryVideoPlayer provides { filePath, modifier ->
           androidx.compose.ui.viewinterop.AndroidView(
             factory = { ctx ->
-              VideoView(ctx).apply {
-                // Обязательно для отображения видео поверх Compose Dialog:
+              android.widget.VideoView(ctx).apply {
                 setZOrderMediaOverlay(true)
-                setVideoURI(Uri.fromFile(File(filePath)))
+                val file = java.io.File(filePath)
+                if (file.exists()) {
+                  setVideoURI(android.net.Uri.fromFile(file))
+                }
                 setOnPreparedListener { mp ->
                   mp.isLooping = true
                   start()
                 }
+                setOnErrorListener { _, what, extra ->
+                  // Возвращаем true, чтобы подавить системный алерт "Не удается воспроизвести видео"
+                  android.util.Log.e("StoryVideo", "VideoView playback error: $what, $extra")
+                  true
+                }
               }
             },
-            update = { videoView ->
-              if (!videoView.isPlaying) {
-                videoView.start()
-              }
-            },
+            update = { /* Плеер стартует автоматически через setOnPreparedListener */ },
             modifier = modifier
           )
         }
