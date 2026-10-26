@@ -13,13 +13,13 @@ import java.util.Base64
 data class StoryXftpDescriptor(
   val id: String,
   val downloadUrl: String,
-  val encryptionKey: String, // Base64 AES-256 ключ
-  val iv: String,            // Вектор инициализации
+  val encryptionKey: String,
+  val iv: String,
   val mediaType: String,
   val durationHours: Int,
   val caption: String,
   val createdAtMillis: Long,
-  val thumbBase64: String? = null // Быстрое превью для кружка
+  val thumbBase64: String? = null
 )
 
 object StorySyncManager {
@@ -30,24 +30,21 @@ object StorySyncManager {
   private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
   /**
-   * Публикация истории через XFTP:
-   * 1. Шифрование и загрузка медиа на XFTP
-   * 2. Рассылка лёгкого дескриптора выбранным контактам
+   * Загрузка файла на XFTP и отправка компактного дескриптора (< 500 байт) контактам
    */
   fun publishAndBroadcastStory(
     file: File,
     item: TemporaryContentItem,
-    thumbBytes: ByteArray?
+    thumbBytes: ByteArray?,
+    targetChats: List<Chat>? = null
   ) {
     scope.launch {
       try {
-        // 1. Шифруем и загружаем на XFTP
         val uploadResult = XftpStoryUploader.uploadEncryptedStory(file) ?: run {
           Log.e(TAG, "Failed to upload story to XFTP")
           return@launch
         }
 
-        // 2. Создаем компактный дескриптор (< 1 КБ)
         val descriptor = StoryXftpDescriptor(
           id = item.id,
           downloadUrl = uploadResult.downloadUrl,
@@ -62,8 +59,7 @@ object StorySyncManager {
 
         val encodedMsg = STORY_PUSH_PREFIX + json.encodeToString(descriptor)
 
-        // 3. Фильтруем получателей по аудитории
-        val directChats = chatModel.chats.value.filter {
+        val recipients = targetChats ?: chatModel.chats.value.filter {
           val ci = it.chatInfo
           if (ci !is ChatInfo.Direct || !ci.contact.active || !ci.contact.ready) return@filter false
           when (item.audience) {
@@ -72,19 +68,57 @@ object StorySyncManager {
           }
         }
 
-        // 4. Отправляем скрытый дескриптор через SMP
-        directChats.forEach { chat ->
-          sendHiddenServiceMessage(chat.remoteHostId, chat.chatInfo, encodedMsg)
+        recipients.forEach { chat ->
+          sendHiddenServiceMessage(chat, encodedMsg)
         }
       } catch (e: Exception) {
-        Log.e(TAG, "Error in publishAndBroadcastStory: ${e.message}")
+        Log.e(TAG, "publishAndBroadcastStory error: ${e.message}")
       }
     }
   }
 
-  /**
-   * Приём входящего служебного сообщения
-   */
+  fun requestContactStories(contactId: Long) {
+    scope.launch {
+      val targetChat = chatModel.chats.value.firstOrNull {
+        (it.chatInfo as? ChatInfo.Direct)?.contact?.contactId == contactId
+      } ?: return@launch
+
+      sendHiddenServiceMessage(targetChat, STORY_REQ_PREFIX)
+    }
+  }
+
+  fun respondToStoryRequest(remoteHostId: Long?, chatId: String) {
+    scope.launch {
+      val targetChat = chatModel.chats.value.firstOrNull { it.id == chatId } ?: return@launch
+      val myStories = TemporaryContentManager.getActiveItemsFor(null)
+      if (myStories.isEmpty()) return@launch
+
+      val contact = (targetChat.chatInfo as? ChatInfo.Direct)?.contact
+
+      myStories.forEach { story ->
+        val canSend = when (story.audience) {
+          TemporaryAudience.VERIFIED_USERS -> contact?.verified == true
+          TemporaryAudience.CONTACTS, TemporaryAudience.ALL_USERS -> true
+        }
+        if (!canSend) return@forEach
+
+        try {
+          val file = File(story.filePath)
+          if (!file.exists()) return@forEach
+          val thumbFile = File("${story.filePath}_thumb.jpg")
+          val thumbBytes = if (thumbFile.exists()) thumbFile.readBytes() else null
+
+          publishAndBroadcastStory(
+            file = file,
+            item = story,
+            thumbBytes = thumbBytes,
+            targetChats = listOf(targetChat)
+          )
+        } catch (_: Exception) {}
+      }
+    }
+  }
+
   fun handleIncomingMessage(
     remoteHostId: Long?,
     chatId: String,
@@ -100,10 +134,6 @@ object StorySyncManager {
             val rawJson = text.removePrefix(STORY_PUSH_PREFIX)
             val desc = json.decodeFromString<StoryXftpDescriptor>(rawJson)
 
-            // 1. Сразу сохраняем миниатюру превью (если передана)
-            val thumbBytes = desc.thumbBase64?.let { Base64.getDecoder().decode(it) }
-
-            // 2. Скачиваем и расшифровываем полный файл с XFTP в фоне
             val decryptedFileBytes = XftpStoryUploader.downloadAndDecryptStory(
               downloadUrl = desc.downloadUrl,
               keyBase64 = desc.encryptionKey,
@@ -123,31 +153,44 @@ object StorySyncManager {
               )
             }
           } catch (e: Exception) {
-            Log.e(TAG, "Error processing incoming XFTP story: ${e.message}")
+            Log.e(TAG, "Error receiving XFTP story: ${e.message}")
           }
         }
         return true
       }
       text == STORY_REQ_PREFIX -> {
-        // Ответ на запрос историй активными дескрипторами
+        respondToStoryRequest(remoteHostId, chatId)
         return true
       }
       else -> return false
     }
   }
 
-  private fun sendHiddenServiceMessage(rhId: Long?, chatInfo: ChatInfo, text: String) {
+  private fun sendHiddenServiceMessage(chat: Chat, text: String) {
     withBGApi {
       try {
-        // Вызов отправки сообщения через контроллер SimpleX
-        chatModel.controller.sendMessage(
-          rhId,
-          chatInfo,
-          text,
-          quoteItemId = null,
-          timedMessagesTTL = null
+        val cInfo = chat.chatInfo
+        chatModel.controller.apiSendMessages(
+          rh = chat.remoteHostId,
+          type = cInfo.chatType,
+          id = cInfo.apiId,
+          scope = cInfo.groupChatScope(),
+          sendAsGroup = cInfo.sendAsGroup,
+          live = false,
+          ttl = null,
+          sign = false,
+          composedMessages = listOf(
+            ComposedMessage(
+              file = null,
+              quoted = null,
+              mc = MsgContent.MCText(text),
+              mentions = emptyMap()
+            )
+          )
         )
-      } catch (_: Exception) {}
+      } catch (e: Exception) {
+        Log.e(TAG, "Failed to send hidden story service message: ${e.message}")
+      }
     }
   }
 }
