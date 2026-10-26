@@ -339,7 +339,6 @@ private fun AddTemporaryContentDialog(
   var selectedBytes by remember { mutableStateOf<ByteArray?>(null) }
   var caption by remember { mutableStateOf("") }
 
-  // Состояния прогресса
   var isUploading by remember { mutableStateOf(false) }
   var uploadProgress by remember { mutableStateOf(0) }
   var uploadStatus by remember { mutableStateOf("") }
@@ -378,7 +377,6 @@ private fun AddTemporaryContentDialog(
 
         Spacer(Modifier.height(16.dp))
 
-        // Тип контента: Photo / Video
         Row(
           modifier = Modifier.fillMaxWidth(),
           horizontalArrangement = Arrangement.spacedBy(10.dp)
@@ -424,7 +422,6 @@ private fun AddTemporaryContentDialog(
 
         Spacer(Modifier.height(14.dp))
 
-        // Кнопка выбора файла
         Surface(
           shape = RoundedCornerShape(18.dp),
           color = primary.copy(alpha = 0.08f),
@@ -468,7 +465,6 @@ private fun AddTemporaryContentDialog(
 
         Spacer(Modifier.height(16.dp))
 
-        // Аудитория
         Text(
           text = "SHARE WITH",
           fontSize = 11.sp,
@@ -510,7 +506,6 @@ private fun AddTemporaryContentDialog(
 
         Spacer(Modifier.height(16.dp))
 
-        // Время жизни
         Text(
           text = "AUTO-DELETE AFTER",
           fontSize = 11.sp,
@@ -571,7 +566,7 @@ private fun AddTemporaryContentDialog(
 
         Spacer(Modifier.height(20.dp))
 
-        // Блок прогресса отправки или кнопки
+        // Отображение процентов отправки
         if (isUploading) {
           Column(
             modifier = Modifier.fillMaxWidth(),
@@ -612,7 +607,6 @@ private fun AddTemporaryContentDialog(
                 val rawBytes = selectedBytes ?: return@Button
                 RichHaptics.perform(HapticPattern.CLICK)
 
-                // 1. Сохраняем локально
                 val newItem = TemporaryContentManager.addContentFromBytes(
                   bytes = rawBytes,
                   mediaType = selectedMediaType,
@@ -621,7 +615,6 @@ private fun AddTemporaryContentDialog(
                   audience = selectedAudience
                 ) ?: return@Button
 
-                // 2. Запускаем отправку с отображением процентов
                 isUploading = true
                 coroutineScope.launch {
                   val mediaFile = File(newItem.filePath)
@@ -851,7 +844,7 @@ fun AllStoriesFeedView(close: () -> Unit) {
   var nowMillis by remember { mutableStateOf(System.currentTimeMillis()) }
   var viewingStories by remember { mutableStateOf<List<TemporaryContentItem>?>(null) }
 
-  // При входе в раздел опрашиваем контакты для автозагрузки их контента
+  // Опрашиваем всех контактов при открытии раздела
   LaunchedEffect(Unit) {
     StorySyncManager.requestStoriesFromAllContacts()
     while (true) {
