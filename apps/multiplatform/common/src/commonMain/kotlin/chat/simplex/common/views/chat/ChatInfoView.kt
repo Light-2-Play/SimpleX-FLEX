@@ -540,168 +540,172 @@ fun ChatInfoLayout(
   deletingItems: State<Boolean>
 ) {
   val cStats = connStats.value
+  val scrollState = rememberScrollState()
 
-  ModalView(close = close, cardScreen = true) {
-    ColumnWithScrollBar {
-      ChatInfoHeader(chat.chatInfo, contact)
+  Column(
+    Modifier
+      .fillMaxSize()
+      .verticalScroll(scrollState)
+  ) {
+    ChatInfoHeader(chat.chatInfo, contact)
 
-      LocalAliasEditor(
-        chat.id,
-        localAlias,
-        updateValue = onLocalAliasChanged
-      )
+    LocalAliasEditor(
+      chat.id,
+      localAlias,
+      updateValue = onLocalAliasChanged
+    )
 
-      SectionDividerSpaced()
+    SectionDividerSpaced()
 
-      // Раздел активных историй собеседника (если они есть)
-      ContactStoriesSection(contact.contactId, contact.displayName)
+    // Раздел активных историй собеседника
+    ContactStoriesSection(contact.contactId, contact.displayName)
 
-      SectionDividerSpaced()
+    SectionDividerSpaced()
 
-      Box(
-        Modifier.fillMaxWidth(),
-        contentAlignment = Alignment.Center
+    Box(
+      Modifier.fillMaxWidth(),
+      contentAlignment = Alignment.Center
+    ) {
+      Row(
+        Modifier
+          .widthIn(max = 460.dp)
+          .padding(horizontal = DEFAULT_PADDING),
+        horizontalArrangement = Arrangement.SpaceEvenly,
+        verticalAlignment = Alignment.CenterVertically
       ) {
-        Row(
-          Modifier
-            .widthIn(max = 460.dp)
-            .padding(horizontal = DEFAULT_PADDING),
-          horizontalArrangement = Arrangement.SpaceEvenly,
-          verticalAlignment = Alignment.CenterVertically
-        ) {
-          SearchButton(modifier = Modifier.fillMaxWidth(0.25f), chat, contact, close, onSearchClicked)
-          AudioCallButton(modifier = Modifier.fillMaxWidth(0.33f), chat, contact, connStats)
-          VideoButton(modifier = Modifier.fillMaxWidth(0.5f), chat, contact, connStats)
-          MuteButton(modifier = Modifier.fillMaxWidth(1f), chat, contact)
-        }
+        SearchButton(modifier = Modifier.fillMaxWidth(0.25f), chat, contact, close, onSearchClicked)
+        AudioCallButton(modifier = Modifier.fillMaxWidth(0.33f), chat, contact, connStats)
+        VideoButton(modifier = Modifier.fillMaxWidth(0.5f), chat, contact, connStats)
+        MuteButton(modifier = Modifier.fillMaxWidth(1f), chat, contact)
       }
-
-      SectionDividerSpaced()
-
-      if (customUserProfile != null) {
-        SectionView(generalGetString(MR.strings.incognito)) {
-          SectionItemViewSpaceBetween {
-            Text(generalGetString(MR.strings.incognito_random_profile))
-            Text(customUserProfile.chatViewName, color = Indigo)
-          }
-        }
-        SectionDividerSpaced()
-      }
-
-      SectionView {
-        if (contact.ready && contact.active) {
-          if (connectionCode != null) {
-            VerifyCodeButton(contact.verified, verifyClicked)
-          }
-          ContactPreferencesButton(openPreferences)
-          SendReceiptsOption(currentUser, sendReceipts, setSendReceipts)
-          if (cStats != null && cStats.ratchetSyncAllowed) {
-            SynchronizeConnectionButton(syncContactConnection)
-          }
-        }
-
-        WallpaperButton {
-          ModalManager.end.showModal(cardScreen = true) {
-            val chatState = remember { derivedStateOf { chatModel.chats.value.firstOrNull { it.id == chat.id } } }
-            val c = chatState.value
-            if (c != null) {
-              ChatWallpaperEditorModal(c)
-            }
-          }
-        }
-      }
-      SectionDividerSpaced()
-
-      SectionView {
-        ChatTTLOption(chatItemTTL, setChatItemTTL, deletingItems)
-      }
-      SectionTextFooter(stringResource(MR.strings.chat_ttl_options_footer))
-      SectionDividerSpaced()
-
-      val conn = contact.activeConn
-      if (conn != null) {
-        SectionView {
-          InfoRow("E2E encryption", if (conn.connPQEnabled) "Quantum resistant" else "Standard")
-        }
-        SectionDividerSpaced()
-      }
-
-      if (contact.contactLink != null) {
-        SectionView(stringResource(MR.strings.address_section_title)) {
-          SimpleXLinkQRCode(contact.contactLink)
-          val clipboard = LocalClipboardManager.current
-          ShareAddressButton { clipboard.shareText(simplexChatLink(contact.contactLink)) }
-        }
-        SectionTextFooter(stringResource(MR.strings.you_can_share_this_address_with_your_contacts).format(contact.displayName))
-        SectionDividerSpaced()
-      }
-
-      if (contact.ready && contact.active) {
-        SectionView(title = stringResource(MR.strings.conn_stats_section_title_servers)) {
-          val chatSubStatus = chatModel.chatSubStatus.value
-          if (chatSubStatus != null) {
-            SectionItemView({
-              AlertManager.shared.showAlertMsg(
-                generalGetString(MR.strings.network_status),
-                chatSubStatus.statusExplanation
-              )
-            }) {
-              SubStatusRow(chatSubStatus)
-            }
-          }
-          if (cStats != null) {
-            SwitchAddressButton(
-              disabled = cStats.rcvQueuesInfo.any { it.rcvSwitchStatus != null } || cStats.ratchetSyncSendProhibited,
-              switchAddress = switchContactAddress
-            )
-            if (cStats.rcvQueuesInfo.any { it.rcvSwitchStatus != null }) {
-              AbortSwitchAddressButton(
-                disabled = cStats.rcvQueuesInfo.any { it.rcvSwitchStatus != null && !it.canAbortSwitch } || cStats.ratchetSyncSendProhibited,
-                abortSwitchAddress = abortSwitchContactAddress
-              )
-            }
-            val rcvServers = cStats.rcvQueuesInfo.map { it.rcvServer }
-            if (rcvServers.isNotEmpty()) {
-              SimplexServers(stringResource(MR.strings.receiving_via), rcvServers)
-            }
-            val sndServers = cStats.sndQueuesInfo.map { it.sndServer }
-            if (sndServers.isNotEmpty()) {
-              SimplexServers(stringResource(MR.strings.sending_via), sndServers)
-            }
-          }
-        }
-        SectionDividerSpaced()
-      }
-
-      SectionView {
-        ClearChatButton(clearChat)
-        DeleteContactButton(deleteContact)
-      }
-
-      if (developerTools) {
-        SectionDividerSpaced()
-        SectionView(title = stringResource(MR.strings.section_title_for_console)) {
-          InfoRow(stringResource(MR.strings.info_row_local_name), chat.chatInfo.localDisplayName)
-          InfoRow(stringResource(MR.strings.info_row_database_id), chat.chatInfo.apiId.toString())
-          SectionItemView({
-            withBGApi {
-              val info = controller.apiContactQueueInfo(chat.remoteHostId, chat.chatInfo.apiId)
-              if (info != null) {
-                AlertManager.shared.showAlertMsg(
-                  title = generalGetString(MR.strings.message_queue_info),
-                  text = queueInfoText(info)
-                )
-              }
-            }
-          }) {
-            Text(stringResource(MR.strings.info_row_debug_delivery))
-          }
-        }
-      }
-      SectionBottomSpacer()
     }
+
+    SectionDividerSpaced()
+
+    if (customUserProfile != null) {
+      SectionView(generalGetString(MR.strings.incognito)) {
+        SectionItemViewSpaceBetween {
+          Text(generalGetString(MR.strings.incognito_random_profile))
+          Text(customUserProfile.chatViewName, color = Indigo)
+        }
+      }
+      SectionDividerSpaced()
+    }
+
+    SectionView {
+      if (contact.ready && contact.active) {
+        if (connectionCode != null) {
+          VerifyCodeButton(contact.verified, verifyClicked)
+        }
+        ContactPreferencesButton(openPreferences)
+        SendReceiptsOption(currentUser, sendReceipts, setSendReceipts)
+        if (cStats != null && cStats.ratchetSyncAllowed) {
+          SynchronizeConnectionButton(syncContactConnection)
+        }
+      }
+
+      WallpaperButton {
+        ModalManager.end.showModal(cardScreen = true) {
+          val chatState = remember { derivedStateOf { chatModel.chats.value.firstOrNull { it.id == chat.id } } }
+          val c = chatState.value
+          if (c != null) {
+            ChatWallpaperEditorModal(c)
+          }
+        }
+      }
+    }
+    SectionDividerSpaced()
+
+    SectionView {
+      ChatTTLOption(chatItemTTL, setChatItemTTL, deletingItems)
+    }
+    SectionTextFooter(stringResource(MR.strings.chat_ttl_options_footer))
+    SectionDividerSpaced()
+
+    val conn = contact.activeConn
+    if (conn != null) {
+      SectionView {
+        InfoRow("E2E encryption", if (conn.connPQEnabled) "Quantum resistant" else "Standard")
+      }
+      SectionDividerSpaced()
+    }
+
+    if (contact.contactLink != null) {
+      SectionView(stringResource(MR.strings.address_section_title)) {
+        SimpleXLinkQRCode(contact.contactLink)
+        val clipboard = LocalClipboardManager.current
+        ShareAddressButton { clipboard.shareText(simplexChatLink(contact.contactLink)) }
+      }
+      SectionTextFooter(stringResource(MR.strings.you_can_share_this_address_with_your_contacts).format(contact.displayName))
+      SectionDividerSpaced()
+    }
+
+    if (contact.ready && contact.active) {
+      SectionView(title = stringResource(MR.strings.conn_stats_section_title_servers)) {
+        val chatSubStatus = chatModel.chatSubStatus.value
+        if (chatSubStatus != null) {
+          SectionItemView({
+            AlertManager.shared.showAlertMsg(
+              generalGetString(MR.strings.network_status),
+              chatSubStatus.statusExplanation
+            )
+          }) {
+            SubStatusRow(chatSubStatus)
+          }
+        }
+        if (cStats != null) {
+          SwitchAddressButton(
+            disabled = cStats.rcvQueuesInfo.any { it.rcvSwitchStatus != null } || cStats.ratchetSyncSendProhibited,
+            switchAddress = switchContactAddress
+          )
+          if (cStats.rcvQueuesInfo.any { it.rcvSwitchStatus != null }) {
+            AbortSwitchAddressButton(
+              disabled = cStats.rcvQueuesInfo.any { it.rcvSwitchStatus != null && !it.canAbortSwitch } || cStats.ratchetSyncSendProhibited,
+              abortSwitchAddress = abortSwitchContactAddress
+            )
+          }
+          val rcvServers = cStats.rcvQueuesInfo.map { it.rcvServer }
+          if (rcvServers.isNotEmpty()) {
+            SimplexServers(stringResource(MR.strings.receiving_via), rcvServers)
+          }
+          val sndServers = cStats.sndQueuesInfo.map { it.sndServer }
+          if (sndServers.isNotEmpty()) {
+            SimplexServers(stringResource(MR.strings.sending_via), sndServers)
+          }
+        }
+      }
+      SectionDividerSpaced()
+    }
+
+    SectionView {
+      ClearChatButton(clearChat)
+      DeleteContactButton(deleteContact)
+    }
+
+    if (developerTools) {
+      SectionDividerSpaced()
+      SectionView(title = stringResource(MR.strings.section_title_for_console)) {
+        InfoRow(stringResource(MR.strings.info_row_local_name), chat.chatInfo.localDisplayName)
+        InfoRow(stringResource(MR.strings.info_row_database_id), chat.chatInfo.apiId.toString())
+        SectionItemView({
+          withBGApi {
+            val info = controller.apiContactQueueInfo(chat.remoteHostId, chat.chatInfo.apiId)
+            if (info != null) {
+              AlertManager.shared.showAlertMsg(
+                title = generalGetString(MR.strings.message_queue_info),
+                text = queueInfoText(info)
+              )
+            }
+          }
+        }) {
+          Text(stringResource(MR.strings.info_row_debug_delivery))
+        }
+      }
+    }
+    SectionBottomSpacer()
   }
 }
+
 
 // =====================================================================
 // ЗАГОЛОВОК ПРОФИЛЯ СО СВЕТЯЩЕЙСЯ АВАТАРКОЙ STORYAVATARCONTAINER
