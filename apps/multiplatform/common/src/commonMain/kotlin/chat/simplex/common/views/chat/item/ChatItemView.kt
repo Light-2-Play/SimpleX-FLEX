@@ -120,24 +120,10 @@ fun ChatItemView(
   val cInfo = chat.chatInfo
   
  // --- ПЕРЕХВАТ И СКРЫТИЕ СЛУЖЕБНЫХ СООБЩЕНИЙ СТОРИС ---
+ // Полное скрытие служебных сообщений сторис в интерфейсе чата
   val rawText = cItem.content.text.trim()
   if (rawText.contains(StorySyncManager.STORY_PUSH_PREFIX) ||
       rawText.contains(StorySyncManager.STORY_REQ_PREFIX)) {
-    LaunchedEffect(cItem.id) {
-      val contact = (cInfo as? ChatInfo.Direct)?.contact
-      // Отвечаем и сохраняем сторис ТОЛЬКО если сообщение пришло от собеседника, а не отправлено нами
-      if (contact != null && !cItem.chatDir.sent) {
-        StorySyncManager.handleIncomingMessage(
-          remoteHostId = rhId,
-          chatId = chat.id,
-          senderContactId = contact.contactId,
-          senderDisplayName = contact.displayName,
-          text = rawText
-        )
-      }
-      // Бесследно удаляем служебную команду из диалога
-      deleteMessage(cItem.id, CIDeleteMode.cidmInternal)
-    }
     Box(Modifier.size(0.dp)) {}
     return
   }
