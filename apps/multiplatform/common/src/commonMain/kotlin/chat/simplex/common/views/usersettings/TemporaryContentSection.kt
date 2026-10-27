@@ -674,8 +674,16 @@ fun TemporaryContentStoryViewer(
   }
 
   val now = System.currentTimeMillis()
+  
+  // Строго читаем файл с диска
   val bitmap = remember(currentItem.filePath) {
-    loadStoryBitmapSafe(currentItem.filePath, currentItem.mediaType)
+    try {
+      val f = File(currentItem.filePath)
+      if (currentItem.mediaType == TemporaryMediaType.PHOTO && f.exists() && f.length() > 0) {
+        val bmp = android.graphics.BitmapFactory.decodeFile(f.absolutePath)
+        if (bmp != null) androidx.compose.ui.graphics.asImageBitmap(bmp) else null
+      } else null
+    } catch (e: Exception) { null }
   }
 
   Dialog(
@@ -705,20 +713,19 @@ fun TemporaryContentStoryViewer(
         }
     ) {
       // 1. Медиаконтент
-     // 1. Отображение медиаконтента
       if (currentItem.mediaType == TemporaryMediaType.VIDEO) {
         val videoPlayer = LocalStoryVideoPlayer.current
-        val mediaFile = remember(currentItem.filePath) { File(currentItem.filePath) }
+        val mediaFile = File(currentItem.filePath)
 
-        if (videoPlayer != null && mediaFile.exists() && mediaFile.length() > 0) {
+        if (videoPlayer != null && mediaFile.exists() && mediaFile.length() > 1000) {
           videoPlayer(currentItem.filePath, Modifier.fillMaxSize())
         } else {
-          // Если видеофайл еще докачивается
+          // Заглушка, если видео еще скачивается или повреждено
           Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
               CircularProgressIndicator(color = Color.White)
               Spacer(Modifier.height(12.dp))
-              Text("Loading video...", color = Color.White, fontSize = 14.sp)
+              Text("Processing video...", color = Color.White)
             }
           }
         }
@@ -726,21 +733,22 @@ fun TemporaryContentStoryViewer(
         Image(
           bitmap = bitmap,
           contentDescription = null,
-          contentScale = ContentScale.Crop, // Заполняет весь экран без черных полос
+          contentScale = ContentScale.Crop, // Без черных полей
           modifier = Modifier.fillMaxSize()
         )
+      } else {
+        // Заглушка, если фото еще скачивается
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+          CircularProgressIndicator(color = Color.White)
+        }
       }
 
-      // 2. Верхняя панель (с отступом от системного статус-бара)
+      // 2. Верхняя панель
       Column(
         modifier = Modifier
           .fillMaxWidth()
           .align(Alignment.TopCenter)
-          .background(
-            Brush.verticalGradient(
-              listOf(Color.Black.copy(alpha = 0.85f), Color.Transparent)
-            )
-          )
+          .background(Brush.verticalGradient(listOf(Color.Black.copy(alpha = 0.85f), Color.Transparent)))
           .statusBarsPadding()
           .padding(top = 10.dp, start = 14.dp, end = 14.dp, bottom = 24.dp)
       ) {
@@ -758,10 +766,7 @@ fun TemporaryContentStoryViewer(
               progress = progress,
               color = Color.White,
               backgroundColor = Color.White.copy(alpha = 0.35f),
-              modifier = Modifier
-                .weight(1f)
-                .height(3.5.dp)
-                .clip(CircleShape)
+              modifier = Modifier.weight(1f).height(3.5.dp).clip(CircleShape)
             )
           }
         }
@@ -774,76 +779,42 @@ fun TemporaryContentStoryViewer(
           horizontalArrangement = Arrangement.SpaceBetween
         ) {
           Row(verticalAlignment = Alignment.CenterVertically) {
-            Icon(
-              painter = painterResource(MR.images.ic_timer),
-              contentDescription = null,
-              tint = Color.White,
-              modifier = Modifier.size(18.dp)
-            )
+            Icon(painterResource(MR.images.ic_timer), null, tint = Color.White, modifier = Modifier.size(18.dp))
             Spacer(Modifier.width(6.dp))
             val authorLabel = currentItem.authorDisplayName ?: "Contact"
-            Text(
-              text = "$authorLabel • ${currentItem.remainingTimeText(now)}",
-              color = Color.White,
-              fontSize = 14.sp,
-              fontWeight = FontWeight.Bold
-            )
+            Text("$authorLabel • ${currentItem.remainingTimeText(now)}", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold)
           }
 
           Row(verticalAlignment = Alignment.CenterVertically) {
             if (currentItem.authorContactId == null) {
               IconButton(
                 onClick = {
-                  RichHaptics.perform(HapticPattern.TOGGLE_OFF)
                   TemporaryContentManager.removeContent(currentItem.id)
                   if (items.size <= 1) onDismiss()
                 }
               ) {
-                Icon(
-                  painter = painterResource(MR.images.ic_delete),
-                  contentDescription = "Delete",
-                  tint = Color(0xFFFF5252),
-                  modifier = Modifier.size(22.dp)
-                )
+                Icon(painterResource(MR.images.ic_delete), null, tint = Color(0xFFFF5252), modifier = Modifier.size(22.dp))
               }
             }
-
             IconButton(onClick = onDismiss) {
-              Icon(
-                painter = painterResource(MR.images.ic_close),
-                contentDescription = "Close",
-                tint = Color.White,
-                modifier = Modifier.size(24.dp)
-              )
+              Icon(painterResource(MR.images.ic_close), null, tint = Color.White, modifier = Modifier.size(24.dp))
             }
           }
         }
       }
 
-      // 3. Подпись (с отступом от панели навигации)
+      // 3. Подпись
       if (currentItem.caption.isNotBlank()) {
         Box(
           modifier = Modifier
             .fillMaxWidth()
             .align(Alignment.BottomCenter)
-            .background(
-              Brush.verticalGradient(
-                listOf(Color.Transparent, Color.Black.copy(alpha = 0.85f))
-              )
-            )
+            .background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.85f))))
             .navigationBarsPadding()
             .padding(horizontal = 20.dp, vertical = 20.dp),
           contentAlignment = Alignment.Center
         ) {
-          Text(
-            text = currentItem.caption,
-            color = Color.White,
-            fontSize = 15.sp,
-            fontWeight = FontWeight.Medium,
-            textAlign = TextAlign.Center,
-            maxLines = 3,
-            overflow = TextOverflow.Ellipsis
-          )
+          Text(currentItem.caption, color = Color.White, fontSize = 15.sp, textAlign = TextAlign.Center, maxLines = 3)
         }
       }
     }
@@ -1043,19 +1014,10 @@ fun AllStoriesFeedView(close: () -> Unit) {
 
 private fun loadStoryBitmapSafe(filePath: String, mediaType: TemporaryMediaType): ImageBitmap? {
   return try {
-    val file = if (mediaType == TemporaryMediaType.VIDEO) {
-      val thumb = File("${filePath}_thumb.jpg")
-      if (thumb.exists() && thumb.length() > 0) thumb else null
-    } else {
-      val f = File(filePath)
-      if (f.exists() && f.length() > 0) f else null
-    }
-
-    if (file != null && file.exists()) {
-      val base64Str = java.util.Base64.getEncoder().encodeToString(file.readBytes())
-      base64ToBitmap(base64Str)
+    val file = if (mediaType == TemporaryMediaType.VIDEO) File("${filePath}_thumb.jpg") else File(filePath)
+    if (file.exists() && file.length() > 0) {
+      val bmp = android.graphics.BitmapFactory.decodeFile(file.absolutePath)
+      if (bmp != null) androidx.compose.ui.graphics.asImageBitmap(bmp) else null
     } else null
-  } catch (_: Exception) {
-    null
-  }
+  } catch (_: Exception) { null }
 }
