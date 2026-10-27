@@ -15,10 +15,6 @@ object StorySyncManager {
   private val importedItemIds = ConcurrentHashMap.newKeySet<Long>()
   private val downloadingItemIds = ConcurrentHashMap.newKeySet<Long>()
 
-  /**
-   * Фоновый наблюдатель: больше не умирает при старте, непрерывно
-   * опрашивает входящие сторис и импортирует их сразу при получении.
-   */
   fun startBackgroundObserver(chatModel: ChatModel) {
     observerJob?.cancel()
     observerJob = scope.launch {
@@ -27,21 +23,17 @@ object StorySyncManager {
           val user = chatModel.currentUser.value
           if (user == null) {
             delay(1000L)
-            continue // Продолжаем ждать загрузки профиля, не завершая корутину
+            continue
           }
-
-          scanAndProcessStories(chatModel, user)
+          scanAndProcessStories(chatModel, user, forceDatabaseQuery = false)
         } catch (e: Exception) {
           Log.e(TAG, "Observer loop error: ${e.message}")
         }
-        delay(3000L) // Автопроверка каждые 3 секунды
+        delay(3000L)
       }
     }
   }
 
-  /**
-   * Принудительное ручное обновление (для кнопки Reload)
-   */
   suspend fun syncAllStoriesNow(chatModel: ChatModel) = withContext(Dispatchers.IO) {
     val user = chatModel.currentUser.value ?: return@withContext
     scanAndProcessStories(chatModel, user, forceDatabaseQuery = true)
@@ -50,7 +42,7 @@ object StorySyncManager {
   private suspend fun scanAndProcessStories(
     chatModel: ChatModel,
     user: User,
-    forceDatabaseQuery: Boolean = false
+    forceDatabaseQuery: Boolean
   ) {
     val chats = chatModel.chats.value.filter {
       val ci = it.chatInfo
@@ -60,17 +52,11 @@ object StorySyncManager {
     for (chat in chats) {
       val directContact = (chat.chatInfo as? ChatInfo.Direct)?.contact ?: continue
 
-      // Если нужно принудительно или сообщений в памяти нет — запрашиваем последние 10 из SQLite базы
       val items = if (forceDatabaseQuery || chat.chatItems.isEmpty()) {
         try {
-          val pagination = ChatPagination.Initial(10)
+          val pagination = ChatPagination.Initial(15)
           val chatData = chatModel.controller.apiGetChat(
-            chat.remoteHostId,
-            chat.chatInfo.chatType,
-            chat.chatInfo.apiId,
-            scope = null,
-            contentTag = null,
-            pagination = pagination
+            chat.remoteHostId, chat.chatInfo.chatType, chat.chatInfo.apiId, null, null, pagination
           )
           chatData?.first?.chatItems ?: chat.chatItems
         } catch (_: Exception) {
@@ -85,11 +71,16 @@ object StorySyncManager {
       }
 
       for (item in storyItems) {
-        if (item.chatDir.sent) continue
+        // ИСХОДЯЩИЕ: Больше не удаляем их из БД, чтобы не обрывать выгрузку на сервер.
+        // Они скрыты визуально в ChatItemView.
+        if (item.chatDir.sent) {
+          importedItemIds.add(item.id)
+          continue
+        }
 
+        // ВХОДЯЩИЕ
         val ciFile = item.file ?: continue
 
-        // 1. Старт скачивания с XFTP
         if (!ciFile.loaded) {
           if (!downloadingItemIds.contains(item.id)) {
             downloadingItemIds.add(item.id)
@@ -104,19 +95,17 @@ object StorySyncManager {
           continue
         }
 
-        // 2. Файл скачан — переносим в Temporary Content
         val loadedPath = getLoadedFilePath(ciFile)
         if (loadedPath != null) {
           val fileOnDisk = File(loadedPath)
-          if (fileOnDisk.exists() && fileOnDisk.length() > 0) {
+          
+          // Проверяем, что файл скачался и он не пустой (не 0 байт)
+          if (fileOnDisk.exists() && fileOnDisk.length() > 1000) {
             importedItemIds.add(item.id)
             downloadingItemIds.remove(item.id)
 
             val rawText = item.content.text
-            val durationHours = rawText
-              .substringAfter(STORY_TAG_PREFIX, "24]")
-              .substringBefore("]")
-              .toIntOrNull() ?: 24
+            val durationHours = rawText.substringAfter(STORY_TAG_PREFIX, "24]").substringBefore("]").toIntOrNull() ?: 24
             val caption = rawText.substringAfter("]", "").trim()
 
             val isVideo = item.content.msgContent is MsgContent.MCVideo ||
@@ -125,18 +114,27 @@ object StorySyncManager {
 
             val mediaType = if (isVideo) TemporaryMediaType.VIDEO else TemporaryMediaType.PHOTO
 
+            // Извлекаем превью прямо из сообщения (оно там уже есть и весит 8 КБ)
+            val previewBase64 = when (val content = item.content.msgContent) {
+              is MsgContent.MCVideo -> content.image
+              is MsgContent.MCImage -> content.image
+              else -> null
+            }
+
             try {
-              val bytes = fileOnDisk.readBytes()
-              TemporaryContentManager.receiveContactTemporaryContent(
+              // ИМПОРТ ФАЙЛА БЕЗ READBYTES (предотвращает краш памяти)
+              TemporaryContentManager.importContactStory(
                 contactId = directContact.contactId,
                 displayName = directContact.displayName,
-                bytes = bytes,
+                sourceFile = fileOnDisk,
+                previewBase64 = previewBase64,
                 mediaType = mediaType,
                 durationHours = durationHours,
                 caption = caption,
                 createdAtMillis = item.meta.createdAt.toEpochMilliseconds()
               )
 
+              // Удаляем техническое сообщение только после успешного импорта
               removeStoryItemFromChat(chatModel, chat, item)
             } catch (e: Exception) {
               Log.e(TAG, "Error importing story: ${e.message}")
@@ -157,12 +155,8 @@ object StorySyncManager {
       withBGApi {
         try {
           chatModel.controller.apiDeleteChatItems(
-            chat.remoteHostId,
-            type = chat.chatInfo.chatType,
-            id = chat.chatInfo.apiId,
-            scope = chat.chatInfo.groupChatScope(),
-            itemIds = listOf(item.id),
-            mode = CIDeleteMode.cidmInternal
+            chat.remoteHostId, chat.chatInfo.chatType, chat.chatInfo.apiId,
+            chat.chatInfo.groupChatScope(), listOf(item.id), CIDeleteMode.cidmInternal
           )
         } catch (_: Exception) {}
       }
@@ -195,9 +189,7 @@ object StorySyncManager {
         val ci = chat.chatInfo
         if (ci !is ChatInfo.Direct) return@filter false
         val contact = ci.contact
-
-        contact.active && contact.ready && contact.sndReady &&
-        !contact.chatDeleted && !ci.chatDeleted && ci.sendMsgEnabled
+        contact.active && contact.ready && contact.sndReady && !contact.chatDeleted && !ci.chatDeleted && ci.sendMsgEnabled
       }
 
       if (recipients.isEmpty()) {
@@ -205,21 +197,14 @@ object StorySyncManager {
         return@withContext true
       }
 
-      onProgress(20, "Generating preview...")
+      onProgress(30, "Generating metadata...")
       val previewBase64 = generateSmallPreviewBase64(file, item.mediaType)
       val taggedCaption = "${STORY_TAG_PREFIX}${item.durationHours}] ${item.caption}".trim()
 
-      val msgContent: MsgContent = if (item.mediaType == TemporaryMediaType.VIDEO) {
-        MsgContent.MCVideo(
-          text = taggedCaption,
-          image = previewBase64,
-          duration = 10
-        )
+      val msgContent = if (item.mediaType == TemporaryMediaType.VIDEO) {
+        MsgContent.MCVideo(text = taggedCaption, image = previewBase64, duration = 10)
       } else {
-        MsgContent.MCImage(
-          text = taggedCaption,
-          image = previewBase64
-        )
+        MsgContent.MCImage(text = taggedCaption, image = previewBase64)
       }
 
       recipients.forEach { chat ->
@@ -233,31 +218,19 @@ object StorySyncManager {
           val cInfo = chat.chatInfo
 
           chatModel.controller.apiSendMessages(
-            rh = chat.remoteHostId,
-            type = cInfo.chatType,
-            id = cInfo.apiId,
-            scope = cInfo.groupChatScope(),
-            sendAsGroup = cInfo.sendAsGroup,
-            live = false,
-            ttl = null,
-            sign = false,
-            composedMessages = listOf(
-              ComposedMessage(
-                fileSource = cryptoFile,
-                quotedItemId = null,
-                msgContent = msgContent,
-                mentions = emptyMap()
-              )
-            )
+            rh = chat.remoteHostId, type = cInfo.chatType, id = cInfo.apiId, scope = cInfo.groupChatScope(),
+            sendAsGroup = cInfo.sendAsGroup, live = false, ttl = null, sign = false,
+            composedMessages = listOf(ComposedMessage(fileSource = cryptoFile, quotedItemId = null, msgContent = msgContent, mentions = emptyMap()))
           )
         } catch (e: Exception) {
-          Log.e(TAG, "Error sending story to ${chat.chatInfo.displayName}: ${e.message}")
+          Log.e(TAG, "Send error: ${e.message}")
         }
       }
 
+      // Быстрое завершение анимации (настоящая выгрузка идёт в ядре безопасно)
       for (i in 1..10) {
-        delay(250L)
-        onProgress(25 + (i * 7), "Uploading to XFTP...")
+        delay(150L)
+        onProgress(40 + (i * 6), "Uploading...")
       }
 
       onProgress(100, "Done!")
