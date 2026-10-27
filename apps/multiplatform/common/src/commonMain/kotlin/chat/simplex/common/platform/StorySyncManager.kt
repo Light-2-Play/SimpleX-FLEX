@@ -16,41 +16,35 @@ object StorySyncManager {
   private val downloadingItemIds = ConcurrentHashMap.newKeySet<Long>()
 
   /**
-   * Независимый фоновый демон.
-   * Раз в 2 секунды сканирует базу на наличие новых сторис.
+   * Фоновый наблюдатель:
+   * Сканирует входящие сообщения, автоматически запускает приём файлов с XFTP
+   * и моментально импортирует их в ленту без перезапуска приложения.
    */
   fun startBackgroundObserver(chatModel: ChatModel) {
     observerJob?.cancel()
     observerJob = scope.launch {
       while (isActive) {
         try {
-          val user = chatModel.currentUser.value ?: continue
+          val user = chatModel.currentUser.value ?: run {
+            delay(1000L)
+            return@launch
+          }
           val chats = chatModel.chats.value
 
           for (chat in chats) {
             val directContact = (chat.chatInfo as? ChatInfo.Direct)?.contact ?: continue
 
-            // Ищем сторис во всех сообщениях (включая последнее, если чат закрыт)
-            val candidates = chat.chatItems.toMutableList()
-            chat.lastMessage?.let { candidates.add(it) }
-
-            val storyItems = candidates.distinctBy { it.id }.filter { item ->
+            val storyItems = chat.chatItems.filter { item ->
               item.content.text.startsWith(STORY_TAG_PREFIX) && !importedItemIds.contains(item.id)
             }
 
             for (item in storyItems) {
-              // ИСХОДЯЩИЕ (отправитель): мы больше не удаляем их скриптом, 
-              // чтобы ядро SimpleX могло спокойно выгрузить их на XFTP.
-              // Они просто скрыты в ChatItemView.
-              if (item.chatDir.sent) {
-                importedItemIds.add(item.id)
-                continue
-              }
+              // Исходящие сообщения отправителя не трогаем, пока ядро SimpleX ведёт выгрузку
+              if (item.chatDir.sent) continue
 
-              // ВХОДЯЩИЕ (получатель)
               val ciFile = item.file ?: continue
 
-              // 1. Старт скачивания
+              // 1. Автоматический запуск приёма файла с XFTP
               if (!ciFile.loaded) {
                 if (!downloadingItemIds.contains(item.id)) {
                   downloadingItemIds.add(item.id)
@@ -65,13 +59,11 @@ object StorySyncManager {
                 continue
               }
 
-              // 2. Файл скачан
+              // 2. Файл скачан на диск
               val loadedPath = getLoadedFilePath(ciFile)
               if (loadedPath != null) {
                 val fileOnDisk = File(loadedPath)
-                
-                // Проверяем, что файл действительно скачался и он не пустой
-                if (fileOnDisk.exists() && fileOnDisk.length() > 1000) { 
+                if (fileOnDisk.exists() && fileOnDisk.length() > 0) {
                   importedItemIds.add(item.id)
                   downloadingItemIds.remove(item.id)
 
@@ -90,7 +82,6 @@ object StorySyncManager {
 
                   try {
                     val bytes = fileOnDisk.readBytes()
-                    // Мгновенное добавление в UI
                     TemporaryContentManager.receiveContactTemporaryContent(
                       contactId = directContact.contactId,
                       displayName = directContact.displayName,
@@ -101,19 +92,9 @@ object StorySyncManager {
                       createdAtMillis = item.meta.createdAt.toEpochMilliseconds()
                     )
 
-                    // Стираем только после успешного импорта
-                    withBGApi {
-                      chatModel.controller.apiDeleteChatItems(
-                        chat.remoteHostId,
-                        chat.chatInfo.chatType,
-                        chat.chatInfo.apiId,
-                        chat.chatInfo.groupChatScope(),
-                        listOf(item.id),
-                        CIDeleteMode.cidmInternal
-                      )
-                    }
+                    removeStoryItemFromChat(chatModel, chat, item)
                   } catch (e: Exception) {
-                    Log.e(TAG, "Error importing story: ${e.message}")
+                    Log.e(TAG, "Import story error: ${e.message}")
                   }
                 }
               }
@@ -122,7 +103,29 @@ object StorySyncManager {
         } catch (e: Exception) {
           Log.e(TAG, "Observer loop error: ${e.message}")
         }
-        delay(2000L) // Пауза 2 секунды перед следующим сканированием
+        delay(1500L)
+      }
+    }
+  }
+
+  private fun removeStoryItemFromChat(chatModel: ChatModel, chat: Chat, item: ChatItem) {
+    scope.launch {
+      withContext(Dispatchers.Main) {
+        try {
+          chatModel.chatsContext.removeChatItem(chat.remoteHostId, chat.chatInfo, item)
+        } catch (_: Exception) {}
+      }
+      withBGApi {
+        try {
+          chatModel.controller.apiDeleteChatItems(
+            chat.remoteHostId,
+            type = chat.chatInfo.chatType,
+            id = chat.chatInfo.apiId,
+            scope = chat.chatInfo.groupChatScope(),
+            itemIds = listOf(item.id),
+            mode = CIDeleteMode.cidmInternal
+          )
+        } catch (_: Exception) {}
       }
     }
   }
@@ -132,9 +135,9 @@ object StorySyncManager {
       val name = ciFile.fileName
       if (name.isBlank()) return null
       val f1 = File(name)
-      if (f1.exists()) return f1.absolutePath
+      if (f1.exists() && f1.length() > 0) return f1.absolutePath
       val f2 = File(getAppFilePath(name))
-      if (f2.exists()) return f2.absolutePath
+      if (f2.exists() && f2.length() > 0) return f2.absolutePath
       null
     } catch (_: Exception) {
       null
@@ -163,17 +166,23 @@ object StorySyncManager {
         return@withContext true
       }
 
-      onProgress(25, "Generating metadata...")
+      onProgress(20, "Generating preview...")
       val previewBase64 = generateSmallPreviewBase64(file, item.mediaType)
       val taggedCaption = "${STORY_TAG_PREFIX}${item.durationHours}] ${item.caption}".trim()
 
-      val msgContent = if (item.mediaType == TemporaryMediaType.VIDEO) {
-        MsgContent.MCVideo(text = taggedCaption, image = previewBase64, duration = 10)
+      val msgContent: MsgContent = if (item.mediaType == TemporaryMediaType.VIDEO) {
+        MsgContent.MCVideo(
+          text = taggedCaption,
+          image = previewBase64,
+          duration = 10
+        )
       } else {
-        MsgContent.MCImage(text = taggedCaption, image = previewBase64)
+        MsgContent.MCImage(
+          text = taggedCaption,
+          image = previewBase64
+        )
       }
 
-      onProgress(40, "Sending to XFTP...")
       recipients.forEach { chat ->
         try {
           val ext = if (item.mediaType == TemporaryMediaType.VIDEO) "mp4" else "jpg"
@@ -184,7 +193,6 @@ object StorySyncManager {
           val cryptoFile = CryptoFile.plain(appFile.name)
           val cInfo = chat.chatInfo
 
-          // Отправляем и ЗАБЫВАЕМ. Ядро само загрузит на сервер.
           chatModel.controller.apiSendMessages(
             rh = chat.remoteHostId,
             type = cInfo.chatType,
@@ -204,14 +212,13 @@ object StorySyncManager {
             )
           )
         } catch (e: Exception) {
-          Log.e(TAG, "Send error: ${e.message}")
+          Log.e(TAG, "Error sending story to ${chat.chatInfo.displayName}: ${e.message}")
         }
       }
 
-      // Фейковая задержка для красивого UI (реальная загрузка идёт в фоне ядра)
       for (i in 1..10) {
-        delay(200L)
-        onProgress(40 + (i * 5), "Uploading...")
+        delay(250L)
+        onProgress(25 + (i * 7), "Uploading to XFTP...")
       }
 
       onProgress(100, "Done!")
