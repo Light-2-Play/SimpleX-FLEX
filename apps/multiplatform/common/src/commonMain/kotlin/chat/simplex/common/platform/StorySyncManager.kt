@@ -16,94 +16,133 @@ object StorySyncManager {
   private val downloadingItemIds = ConcurrentHashMap.newKeySet<Long>()
 
   /**
-   * Фоновый наблюдатель:
-   * Сканирует входящие сообщения, автоматически запускает приём файлов с XFTP
-   * и моментально импортирует их в ленту без перезапуска приложения.
+   * Фоновый наблюдатель: больше не умирает при старте, непрерывно
+   * опрашивает входящие сторис и импортирует их сразу при получении.
    */
   fun startBackgroundObserver(chatModel: ChatModel) {
     observerJob?.cancel()
     observerJob = scope.launch {
       while (isActive) {
         try {
-          val user = chatModel.currentUser.value ?: run {
+          val user = chatModel.currentUser.value
+          if (user == null) {
             delay(1000L)
-            return@launch
+            continue // Продолжаем ждать загрузки профиля, не завершая корутину
           }
-          val chats = chatModel.chats.value
 
-          for (chat in chats) {
-            val directContact = (chat.chatInfo as? ChatInfo.Direct)?.contact ?: continue
-
-            val storyItems = chat.chatItems.filter { item ->
-              item.content.text.startsWith(STORY_TAG_PREFIX) && !importedItemIds.contains(item.id)
-            }
-
-            for (item in storyItems) {
-              // Исходящие сообщения отправителя не трогаем, пока ядро SimpleX ведёт выгрузку
-              if (item.chatDir.sent) continue
-
-              val ciFile = item.file ?: continue
-
-              // 1. Автоматический запуск приёма файла с XFTP
-              if (!ciFile.loaded) {
-                if (!downloadingItemIds.contains(item.id)) {
-                  downloadingItemIds.add(item.id)
-                  withBGApi {
-                    try {
-                      chatModel.controller.receiveFile(chat.remoteHostId, user, ciFile.fileId)
-                    } catch (e: Exception) {
-                      Log.e(TAG, "receiveFile error: ${e.message}")
-                    }
-                  }
-                }
-                continue
-              }
-
-              // 2. Файл скачан на диск
-              val loadedPath = getLoadedFilePath(ciFile)
-              if (loadedPath != null) {
-                val fileOnDisk = File(loadedPath)
-                if (fileOnDisk.exists() && fileOnDisk.length() > 0) {
-                  importedItemIds.add(item.id)
-                  downloadingItemIds.remove(item.id)
-
-                  val rawText = item.content.text
-                  val durationHours = rawText
-                    .substringAfter(STORY_TAG_PREFIX, "24]")
-                    .substringBefore("]")
-                    .toIntOrNull() ?: 24
-                  val caption = rawText.substringAfter("]", "").trim()
-
-                  val isVideo = item.content.msgContent is MsgContent.MCVideo ||
-                                ciFile.fileName.endsWith(".mp4", ignoreCase = true) ||
-                                fileOnDisk.name.endsWith(".mp4", ignoreCase = true)
-
-                  val mediaType = if (isVideo) TemporaryMediaType.VIDEO else TemporaryMediaType.PHOTO
-
-                  try {
-                    val bytes = fileOnDisk.readBytes()
-                    TemporaryContentManager.receiveContactTemporaryContent(
-                      contactId = directContact.contactId,
-                      displayName = directContact.displayName,
-                      bytes = bytes,
-                      mediaType = mediaType,
-                      durationHours = durationHours,
-                      caption = caption,
-                      createdAtMillis = item.meta.createdAt.toEpochMilliseconds()
-                    )
-
-                    removeStoryItemFromChat(chatModel, chat, item)
-                  } catch (e: Exception) {
-                    Log.e(TAG, "Import story error: ${e.message}")
-                  }
-                }
-              }
-            }
-          }
+          scanAndProcessStories(chatModel, user)
         } catch (e: Exception) {
           Log.e(TAG, "Observer loop error: ${e.message}")
         }
-        delay(1500L)
+        delay(3000L) // Автопроверка каждые 3 секунды
+      }
+    }
+  }
+
+  /**
+   * Принудительное ручное обновление (для кнопки Reload)
+   */
+  suspend fun syncAllStoriesNow(chatModel: ChatModel) = withContext(Dispatchers.IO) {
+    val user = chatModel.currentUser.value ?: return@withContext
+    scanAndProcessStories(chatModel, user, forceDatabaseQuery = true)
+  }
+
+  private suspend fun scanAndProcessStories(
+    chatModel: ChatModel,
+    user: User,
+    forceDatabaseQuery: Boolean = false
+  ) {
+    val chats = chatModel.chats.value.filter {
+      val ci = it.chatInfo
+      ci is ChatInfo.Direct && ci.contact.active
+    }
+
+    for (chat in chats) {
+      val directContact = (chat.chatInfo as? ChatInfo.Direct)?.contact ?: continue
+
+      // Если нужно принудительно или сообщений в памяти нет — запрашиваем последние 10 из SQLite базы
+      val items = if (forceDatabaseQuery || chat.chatItems.isEmpty()) {
+        try {
+          val pagination = ChatPagination.Initial(10)
+          val chatData = chatModel.controller.apiGetChat(
+            chat.remoteHostId,
+            chat.chatInfo.chatType,
+            chat.chatInfo.apiId,
+            scope = null,
+            contentTag = null,
+            pagination = pagination
+          )
+          chatData?.first?.chatItems ?: chat.chatItems
+        } catch (_: Exception) {
+          chat.chatItems
+        }
+      } else {
+        chat.chatItems
+      }
+
+      val storyItems = items.filter { item ->
+        item.content.text.startsWith(STORY_TAG_PREFIX) && !importedItemIds.contains(item.id)
+      }
+
+      for (item in storyItems) {
+        if (item.chatDir.sent) continue
+
+        val ciFile = item.file ?: continue
+
+        // 1. Старт скачивания с XFTP
+        if (!ciFile.loaded) {
+          if (!downloadingItemIds.contains(item.id)) {
+            downloadingItemIds.add(item.id)
+            withBGApi {
+              try {
+                chatModel.controller.receiveFile(chat.remoteHostId, user, ciFile.fileId)
+              } catch (e: Exception) {
+                Log.e(TAG, "receiveFile error: ${e.message}")
+              }
+            }
+          }
+          continue
+        }
+
+        // 2. Файл скачан — переносим в Temporary Content
+        val loadedPath = getLoadedFilePath(ciFile)
+        if (loadedPath != null) {
+          val fileOnDisk = File(loadedPath)
+          if (fileOnDisk.exists() && fileOnDisk.length() > 0) {
+            importedItemIds.add(item.id)
+            downloadingItemIds.remove(item.id)
+
+            val rawText = item.content.text
+            val durationHours = rawText
+              .substringAfter(STORY_TAG_PREFIX, "24]")
+              .substringBefore("]")
+              .toIntOrNull() ?: 24
+            val caption = rawText.substringAfter("]", "").trim()
+
+            val isVideo = item.content.msgContent is MsgContent.MCVideo ||
+                          ciFile.fileName.endsWith(".mp4", ignoreCase = true) ||
+                          fileOnDisk.name.endsWith(".mp4", ignoreCase = true)
+
+            val mediaType = if (isVideo) TemporaryMediaType.VIDEO else TemporaryMediaType.PHOTO
+
+            try {
+              val bytes = fileOnDisk.readBytes()
+              TemporaryContentManager.receiveContactTemporaryContent(
+                contactId = directContact.contactId,
+                displayName = directContact.displayName,
+                bytes = bytes,
+                mediaType = mediaType,
+                durationHours = durationHours,
+                caption = caption,
+                createdAtMillis = item.meta.createdAt.toEpochMilliseconds()
+              )
+
+              removeStoryItemFromChat(chatModel, chat, item)
+            } catch (e: Exception) {
+              Log.e(TAG, "Error importing story: ${e.message}")
+            }
+          }
+        }
       }
     }
   }
