@@ -254,18 +254,17 @@ class MainActivity: FragmentActivity() {
           androidx.compose.ui.viewinterop.AndroidView(
             factory = { ctx ->
               android.widget.VideoView(ctx).apply {
-                setZOrderMediaOverlay(true)
                 val file = java.io.File(filePath)
                 if (file.exists() && file.length() > 0) {
                   setVideoPath(file.absolutePath)
-                }
-                setOnPreparedListener { mp ->
-                  mp.isLooping = true
-                  start()
+                  setOnPreparedListener { mp ->
+                    mp.isLooping = true
+                    start()
+                  }
                 }
                 setOnErrorListener { _, what, extra ->
-                  android.util.Log.e("StoryVideo", "VideoView error: $what, $extra")
-                  true
+                  android.util.Log.e("StoryVideo", "Playback error suppressed: $what, $extra")
+                  true // Подавляет системный диалог "Не удается воспроизвести видео"
                 }
               }
             },
