@@ -259,7 +259,7 @@ private fun TemporaryStoryTile(
   )
 
   val thumbnailBitmap = remember(item.filePath) {
-    loadStoryBitmapSafe(item.filePath)
+    loadStoryThumbnailSafe(item.filePath)
   }
 
   Column(
@@ -700,36 +700,26 @@ fun TemporaryContentStoryViewer(
           }
         }
     ) {
-      // 1. МЕДИАКРЕНДЕР
+      // 1. АППАРАТНЫЙ РЕНДЕР МЕДИА
+      val mediaFile = remember(currentItem.filePath) { File(currentItem.filePath) }
+
       if (currentItem.mediaType == TemporaryMediaType.VIDEO) {
         val videoPlayer = LocalStoryVideoPlayer.current
-        val mediaFile = File(currentItem.filePath)
-
-        Box(Modifier.fillMaxSize()) {
-          if (videoPlayer != null && mediaFile.exists() && mediaFile.length() > 0) {
-            videoPlayer(currentItem.filePath, Modifier.fillMaxSize())
-          } else {
-            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-              Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                CircularProgressIndicator(color = Color.White)
-                Spacer(Modifier.height(12.dp))
-                Text("Loading video...", color = Color.White, fontSize = 14.sp)
-              }
-            }
+        if (videoPlayer != null && mediaFile.exists() && mediaFile.length() > 0) {
+          videoPlayer(currentItem.filePath, Modifier.fillMaxSize())
+        } else {
+          Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            CircularProgressIndicator(color = Color.White)
           }
         }
       } else {
-        // Использование нативного ImageView для фото вместо Base64
+        // Нативный ImageView: декодирует полный оригинал напрямую с диска без размытия в квадрат
         val imageViewer = LocalStoryImageViewer.current
-        val mediaFile = File(currentItem.filePath)
-
-        Box(Modifier.fillMaxSize()) {
-          if (imageViewer != null && mediaFile.exists() && mediaFile.length() > 0) {
-            imageViewer(currentItem.filePath, Modifier.fillMaxSize())
-          } else {
-            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-              CircularProgressIndicator(color = Color.White)
-            }
+        if (imageViewer != null && mediaFile.exists() && mediaFile.length() > 0) {
+          imageViewer(currentItem.filePath, Modifier.fillMaxSize())
+        } else {
+          Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            CircularProgressIndicator(color = Color.White)
           }
         }
       }
@@ -1062,17 +1052,14 @@ fun AllStoriesFeedView(close: () -> Unit) {
   }
 }
 
-// Защищенное чтение ТОЛЬКО для маленьких кружков. Если файл большой (более 800 КБ),
-// он игнорируется, и система отображает иконку заглушку.
-private fun loadStoryBitmapSafe(filePath: String): ImageBitmap? {
+// Загрузка миниатюры только для плиток в карусели
+private fun loadStoryThumbnailSafe(filePath: String): ImageBitmap? {
   return try {
     val thumbFile = File("${filePath}_thumb.jpg")
     val originalFile = File(filePath)
-    
-    val targetFile = if (thumbFile.exists() && thumbFile.length() > 0) thumbFile else originalFile
 
-    // Блокируем Base64 конвертацию для файлов больше 800 KB для защиты памяти!
-    if (targetFile.exists() && targetFile.length() in 1..800_000L) {
+    val targetFile = if (thumbFile.exists() && thumbFile.length() > 0) thumbFile else originalFile
+    if (targetFile.exists() && targetFile.length() in 1..900_000L) {
       val bytes = targetFile.readBytes()
       val base64Str = java.util.Base64.getEncoder().encodeToString(bytes)
       base64ToBitmap(base64Str)
