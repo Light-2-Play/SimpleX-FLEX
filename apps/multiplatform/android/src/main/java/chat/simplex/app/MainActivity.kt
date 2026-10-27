@@ -55,6 +55,7 @@ import kotlinx.coroutines.launch
 import android.media.MediaMetadataRetriever
 import android.widget.VideoView
 import chat.simplex.common.views.usersettings.LocalStoryVideoPlayer
+import chat.simplex.common.views.usersettings.LocalStoryImageViewer
 
 var showSingBoxDialogState = mutableStateOf(false)
 var openByeDpiDialog: (() -> Unit)? = null
@@ -250,61 +251,61 @@ class MainActivity: FragmentActivity() {
           }
         },
         // Подключение нативного воспроизведения видео внутри сторис
-    LocalStoryVideoPlayer provides { filePath, modifier ->
-          androidx.compose.ui.viewinterop.AndroidView(
-            factory = { ctx ->
-              android.view.TextureView(ctx).apply {
-                surfaceTextureListener = object : android.view.TextureView.SurfaceTextureListener {
-                  var mediaPlayer: android.media.MediaPlayer? = null
+   LocalStoryVideoPlayer provides { filePath: String, modifier: androidx.compose.ui.Modifier ->
+            androidx.compose.ui.viewinterop.AndroidView(
+              factory = { ctx ->
+                android.view.TextureView(ctx).apply {
+                  surfaceTextureListener = object : android.view.TextureView.SurfaceTextureListener {
+                    var mediaPlayer: android.media.MediaPlayer? = null
 
-                  override fun onSurfaceTextureAvailable(surfaceTexture: android.graphics.SurfaceTexture, width: Int, height: Int) {
-                    try {
-                      val file = java.io.File(filePath)
-                      if (!file.exists() || file.length() == 0L) return
-                      mediaPlayer = android.media.MediaPlayer().apply {
-                        setDataSource(file.absolutePath)
-                        setSurface(android.view.Surface(surfaceTexture))
-                        isLooping = true
-                        setOnPreparedListener { start() }
-                        prepareAsync()
+                    override fun onSurfaceTextureAvailable(surfaceTexture: android.graphics.SurfaceTexture, width: Int, height: Int) {
+                      try {
+                        val file = File(filePath)
+                        if (!file.exists() || file.length() == 0L) return
+                        mediaPlayer = android.media.MediaPlayer().apply {
+                          setDataSource(file.absolutePath)
+                          setSurface(android.view.Surface(surfaceTexture))
+                          isLooping = true
+                          setOnPreparedListener { start() }
+                          prepareAsync()
+                        }
+                      } catch (e: Exception) {
+                        android.util.Log.e("StoryVideo", "TextureView error: ${e.message}")
                       }
-                    } catch (e: Exception) {
-                      android.util.Log.e("StoryVideo", "TextureView error: ${e.message}")
                     }
-                  }
 
-                  override fun onSurfaceTextureSizeChanged(surface: android.graphics.SurfaceTexture, width: Int, height: Int) {}
-                  override fun onSurfaceTextureDestroyed(surface: android.graphics.SurfaceTexture): Boolean {
-                    try {
-                      mediaPlayer?.stop()
-                      mediaPlayer?.release()
-                      mediaPlayer = null
-                    } catch (_: Exception) {}
-                    return true
+                    override fun onSurfaceTextureSizeChanged(surface: android.graphics.SurfaceTexture, width: Int, height: Int) {}
+                    override fun onSurfaceTextureDestroyed(surface: android.graphics.SurfaceTexture): Boolean {
+                      try {
+                        mediaPlayer?.stop()
+                        mediaPlayer?.release()
+                        mediaPlayer = null
+                      } catch (_: Exception) {}
+                      return true
+                    }
+                    override fun onSurfaceTextureUpdated(surface: android.graphics.SurfaceTexture) {}
                   }
-                  override fun onSurfaceTextureUpdated(surface: android.graphics.SurfaceTexture) {}
                 }
-              }
-            },
-            update = {},
-            modifier = modifier
-          )
-        },
-        LocalStoryImageViewer provides { filePath, modifier ->
-          androidx.compose.ui.viewinterop.AndroidView(
-            factory = { ctx ->
-              android.widget.ImageView(ctx).apply {
-                scaleType = android.widget.ImageView.ScaleType.CENTER_CROP
-                val file = java.io.File(filePath)
-                if (file.exists() && file.length() > 0) {
-                  setImageURI(android.net.Uri.fromFile(file))
+              },
+              update = {},
+              modifier = modifier
+            )
+          },
+          LocalStoryImageViewer provides { filePath: String, modifier: androidx.compose.ui.Modifier ->
+            androidx.compose.ui.viewinterop.AndroidView(
+              factory = { ctx ->
+                android.widget.ImageView(ctx).apply {
+                  scaleType = android.widget.ImageView.ScaleType.CENTER_CROP
+                  val file = File(filePath)
+                  if (file.exists() && file.length() > 0) {
+                    setImageURI(android.net.Uri.fromFile(file))
+                  }
                 }
-              }
-            },
-            update = {},
-            modifier = modifier
-          )
-        }
+              },
+              update = {},
+              modifier = modifier
+            )
+          }
       ) {
         SingBoxComposeDialogs(this@MainActivity)
         AppScreen()
