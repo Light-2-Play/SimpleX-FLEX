@@ -33,10 +33,7 @@ object StorySyncManager {
         chats.forEach { chat ->
           val directContact = (chat.chatInfo as? ChatInfo.Direct)?.contact ?: return@forEach
 
-          // Проверяем как загруженные сообщения, так и lastMessage (если чат ещё не открывали)
-          val candidates = (chat.chatItems + listOfNotNull(chat.lastMessage)).distinctBy { it.id }
-
-          val storyItems = candidates.filter { item ->
+         val storyItems = chat.chatItems.filter { item ->
             item.content.text.startsWith(STORY_TAG_PREFIX) && !importedItemIds.contains(item.id)
           }
 
