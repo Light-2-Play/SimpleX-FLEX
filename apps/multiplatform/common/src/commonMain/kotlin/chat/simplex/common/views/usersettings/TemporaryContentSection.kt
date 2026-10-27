@@ -41,6 +41,7 @@ import kotlinx.coroutines.launch
 import java.io.File
 
 val LocalStoryVideoPlayer = compositionLocalOf<(@Composable (filePath: String, modifier: Modifier) -> Unit)?> { null }
+val LocalStoryImageViewer = compositionLocalOf<(@Composable (filePath: String, modifier: Modifier) -> Unit)?> { null }
 
 object TemporaryContentPickerBridge {
   var pickMedia: ((TemporaryMediaType, (ByteArray?) -> Unit) -> Unit)? = null
@@ -258,7 +259,7 @@ private fun TemporaryStoryTile(
   )
 
   val thumbnailBitmap = remember(item.filePath) {
-    loadStoryBitmapSafe(item.filePath, isThumbOnly = true)
+    loadStoryBitmapSafe(item.filePath)
   }
 
   Column(
@@ -673,11 +674,6 @@ fun TemporaryContentStoryViewer(
 
   val now = System.currentTimeMillis()
 
-  // Для полноэкранного режима читается оригинальное фото (не эскиз)
-  val bitmap = remember(currentItem.filePath) {
-    loadStoryBitmapSafe(currentItem.filePath, isThumbOnly = false)
-  }
-
   Dialog(
     onDismissRequest = onDismiss,
     properties = DialogProperties(usePlatformDefaultWidth = false)
@@ -704,7 +700,7 @@ fun TemporaryContentStoryViewer(
           }
         }
     ) {
-      // 1. Медиаконтент
+      // 1. МЕДИАКРЕНДЕР
       if (currentItem.mediaType == TemporaryMediaType.VIDEO) {
         val videoPlayer = LocalStoryVideoPlayer.current
         val mediaFile = File(currentItem.filePath)
@@ -722,16 +718,19 @@ fun TemporaryContentStoryViewer(
             }
           }
         }
-      } else if (bitmap != null) {
-        Image(
-          bitmap = bitmap,
-          contentDescription = null,
-          contentScale = ContentScale.Crop,
-          modifier = Modifier.fillMaxSize()
-        )
       } else {
-        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-          CircularProgressIndicator(color = Color.White)
+        // Использование нативного ImageView для фото вместо Base64
+        val imageViewer = LocalStoryImageViewer.current
+        val mediaFile = File(currentItem.filePath)
+
+        Box(Modifier.fillMaxSize()) {
+          if (imageViewer != null && mediaFile.exists() && mediaFile.length() > 0) {
+            imageViewer(currentItem.filePath, Modifier.fillMaxSize())
+          } else {
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+              CircularProgressIndicator(color = Color.White)
+            }
+          }
         }
       }
 
@@ -844,7 +843,6 @@ fun AllStoriesFeedView(close: () -> Unit) {
 
   ModalView(close = close, cardScreen = true) {
     ColumnWithScrollBar {
-      // Заголовок и кнопка Reload СТРОГО ПОД НИМ
       Column(
         modifier = Modifier
           .fillMaxWidth()
@@ -1064,20 +1062,19 @@ fun AllStoriesFeedView(close: () -> Unit) {
   }
 }
 
-private fun loadStoryBitmapSafe(filePath: String, isThumbOnly: Boolean = false): ImageBitmap? {
+// Защищенное чтение ТОЛЬКО для маленьких кружков. Если файл большой (более 800 КБ),
+// он игнорируется, и система отображает иконку заглушку.
+private fun loadStoryBitmapSafe(filePath: String): ImageBitmap? {
   return try {
-    val originalFile = File(filePath)
     val thumbFile = File("${filePath}_thumb.jpg")
+    val originalFile = File(filePath)
+    
+    val targetFile = if (thumbFile.exists() && thumbFile.length() > 0) thumbFile else originalFile
 
-    val targetFile = if (isThumbOnly) {
-      if (thumbFile.exists() && thumbFile.length() > 0) thumbFile else originalFile
-    } else {
-      // Для просмотра сторис в полный экран читаем оригинальный файл
-      if (originalFile.exists() && originalFile.length() > 0) originalFile else thumbFile
-    }
-
-    if (targetFile.exists() && targetFile.length() > 0) {
-      val base64Str = java.util.Base64.getEncoder().encodeToString(targetFile.readBytes())
+    // Блокируем Base64 конвертацию для файлов больше 800 KB для защиты памяти!
+    if (targetFile.exists() && targetFile.length() in 1..800_000L) {
+      val bytes = targetFile.readBytes()
+      val base64Str = java.util.Base64.getEncoder().encodeToString(bytes)
       base64ToBitmap(base64Str)
     } else null
   } catch (_: Exception) {
