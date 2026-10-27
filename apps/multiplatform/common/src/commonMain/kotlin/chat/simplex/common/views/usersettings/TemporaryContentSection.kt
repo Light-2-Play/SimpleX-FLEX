@@ -41,7 +41,6 @@ import kotlinx.coroutines.launch
 import java.io.File
 
 val LocalStoryVideoPlayer = compositionLocalOf<(@Composable (filePath: String, modifier: Modifier) -> Unit)?> { null }
-val LocalStoryImageViewer = compositionLocalOf<(@Composable (filePath: String, modifier: Modifier) -> Unit)?> { null }
 
 object TemporaryContentPickerBridge {
   var pickMedia: ((TemporaryMediaType, (ByteArray?) -> Unit) -> Unit)? = null
@@ -259,7 +258,7 @@ private fun TemporaryStoryTile(
   )
 
   val thumbnailBitmap = remember(item.filePath) {
-    loadStoryBitmapSafe(item.filePath, item.mediaType, isThumbOnly = true)
+    loadStoryBitmapSafe(item.filePath, isThumbOnly = true)
   }
 
   Column(
@@ -673,10 +672,10 @@ fun TemporaryContentStoryViewer(
   }
 
   val now = System.currentTimeMillis()
-  
-  // Для полноэкранного просмотра загружаем полное изображение (не эскиз)
+
+  // Для полноэкранного режима читается оригинальное фото (не эскиз)
   val bitmap = remember(currentItem.filePath) {
-    loadStoryBitmapSafe(currentItem.filePath, currentItem.mediaType, isThumbOnly = false)
+    loadStoryBitmapSafe(currentItem.filePath, isThumbOnly = false)
   }
 
   Dialog(
@@ -845,7 +844,7 @@ fun AllStoriesFeedView(close: () -> Unit) {
 
   ModalView(close = close, cardScreen = true) {
     ColumnWithScrollBar {
-      // Блок заголовка: надпись "Temporary Content" и кнопка "Reload" строго ПОД ней
+      // Заголовок и кнопка Reload СТРОГО ПОД НИМ
       Column(
         modifier = Modifier
           .fillMaxWidth()
@@ -860,7 +859,7 @@ fun AllStoriesFeedView(close: () -> Unit) {
 
         Spacer(Modifier.height(8.dp))
 
-        // КНОПКА РУЧНОГО ОБНОВЛЕНИЯ (RELOAD) ПОД НАДПИСЬЮ
+        // КНОПКА RELOAD ПОД НАДПИСЬЮ
         OutlinedButton(
           onClick = {
             if (!isReloading) {
@@ -1065,34 +1064,20 @@ fun AllStoriesFeedView(close: () -> Unit) {
   }
 }
 
-private fun loadStoryBitmapSafe(
-  filePath: String,
-  mediaType: TemporaryMediaType? = null,
-  isThumbOnly: Boolean = false
-): ImageBitmap? {
+private fun loadStoryBitmapSafe(filePath: String, isThumbOnly: Boolean = false): ImageBitmap? {
   return try {
-    val file = if (isThumbOnly) {
-      val thumb = File("${filePath}_thumb.jpg")
-      if (thumb.exists() && thumb.length() > 0) thumb else File(filePath)
+    val originalFile = File(filePath)
+    val thumbFile = File("${filePath}_thumb.jpg")
+
+    val targetFile = if (isThumbOnly) {
+      if (thumbFile.exists() && thumbFile.length() > 0) thumbFile else originalFile
     } else {
-      val original = File(filePath)
-      if (original.exists() && original.length() > 0) original else File("${filePath}_thumb.jpg")
+      // Для просмотра сторис в полный экран читаем оригинальный файл
+      if (originalFile.exists() && originalFile.length() > 0) originalFile else thumbFile
     }
 
-    if (file.exists() && file.length() > 0) {
-      val bytes = if (file.length() > 1_500_000L) {
-        val bmp = android.graphics.BitmapFactory.decodeFile(file.absolutePath)
-        if (bmp != null) {
-          val stream = java.io.ByteArrayOutputStream()
-          bmp.compress(android.graphics.Bitmap.CompressFormat.JPEG, 85, stream)
-          stream.toByteArray()
-        } else {
-          file.readBytes()
-        }
-      } else {
-        file.readBytes()
-      }
-      val base64Str = java.util.Base64.getEncoder().encodeToString(bytes)
+    if (targetFile.exists() && targetFile.length() > 0) {
+      val base64Str = java.util.Base64.getEncoder().encodeToString(targetFile.readBytes())
       base64ToBitmap(base64Str)
     } else null
   } catch (_: Exception) {
