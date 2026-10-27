@@ -136,10 +136,11 @@ object TemporaryContentManager {
     }
   }
 
-  fun receiveContactTemporaryContent(
+  fun importContactStory(
     contactId: Long,
     displayName: String,
-    bytes: ByteArray,
+    sourceFile: File,
+    previewBase64: String?,
     mediaType: TemporaryMediaType,
     durationHours: Int,
     caption: String,
@@ -150,20 +151,16 @@ object TemporaryContentManager {
       val ext = if (mediaType == TemporaryMediaType.VIDEO) "mp4" else "jpg"
       val id = "story_${contactId}_${System.currentTimeMillis()}"
       val destFile = File(dir, "$id.$ext")
-      destFile.writeBytes(bytes)
+      
+      // Просто копируем готовый файл без загрузки его в оперативную память!
+      sourceFile.copyTo(destFile, overwrite = true)
 
-      if (mediaType == TemporaryMediaType.VIDEO) {
+      // Сохраняем лёгкий 8KB эскиз для интерфейса
+      if (!previewBase64.isNullOrBlank()) {
         try {
-          val retriever = android.media.MediaMetadataRetriever()
-          retriever.setDataSource(destFile.absolutePath)
-          val frame = retriever.getFrameAtTime(1000000) ?: retriever.getFrameAtTime()
-          if (frame != null) {
-            val thumbFile = File("${destFile.absolutePath}_thumb.jpg")
-            val stream = java.io.ByteArrayOutputStream()
-            frame.compress(android.graphics.Bitmap.CompressFormat.JPEG, 80, stream)
-            thumbFile.writeBytes(stream.toByteArray())
-          }
-          retriever.release()
+          val thumbFile = File("${destFile.absolutePath}_thumb.jpg")
+          val decoded = java.util.Base64.getDecoder().decode(previewBase64)
+          thumbFile.writeBytes(decoded)
         } catch (_: Exception) {}
       }
 
@@ -187,10 +184,9 @@ object TemporaryContentManager {
       _items.value = currentList.toList()
       saveMetadataToDisk()
     } catch (e: Exception) {
-      Log.e(TAG, "receiveContactTemporaryContent error: ${e.message}")
+      Log.e(TAG, "importContactStory error: ${e.message}")
     }
   }
-
   fun removeContent(id: String) {
     val current = _items.value
     val item = current.firstOrNull { it.id == id } ?: return
