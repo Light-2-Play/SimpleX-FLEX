@@ -136,7 +136,7 @@ object TemporaryContentManager {
     }
   }
 
-  fun receiveContactTemporaryContent(
+ fun receiveContactTemporaryContent(
     contactId: Long,
     displayName: String,
     bytes: ByteArray,
@@ -152,20 +152,23 @@ object TemporaryContentManager {
       val destFile = File(dir, "$id.$ext")
       destFile.writeBytes(bytes)
 
-      // Для видео создаем кадр превью
+      // Надежное создание превью для видео
       if (mediaType == TemporaryMediaType.VIDEO) {
         try {
           val retriever = android.media.MediaMetadataRetriever()
           retriever.setDataSource(destFile.absolutePath)
-          val frame = retriever.getFrameAtTime(0)
+          // Берем кадр с 1 секунды, чтобы избежать черного экрана в начале
+          val frame = retriever.getFrameAtTime(1000000) ?: retriever.getFrameAtTime()
           if (frame != null) {
             val thumbFile = File("${destFile.absolutePath}_thumb.jpg")
             val stream = java.io.ByteArrayOutputStream()
-            frame.compress(android.graphics.Bitmap.CompressFormat.JPEG, 75, stream)
+            frame.compress(android.graphics.Bitmap.CompressFormat.JPEG, 80, stream)
             thumbFile.writeBytes(stream.toByteArray())
           }
           retriever.release()
-        } catch (_: Exception) {}
+        } catch (e: Exception) {
+          Log.e(TAG, "Failed creating video thumb: ${e.message}")
+        }
       }
 
       val expiresAt = createdAtMillis + (durationHours * 3600_000L)
@@ -182,30 +185,17 @@ object TemporaryContentManager {
         audience = TemporaryAudience.CONTACTS
       )
 
-      // Мгновенное обновление Compose-потока: истории появляются без перезапуска приложения
+      // ПРИНУДИТЕЛЬНЫЙ ТРИГГЕР UI (без перезапуска приложения)
       val currentList = _items.value.toMutableList()
       currentList.removeAll { it.id == newItem.id }
       currentList.add(0, newItem)
-      _items.value = currentList
+      _items.value = currentList.toList() // toList() создает новую ссылку, что заставляет StateFlow обновиться
+
       saveMetadataToDisk()
     } catch (e: Exception) {
       Log.e(TAG, "receiveContactTemporaryContent error: ${e.message}")
     }
   }
-
-  fun removeContent(id: String) {
-    val current = _items.value
-    val item = current.firstOrNull { it.id == id } ?: return
-    try {
-      val f = File(item.filePath)
-      if (f.exists()) f.delete()
-      val thumb = File("${item.filePath}_thumb.jpg")
-      if (thumb.exists()) thumb.delete()
-    } catch (_: Exception) {}
-    _items.value = current.filter { it.id != id }
-    saveMetadataToDisk()
-  }
-
   fun purgeExpired() {
     val now = System.currentTimeMillis()
     val current = _items.value
