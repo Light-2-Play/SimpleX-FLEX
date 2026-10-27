@@ -12,6 +12,8 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.*
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -37,7 +39,6 @@ import chat.simplex.res.MR
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.io.File
-import java.net.URI
 
 val LocalStoryVideoPlayer = compositionLocalOf<(@Composable (filePath: String, modifier: Modifier) -> Unit)?> { null }
 
@@ -61,6 +62,7 @@ fun TemporaryContentProfileSection() {
 
   LaunchedEffect(Unit) {
     TemporaryContentManager.purgeExpired()
+    StorySyncManager.syncAllStoriesNow(chatModel)
     while (true) {
       delay(15_000L)
       TemporaryContentManager.purgeExpired()
@@ -566,7 +568,6 @@ private fun AddTemporaryContentDialog(
 
         Spacer(Modifier.height(20.dp))
 
-        // Отображение процентов отправки
         if (isUploading) {
           Column(
             modifier = Modifier.fillMaxWidth(),
@@ -658,9 +659,6 @@ private fun AddTemporaryContentDialog(
 // =====================================================================
 // 4. ПОЛНОЭКРАННЫЙ ПРОСМОТРЩИК TEMPORARY CONTENT
 // =====================================================================
-// =====================================================================
-// 4. ПОЛНОЭКРАННЫЙ ПРОСМОТРЩИК TEMPORARY CONTENT
-// =====================================================================
 @Composable
 fun TemporaryContentStoryViewer(
   items: List<TemporaryContentItem>,
@@ -674,11 +672,10 @@ fun TemporaryContentStoryViewer(
   }
 
   val now = System.currentTimeMillis()
-  
-  // Строго читаем файл с диска
-val bitmap = remember(currentItem.filePath) {
-  loadStoryBitmapSafe(currentItem.filePath, currentItem.mediaType)
-}
+  val bitmap = remember(currentItem.filePath) {
+    loadStoryBitmapSafe(currentItem.filePath, currentItem.mediaType)
+  }
+
   Dialog(
     onDismissRequest = onDismiss,
     properties = DialogProperties(usePlatformDefaultWidth = false)
@@ -710,15 +707,26 @@ val bitmap = remember(currentItem.filePath) {
         val videoPlayer = LocalStoryVideoPlayer.current
         val mediaFile = File(currentItem.filePath)
 
-        if (videoPlayer != null && mediaFile.exists() && mediaFile.length() > 1000) {
-          videoPlayer(currentItem.filePath, Modifier.fillMaxSize())
-        } else {
-          // Заглушка, если видео еще скачивается или повреждено
-          Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-              CircularProgressIndicator(color = Color.White)
-              Spacer(Modifier.height(12.dp))
-              Text("Processing video...", color = Color.White)
+        Box(Modifier.fillMaxSize()) {
+          // Подложка кадра-превью: экран никогда не будет чёрным во время подготовки видео
+          if (bitmap != null) {
+            Image(
+              bitmap = bitmap,
+              contentDescription = null,
+              contentScale = ContentScale.Crop,
+              modifier = Modifier.fillMaxSize()
+            )
+          }
+
+          if (videoPlayer != null && mediaFile.exists() && mediaFile.length() > 0) {
+            videoPlayer(currentItem.filePath, Modifier.fillMaxSize())
+          } else {
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+              Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                CircularProgressIndicator(color = Color.White)
+                Spacer(Modifier.height(12.dp))
+                Text("Loading video...", color = Color.White, fontSize = 14.sp)
+              }
             }
           }
         }
@@ -726,17 +734,16 @@ val bitmap = remember(currentItem.filePath) {
         Image(
           bitmap = bitmap,
           contentDescription = null,
-          contentScale = ContentScale.Crop, // Без черных полей
+          contentScale = ContentScale.Crop,
           modifier = Modifier.fillMaxSize()
         )
       } else {
-        // Заглушка, если фото еще скачивается
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
           CircularProgressIndicator(color = Color.White)
         }
       }
 
-      // 2. Верхняя панель
+      // 2. Верхняя панель со статусом и таймером
       Column(
         modifier = Modifier
           .fillMaxWidth()
@@ -779,16 +786,17 @@ val bitmap = remember(currentItem.filePath) {
           }
 
           Row(verticalAlignment = Alignment.CenterVertically) {
-            if (currentItem.authorContactId == null) {
-              IconButton(
-                onClick = {
-                  TemporaryContentManager.removeContent(currentItem.id)
-                  if (items.size <= 1) onDismiss()
-                }
-              ) {
-                Icon(painterResource(MR.images.ic_delete), null, tint = Color(0xFFFF5252), modifier = Modifier.size(22.dp))
+            // Кнопка удаления доступна для любой истории, чтобы стереть повреждённые тесты
+            IconButton(
+              onClick = {
+                RichHaptics.perform(HapticPattern.TOGGLE_OFF)
+                TemporaryContentManager.removeContent(currentItem.id)
+                if (items.size <= 1) onDismiss()
               }
+            ) {
+              Icon(painterResource(MR.images.ic_delete), null, tint = Color(0xFFFF5252), modifier = Modifier.size(22.dp))
             }
+
             IconButton(onClick = onDismiss) {
               Icon(painterResource(MR.images.ic_close), null, tint = Color.White, modifier = Modifier.size(24.dp))
             }
@@ -796,7 +804,7 @@ val bitmap = remember(currentItem.filePath) {
         }
       }
 
-      // 3. Подпись
+      // 3. Подпись снизу
       if (currentItem.caption.isNotBlank()) {
         Box(
           modifier = Modifier
@@ -817,19 +825,21 @@ val bitmap = remember(currentItem.filePath) {
 // =====================================================================
 // 5. ГЛАВНЫЙ ЭКРАН ВСЕХ ИСТОРИЙ (ДЛЯ СПИСКА ЧАТОВ)
 // =====================================================================
-// =====================================================================
-// 5. ГЛАВНЫЙ ЭКРАН ВСЕХ ИСТОРИЙ (ДЛЯ СПИСКА ЧАТОВ)
-// =====================================================================
 @Composable
 fun AllStoriesFeedView(close: () -> Unit) {
   val items by TemporaryContentManager.items.collectAsState()
   var showAddDialog by remember { mutableStateOf(false) }
   var nowMillis by remember { mutableStateOf(System.currentTimeMillis()) }
   var viewingStories by remember { mutableStateOf<List<TemporaryContentItem>?>(null) }
+  var isReloading by remember { mutableStateOf(false) }
+  val scope = rememberCoroutineScope()
 
+  // Автоматический синк сразу при входе и каждые 8 секунд
   LaunchedEffect(Unit) {
+    StorySyncManager.syncAllStoriesNow(chatModel)
     while (true) {
-      delay(15_000L)
+      delay(8_000L)
+      StorySyncManager.syncAllStoriesNow(chatModel)
       nowMillis = System.currentTimeMillis()
     }
   }
@@ -844,7 +854,65 @@ fun AllStoriesFeedView(close: () -> Unit) {
 
   ModalView(close = close, cardScreen = true) {
     ColumnWithScrollBar {
-      AppBarTitle("Temporary Content")
+      Row(
+        modifier = Modifier
+          .fillMaxWidth()
+          .padding(horizontal = 16.dp, vertical = 12.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+      ) {
+        Text(
+          text = "Temporary Content",
+          style = MaterialTheme.typography.h1,
+          fontWeight = FontWeight.Bold,
+          color = MaterialTheme.colors.onSurface
+        )
+
+        // КНОПКА РУЧНОГО ОБНОВЛЕНИЯ (RELOAD)
+        OutlinedButton(
+          onClick = {
+            if (!isReloading) {
+              isReloading = true
+              RichHaptics.perform(HapticPattern.CLICK)
+              scope.launch {
+                TemporaryContentManager.purgeExpired()
+                StorySyncManager.syncAllStoriesNow(chatModel)
+                delay(600L)
+                isReloading = false
+                RichHaptics.perform(HapticPattern.SUCCESS)
+              }
+            }
+          },
+          shape = CircleShape,
+          border = BorderStroke(1.dp, primary.copy(alpha = 0.35f)),
+          colors = ButtonDefaults.outlinedButtonColors(
+            backgroundColor = primary.copy(alpha = if (isReloading) 0.15f else 0.05f)
+          ),
+          contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+        ) {
+          if (isReloading) {
+            CircularProgressIndicator(
+              color = primary,
+              strokeWidth = 2.dp,
+              modifier = Modifier.size(16.dp)
+            )
+          } else {
+            Icon(
+              imageVector = Icons.Default.Refresh,
+              contentDescription = "Reload",
+              tint = primary,
+              modifier = Modifier.size(16.dp)
+            )
+          }
+          Spacer(Modifier.width(6.dp))
+          Text(
+            text = if (isReloading) "Updating..." else "Reload",
+            fontSize = 13.sp,
+            fontWeight = FontWeight.SemiBold,
+            color = primary
+          )
+        }
+      }
 
       // 1. Блок своего контента
       Surface(
@@ -907,7 +975,7 @@ fun AllStoriesFeedView(close: () -> Unit) {
         color = MaterialTheme.colors.onSurface.copy(alpha = 0.08f)
       )
 
-      // 2. Блок RECENT UPDATES (отображается ВСЕГДА)
+      // 2. Блок RECENT UPDATES
       Text(
         text = "RECENT UPDATES",
         fontSize = 12.sp,
