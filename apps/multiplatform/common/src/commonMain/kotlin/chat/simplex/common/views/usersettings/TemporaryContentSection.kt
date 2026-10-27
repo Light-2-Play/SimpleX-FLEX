@@ -676,16 +676,9 @@ fun TemporaryContentStoryViewer(
   val now = System.currentTimeMillis()
   
   // Строго читаем файл с диска
-  val bitmap = remember(currentItem.filePath) {
-    try {
-      val f = File(currentItem.filePath)
-      if (currentItem.mediaType == TemporaryMediaType.PHOTO && f.exists() && f.length() > 0) {
-        val bmp = android.graphics.BitmapFactory.decodeFile(f.absolutePath)
-        if (bmp != null) androidx.compose.ui.graphics.asImageBitmap(bmp) else null
-      } else null
-    } catch (e: Exception) { null }
-  }
-
+val bitmap = remember(currentItem.filePath) {
+  loadStoryBitmapSafe(currentItem.filePath, currentItem.mediaType)
+}
   Dialog(
     onDismissRequest = onDismiss,
     properties = DialogProperties(usePlatformDefaultWidth = false)
@@ -1014,10 +1007,19 @@ fun AllStoriesFeedView(close: () -> Unit) {
 
 private fun loadStoryBitmapSafe(filePath: String, mediaType: TemporaryMediaType): ImageBitmap? {
   return try {
-    val file = if (mediaType == TemporaryMediaType.VIDEO) File("${filePath}_thumb.jpg") else File(filePath)
-    if (file.exists() && file.length() > 0) {
-      val bmp = android.graphics.BitmapFactory.decodeFile(file.absolutePath)
-      if (bmp != null) androidx.compose.ui.graphics.asImageBitmap(bmp) else null
+    val file = if (mediaType == TemporaryMediaType.VIDEO) {
+      val thumb = File("${filePath}_thumb.jpg")
+      if (thumb.exists() && thumb.length() > 0) thumb else null
+    } else {
+      val f = File(filePath)
+      if (f.exists() && f.length() > 0) f else null
+    }
+
+    if (file != null && file.exists() && file.length() > 0) {
+      val base64Str = java.util.Base64.getEncoder().encodeToString(file.readBytes())
+      base64ToBitmap(base64Str)
     } else null
-  } catch (_: Exception) { null }
+  } catch (_: Exception) {
+    null
+  }
 }
