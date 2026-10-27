@@ -250,21 +250,39 @@ class MainActivity: FragmentActivity() {
           }
         },
         // Подключение нативного воспроизведения видео внутри сторис
-       LocalStoryVideoPlayer provides { filePath, modifier ->
+      LocalStoryVideoPlayer provides { filePath, modifier ->
           androidx.compose.ui.viewinterop.AndroidView(
             factory = { ctx ->
-              android.widget.VideoView(ctx).apply {
-                val file = java.io.File(filePath)
-                if (file.exists() && file.length() > 0) {
-                  setVideoPath(file.absolutePath)
-                  setOnPreparedListener { mp ->
-                    mp.isLooping = true
-                    start()
+              android.view.TextureView(ctx).apply {
+                surfaceTextureListener = object : android.view.TextureView.SurfaceTextureListener {
+                  var mediaPlayer: android.media.MediaPlayer? = null
+
+                  override fun onSurfaceTextureAvailable(surfaceTexture: android.graphics.SurfaceTexture, width: Int, height: Int) {
+                    try {
+                      val file = java.io.File(filePath)
+                      if (!file.exists() || file.length() == 0L) return
+                      mediaPlayer = android.media.MediaPlayer().apply {
+                        setDataSource(file.absolutePath)
+                        setSurface(android.view.Surface(surfaceTexture))
+                        isLooping = true
+                        setOnPreparedListener { start() }
+                        prepareAsync()
+                      }
+                    } catch (e: Exception) {
+                      android.util.Log.e("StoryVideo", "TextureView error: ${e.message}")
+                    }
                   }
-                }
-                setOnErrorListener { _, what, extra ->
-                  android.util.Log.e("StoryVideo", "Playback error suppressed: $what, $extra")
-                  true // Подавляет системный диалог "Не удается воспроизвести видео"
+
+                  override fun onSurfaceTextureSizeChanged(surface: android.graphics.SurfaceTexture, width: Int, height: Int) {}
+                  override fun onSurfaceTextureDestroyed(surface: android.graphics.SurfaceTexture): Boolean {
+                    try {
+                      mediaPlayer?.stop()
+                      mediaPlayer?.release()
+                      mediaPlayer = null
+                    } catch (_: Exception) {}
+                    return true
+                  }
+                  override fun onSurfaceTextureUpdated(surface: android.graphics.SurfaceTexture) {}
                 }
               }
             },
