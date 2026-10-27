@@ -41,6 +41,7 @@ import kotlinx.coroutines.launch
 import java.io.File
 
 val LocalStoryVideoPlayer = compositionLocalOf<(@Composable (filePath: String, modifier: Modifier) -> Unit)?> { null }
+val LocalStoryImageViewer = compositionLocalOf<(@Composable (filePath: String, modifier: Modifier) -> Unit)?> { null }
 
 object TemporaryContentPickerBridge {
   var pickMedia: ((TemporaryMediaType, (ByteArray?) -> Unit) -> Unit)? = null
@@ -258,7 +259,7 @@ private fun TemporaryStoryTile(
   )
 
   val thumbnailBitmap = remember(item.filePath) {
-    loadStoryBitmapSafe(item.filePath, item.mediaType)
+    loadStoryBitmapSafe(item.filePath, item.mediaType, isThumbOnly = true)
   }
 
   Column(
@@ -672,8 +673,10 @@ fun TemporaryContentStoryViewer(
   }
 
   val now = System.currentTimeMillis()
+  
+  // Для полноэкранного просмотра загружаем полное изображение (не эскиз)
   val bitmap = remember(currentItem.filePath) {
-    loadStoryBitmapSafe(currentItem.filePath, currentItem.mediaType)
+    loadStoryBitmapSafe(currentItem.filePath, currentItem.mediaType, isThumbOnly = false)
   }
 
   Dialog(
@@ -708,16 +711,6 @@ fun TemporaryContentStoryViewer(
         val mediaFile = File(currentItem.filePath)
 
         Box(Modifier.fillMaxSize()) {
-          // Подложка кадра-превью: экран никогда не будет чёрным во время подготовки видео
-          if (bitmap != null) {
-            Image(
-              bitmap = bitmap,
-              contentDescription = null,
-              contentScale = ContentScale.Crop,
-              modifier = Modifier.fillMaxSize()
-            )
-          }
-
           if (videoPlayer != null && mediaFile.exists() && mediaFile.length() > 0) {
             videoPlayer(currentItem.filePath, Modifier.fillMaxSize())
           } else {
@@ -786,7 +779,6 @@ fun TemporaryContentStoryViewer(
           }
 
           Row(verticalAlignment = Alignment.CenterVertically) {
-            // Кнопка удаления доступна для любой истории, чтобы стереть повреждённые тесты
             IconButton(
               onClick = {
                 RichHaptics.perform(HapticPattern.TOGGLE_OFF)
@@ -834,7 +826,6 @@ fun AllStoriesFeedView(close: () -> Unit) {
   var isReloading by remember { mutableStateOf(false) }
   val scope = rememberCoroutineScope()
 
-  // Автоматический синк сразу при входе и каждые 8 секунд
   LaunchedEffect(Unit) {
     StorySyncManager.syncAllStoriesNow(chatModel)
     while (true) {
@@ -854,12 +845,11 @@ fun AllStoriesFeedView(close: () -> Unit) {
 
   ModalView(close = close, cardScreen = true) {
     ColumnWithScrollBar {
-      Row(
+      // Блок заголовка: надпись "Temporary Content" и кнопка "Reload" строго ПОД ней
+      Column(
         modifier = Modifier
           .fillMaxWidth()
-          .padding(horizontal = 16.dp, vertical = 12.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically
+          .padding(horizontal = 16.dp, vertical = 12.dp)
       ) {
         Text(
           text = "Temporary Content",
@@ -868,7 +858,9 @@ fun AllStoriesFeedView(close: () -> Unit) {
           color = MaterialTheme.colors.onSurface
         )
 
-        // КНОПКА РУЧНОГО ОБНОВЛЕНИЯ (RELOAD)
+        Spacer(Modifier.height(8.dp))
+
+        // КНОПКА РУЧНОГО ОБНОВЛЕНИЯ (RELOAD) ПОД НАДПИСЬЮ
         OutlinedButton(
           onClick = {
             if (!isReloading) {
@@ -888,7 +880,7 @@ fun AllStoriesFeedView(close: () -> Unit) {
           colors = ButtonDefaults.outlinedButtonColors(
             backgroundColor = primary.copy(alpha = if (isReloading) 0.15f else 0.05f)
           ),
-          contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+          contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp)
         ) {
           if (isReloading) {
             CircularProgressIndicator(
@@ -1073,18 +1065,34 @@ fun AllStoriesFeedView(close: () -> Unit) {
   }
 }
 
-private fun loadStoryBitmapSafe(filePath: String, mediaType: TemporaryMediaType): ImageBitmap? {
+private fun loadStoryBitmapSafe(
+  filePath: String,
+  mediaType: TemporaryMediaType? = null,
+  isThumbOnly: Boolean = false
+): ImageBitmap? {
   return try {
-    val file = if (mediaType == TemporaryMediaType.VIDEO) {
+    val file = if (isThumbOnly) {
       val thumb = File("${filePath}_thumb.jpg")
-      if (thumb.exists() && thumb.length() > 0) thumb else null
+      if (thumb.exists() && thumb.length() > 0) thumb else File(filePath)
     } else {
-      val f = File(filePath)
-      if (f.exists() && f.length() > 0) f else null
+      val original = File(filePath)
+      if (original.exists() && original.length() > 0) original else File("${filePath}_thumb.jpg")
     }
 
-    if (file != null && file.exists() && file.length() > 0) {
-      val base64Str = java.util.Base64.getEncoder().encodeToString(file.readBytes())
+    if (file.exists() && file.length() > 0) {
+      val bytes = if (file.length() > 1_500_000L) {
+        val bmp = android.graphics.BitmapFactory.decodeFile(file.absolutePath)
+        if (bmp != null) {
+          val stream = java.io.ByteArrayOutputStream()
+          bmp.compress(android.graphics.Bitmap.CompressFormat.JPEG, 85, stream)
+          stream.toByteArray()
+        } else {
+          file.readBytes()
+        }
+      } else {
+        file.readBytes()
+      }
+      val base64Str = java.util.Base64.getEncoder().encodeToString(bytes)
       base64ToBitmap(base64Str)
     } else null
   } catch (_: Exception) {
