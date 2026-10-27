@@ -705,25 +705,28 @@ fun TemporaryContentStoryViewer(
         }
     ) {
       // 1. Медиаконтент
+     // 1. Отображение медиаконтента
       if (currentItem.mediaType == TemporaryMediaType.VIDEO) {
         val videoPlayer = LocalStoryVideoPlayer.current
-        if (videoPlayer != null) {
+        val mediaFile = remember(currentItem.filePath) { File(currentItem.filePath) }
+
+        if (videoPlayer != null && mediaFile.exists() && mediaFile.length() > 0) {
           videoPlayer(currentItem.filePath, Modifier.fillMaxSize())
         } else {
+          // Если видеофайл еще докачивается
           Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            Icon(
-              painter = painterResource(MR.images.ic_videocam),
-              contentDescription = null,
-              tint = Color.White,
-              modifier = Modifier.size(64.dp)
-            )
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+              CircularProgressIndicator(color = Color.White)
+              Spacer(Modifier.height(12.dp))
+              Text("Loading video...", color = Color.White, fontSize = 14.sp)
+            }
           }
         }
       } else if (bitmap != null) {
         Image(
           bitmap = bitmap,
           contentDescription = null,
-          contentScale = ContentScale.Crop,
+          contentScale = ContentScale.Crop, // Заполняет весь экран без черных полос
           modifier = Modifier.fillMaxSize()
         )
       }
@@ -1042,13 +1045,13 @@ private fun loadStoryBitmapSafe(filePath: String, mediaType: TemporaryMediaType)
   return try {
     val file = if (mediaType == TemporaryMediaType.VIDEO) {
       val thumb = File("${filePath}_thumb.jpg")
-      if (thumb.exists()) thumb else null
+      if (thumb.exists() && thumb.length() > 0) thumb else null
     } else {
       val f = File(filePath)
-      if (f.exists()) f else null
+      if (f.exists() && f.length() > 0) f else null
     }
 
-    if (file != null && file.exists() && file.length() > 0) {
+    if (file != null && file.exists()) {
       val base64Str = java.util.Base64.getEncoder().encodeToString(file.readBytes())
       base64ToBitmap(base64Str)
     } else null
