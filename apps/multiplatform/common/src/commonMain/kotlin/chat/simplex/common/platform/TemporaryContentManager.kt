@@ -136,7 +136,8 @@ object TemporaryContentManager {
     }
   }
 
- fun importContactStory(
+  fun importContactStory(
+    storyId: String,
     contactId: Long,
     displayName: String,
     sourceFile: File?,
@@ -148,21 +149,21 @@ object TemporaryContentManager {
     createdAtMillis: Long
   ) {
     try {
+      // Предотвращение дублирования после перезапуска приложения
+      if (_items.value.any { it.id == storyId }) return
+
       val dir = getStorageDir()
       val ext = if (mediaType == TemporaryMediaType.VIDEO) "mp4" else "jpg"
-      val id = "story_${contactId}_${System.currentTimeMillis()}"
-      val destFile = File(dir, "$id.$ext")
+      val destFile = File(dir, "$storyId.$ext")
       
-      // Записываем чистые расшифрованные байты или копируем чистый файл
       if (sourceBytes != null) {
         destFile.writeBytes(sourceBytes)
       } else if (sourceFile != null && sourceFile.exists()) {
         sourceFile.copyTo(destFile, overwrite = true)
       } else {
-        return // Если нет ни байтов, ни файла — отменяем импорт
+        return
       }
 
-      // Сохраняем лёгкий 8KB эскиз для интерфейса кружков
       if (!previewBase64.isNullOrBlank()) {
         try {
           val thumbFile = File("${destFile.absolutePath}_thumb.jpg")
@@ -173,7 +174,7 @@ object TemporaryContentManager {
 
       val expiresAt = createdAtMillis + (durationHours * 3600_000L)
       val newItem = TemporaryContentItem(
-        id = id,
+        id = storyId,
         authorContactId = contactId,
         authorDisplayName = displayName,
         filePath = destFile.absolutePath,
@@ -194,6 +195,7 @@ object TemporaryContentManager {
       Log.e(TAG, "importContactStory error: ${e.message}")
     }
   }
+
   fun removeContent(id: String) {
     val current = _items.value
     val item = current.firstOrNull { it.id == id } ?: return
