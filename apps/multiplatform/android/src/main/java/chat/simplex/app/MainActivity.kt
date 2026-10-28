@@ -41,6 +41,7 @@ import chat.simplex.common.views.onboarding.*
 import chat.simplex.common.platform.*
 import chat.simplex.res.MR
 import java.io.File
+import java.io.FileInputStream
 import java.lang.ref.WeakReference
 import chat.simplex.app.SingBoxService
 import chat.simplex.common.views.chat.item.LocalVoiceTranscriptionWidget
@@ -53,7 +54,6 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import android.media.MediaMetadataRetriever
-import android.widget.VideoView
 import chat.simplex.common.views.usersettings.LocalStoryVideoPlayer
 import chat.simplex.common.views.usersettings.LocalStoryImageViewer
 
@@ -77,7 +77,6 @@ class MainActivity: FragmentActivity() {
       try {
         val bytes = contentResolver.openInputStream(uri)?.use { it.readBytes() }
 
-        // Создание превью первого кадра при выборе видеофайла
         val isVideo = contentResolver.getType(uri)?.startsWith("video/") == true
         if (isVideo) {
           try {
@@ -130,7 +129,6 @@ class MainActivity: FragmentActivity() {
     mainActivity = WeakReference(this)
     super.onCreate(savedInstanceState)
 
-    // Запуск фонового приёма и отправки Temporary Content
     StorySyncManager.startBackgroundObserver(chatModel)
     
     chat.simplex.common.views.usersettings.TemporaryContentPickerBridge.pickMedia = { mediaType, callback ->
@@ -255,12 +253,16 @@ class MainActivity: FragmentActivity() {
                 android.view.TextureView(ctx).apply {
                   surfaceTextureListener = object : android.view.TextureView.SurfaceTextureListener {
                     var mediaPlayer: android.media.MediaPlayer? = null
+
                     override fun onSurfaceTextureAvailable(surfaceTexture: android.graphics.SurfaceTexture, width: Int, height: Int) {
                       try {
                         val file = File(filePath)
-                        if (!file.exists() || file.length() == 0L) return
+                        if (!file.exists() || file.length() < 1000L) return
                         mediaPlayer = android.media.MediaPlayer().apply {
-                          setDataSource(file.absolutePath)
+                          // Чтение через дескриптор обходит блокировки путей
+                          val fis = FileInputStream(file)
+                          setDataSource(fis.fd)
+                          fis.close()
                           setSurface(android.view.Surface(surfaceTexture))
                           isLooping = true
                           setOnPreparedListener { start() }
@@ -270,6 +272,7 @@ class MainActivity: FragmentActivity() {
                         android.util.Log.e("StoryVideo", "TextureView error: ${e.message}")
                       }
                     }
+
                     override fun onSurfaceTextureSizeChanged(surface: android.graphics.SurfaceTexture, width: Int, height: Int) {}
                     override fun onSurfaceTextureDestroyed(surface: android.graphics.SurfaceTexture): Boolean {
                       try {
@@ -293,9 +296,14 @@ class MainActivity: FragmentActivity() {
               factory = { ctx ->
                 android.widget.ImageView(ctx).apply {
                   scaleType = android.widget.ImageView.ScaleType.CENTER_CROP
-                  val file = File(filePath)
-                  if (file.exists() && file.length() > 0) {
-                    setImageURI(android.net.Uri.fromFile(file))
+                  try {
+                    val file = File(filePath)
+                    if (file.exists() && file.length() > 1000L) {
+                      // Декодирование напрямую с диска предотвращает растягивание заглушек
+                      setImageBitmap(android.graphics.BitmapFactory.decodeFile(file.absolutePath))
+                    }
+                  } catch (e: Exception) {
+                    android.util.Log.e("StoryImage", "ImageView error: ${e.message}")
                   }
                 }
               },
