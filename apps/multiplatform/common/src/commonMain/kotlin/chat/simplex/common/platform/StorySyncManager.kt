@@ -46,7 +46,6 @@ object StorySyncManager {
     for (chat in chats) {
       val directContact = (chat.chatInfo as? ChatInfo.Direct)?.contact ?: continue
 
-      // Запрашиваем актуальный список сообщений из базы данных
       val items = try {
         val pagination = ChatPagination.Initial(20)
         val chatData = chatModel.controller.apiGetChat(
@@ -62,15 +61,21 @@ object StorySyncManager {
       }
 
       for (item in storyItems) {
+        // Жесткая привязка к ID сообщения
+        val storyId = "story_${directContact.contactId}_${item.id}"
+
+        // Защита от дублирования: если сторис уже в разделе Temporary Content — пропускаем
+        if (TemporaryContentManager.items.value.any { it.id == storyId }) {
+          importedItemIds.add(item.id)
+          continue 
+        }
+
         // --- ДЛЯ ОТПРАВИТЕЛЯ ---
         if (item.chatDir.sent) {
           val ciFile = item.file
           val statusName = ciFile?.fileStatus?.let { it::class.simpleName } ?: ""
-          
-          // Отправитель ждет, пока файл полностью уйдет на сервер (Done)
           if (statusName.contains("Done", ignoreCase = true)) {
             importedItemIds.add(item.id)
-            removeStoryItemFromChat(chatModel, chat, item)
           }
           continue
         }
@@ -79,7 +84,7 @@ object StorySyncManager {
         val ciFile = item.file ?: continue
         val statusName = ciFile.fileStatus::class.simpleName ?: ""
 
-        // 1. Инициируем скачивание (сообщение висит в чате и не удаляется!)
+        // 1. Инициируем скачивание (файлы остаются в чате!)
         if (!statusName.contains("Done", ignoreCase = true) && !ciFile.loaded) {
           if (!downloadingItemIds.contains(item.id)) {
             downloadingItemIds.add(item.id)
@@ -90,11 +95,10 @@ object StorySyncManager {
           continue
         }
 
-        // 2. Ядро SimpleX сказало "Done" - файл скачан на 100% и расшифрован
+        // 2. Ядро SimpleX сказало "Done" (файл скачан и расшифрован)
         if (statusName.contains("Done", ignoreCase = true) || ciFile.loaded) {
-          
-          // Получаем чистые расшифрованные байты/файл от ядра
           val fileSource = getLoadedFileSource(ciFile)
+          
           var decryptedFile: File? = null
           var decryptedBytes: ByteArray? = null
 
@@ -109,7 +113,6 @@ object StorySyncManager {
             if (fallbackPath != null) decryptedFile = File(fallbackPath)
           }
 
-          // Убеждаемся, что файл не пустышка (больше 1 КБ)
           val isValid = (decryptedFile != null && decryptedFile.exists() && decryptedFile.length() > 1000) || 
                         (decryptedBytes != null && decryptedBytes.size > 1000)
 
@@ -133,9 +136,10 @@ object StorySyncManager {
             }
 
             try {
-              // 3. БЕЗОПАСНО КОПИРУЕМ ФАЙЛ В TEMPORARY CONTENT
+              // 3. БЕЗОПАСНО ЗЕРКАЛИРУЕМ ФАЙЛ В TEMPORARY CONTENT
+              // СООБЩЕНИЕ ПРИ ЭТОМ НАВСЕГДА ОСТАЕТСЯ В ЧАТЕ!
               TemporaryContentManager.importContactStory(
-                storyId = "story_${directContact.contactId}_${item.id}",
+                storyId = storyId,
                 contactId = directContact.contactId,
                 displayName = directContact.displayName,
                 sourceFile = decryptedFile,
@@ -146,30 +150,11 @@ object StorySyncManager {
                 caption = caption,
                 createdAtMillis = item.meta.createdAt.toEpochMilliseconds()
               )
-
-              // 4. И ТОЛЬКО ТЕПЕРЬ, КОГДА ФАЙЛ В БЕЗОПАСНОСТИ, УДАЛЯЕМ СООБЩЕНИЕ ИЗ ЧАТА
-              removeStoryItemFromChat(chatModel, chat, item)
             } catch (e: Exception) {
               Log.e(TAG, "Error importing story: ${e.message}")
             }
           }
         }
-      }
-    }
-  }
-
-  private fun removeStoryItemFromChat(chatModel: ChatModel, chat: Chat, item: ChatItem) {
-    scope.launch {
-      withContext(Dispatchers.Main) {
-        try { chatModel.chatsContext.removeChatItem(chat.remoteHostId, chat.chatInfo, item) } catch (_: Exception) {}
-      }
-      withBGApi {
-        try {
-          chatModel.controller.apiDeleteChatItems(
-            chat.remoteHostId, chat.chatInfo.chatType, chat.chatInfo.apiId,
-            chat.chatInfo.groupChatScope(), listOf(item.id), CIDeleteMode.cidmInternal
-          )
-        } catch (_: Exception) {}
       }
     }
   }
