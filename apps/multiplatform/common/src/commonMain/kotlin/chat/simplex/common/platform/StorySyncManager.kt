@@ -71,7 +71,6 @@ object StorySyncManager {
       }
 
       for (item in storyItems) {
-        // Исходные сообщения отправителя не удаляются, пока идет XFTP передача
         if (item.chatDir.sent) {
           importedItemIds.add(item.id)
           continue
@@ -80,29 +79,25 @@ object StorySyncManager {
         val ciFile = item.file ?: continue
         val statusName = ciFile.fileStatus::class.simpleName ?: ""
 
-        // 1. Начинаем загрузку, если статус еще не Done
+        // Если файл ещё скачивается
         if (!statusName.contains("Done", ignoreCase = true) && !ciFile.loaded) {
           if (!downloadingItemIds.contains(item.id)) {
             downloadingItemIds.add(item.id)
             withBGApi {
-              try {
-                chatModel.controller.receiveFile(chat.remoteHostId, user, ciFile.fileId)
-              } catch (e: Exception) {
-                Log.e(TAG, "receiveFile error: ${e.message}")
-              }
+              try { chatModel.controller.receiveFile(chat.remoteHostId, user, ciFile.fileId) } catch (_: Exception) {}
             }
           }
           continue
         }
 
-        // 2. ИМПОРТ ТОЛЬКО ЕСЛИ ЯДРО ПОДТВЕРДИЛО ЗАВЕРШЕНИЕ СКАЧИВАНИЯ (Done)
+        // ФАЙЛ СКАЧАН: Импорт с защитой от пустых файлов
         if (statusName.contains("Done", ignoreCase = true) || ciFile.loaded) {
           val loadedPath = getLoadedFilePath(ciFile)
           if (loadedPath != null) {
             val fileOnDisk = File(loadedPath)
             
-            // Дополнительная проверка, что файл не пустышка
-            if (fileOnDisk.exists() && fileOnDisk.length() > 1000) {
+            // Защита: импортируем только если файл весит больше 15 KB (отсекает битые микро-эскизы)
+            if (fileOnDisk.exists() && fileOnDisk.length() > 15_000L) {
               importedItemIds.add(item.id)
               downloadingItemIds.remove(item.id)
 
@@ -115,7 +110,6 @@ object StorySyncManager {
                             fileOnDisk.name.endsWith(".mp4", ignoreCase = true)
 
               val mediaType = if (isVideo) TemporaryMediaType.VIDEO else TemporaryMediaType.PHOTO
-
               val previewBase64 = when (val content = item.content.msgContent) {
                 is MsgContent.MCVideo -> content.image
                 is MsgContent.MCImage -> content.image
@@ -134,7 +128,6 @@ object StorySyncManager {
                   createdAtMillis = item.meta.createdAt.toEpochMilliseconds()
                 )
 
-                // Стираем из БД чата только когда файл гарантированно импортирован
                 removeStoryItemFromChat(chatModel, chat, item)
               } catch (e: Exception) {
                 Log.e(TAG, "Error importing story: ${e.message}")
@@ -211,6 +204,7 @@ object StorySyncManager {
           val appFile = File(getAppFilePath(xftpFileName))
           file.copyTo(appFile, overwrite = true)
 
+          // КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: шифруем файл, если нужно, чтобы ядро не отбросило его
           val cryptoFile = if (chatModel.controller.appPrefs.privacyEncryptLocalFiles.get()) {
             val encFile = File(getAppFilePath("enc_${appFile.name}"))
             val args = encryptCryptoFile(appFile.absolutePath, encFile.absolutePath)
@@ -221,7 +215,6 @@ object StorySyncManager {
           }
 
           val cInfo = chat.chatInfo
-
           chatModel.controller.apiSendMessages(
             rh = chat.remoteHostId, type = cInfo.chatType, id = cInfo.apiId, scope = cInfo.groupChatScope(),
             sendAsGroup = cInfo.sendAsGroup, live = false, ttl = null, sign = false,
