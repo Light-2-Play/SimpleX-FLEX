@@ -61,12 +61,12 @@ object StorySyncManager {
       }
 
       for (item in storyItems) {
-        // Жесткая привязка к ID сообщения
         val storyId = "story_${directContact.contactId}_${item.id}"
 
-        // Защита от дублирования: если сторис уже в разделе Temporary Content — пропускаем
+        // Защита от дублирования: если сторис уже в разделе Temporary Content — удаляем из UI чата и пропускаем
         if (TemporaryContentManager.items.value.any { it.id == storyId }) {
           importedItemIds.add(item.id)
+          removeStoryItemFromChat(chatModel, chat, item)
           continue 
         }
 
@@ -76,6 +76,7 @@ object StorySyncManager {
           val statusName = ciFile?.fileStatus?.let { it::class.simpleName } ?: ""
           if (statusName.contains("Done", ignoreCase = true)) {
             importedItemIds.add(item.id)
+            removeStoryItemFromChat(chatModel, chat, item)
           }
           continue
         }
@@ -84,7 +85,7 @@ object StorySyncManager {
         val ciFile = item.file ?: continue
         val statusName = ciFile.fileStatus::class.simpleName ?: ""
 
-        // 1. Инициируем скачивание (файлы остаются в чате!)
+        // 1. Инициируем скачивание
         if (!statusName.contains("Done", ignoreCase = true) && !ciFile.loaded) {
           if (!downloadingItemIds.contains(item.id)) {
             downloadingItemIds.add(item.id)
@@ -95,80 +96,56 @@ object StorySyncManager {
           continue
         }
 
-        // 2. Ядро SimpleX сказало "Done" (файл скачан и расшифрован)
+        // 2. Ядро SimpleX сказало "Done" (файл скачан)
         if (statusName.contains("Done", ignoreCase = true) || ciFile.loaded) {
-          val fileSource = getLoadedFileSource(ciFile)
           
-          var decryptedFile: File? = null
-          var decryptedBytes: ByteArray? = null
+          val rawText = item.content.text
+          val durationHours = rawText.substringAfter(STORY_TAG_PREFIX, "24]").substringBefore("]").toIntOrNull() ?: 24
+          val caption = rawText.substringAfter("]", "").trim()
 
-          if (fileSource is String) {
-            decryptedFile = File(fileSource)
-          } else if (fileSource is ByteArray) {
-            decryptedBytes = fileSource
-          } else if (fileSource is File) {
-            decryptedFile = fileSource
-          } else {
-            val fallbackPath = getLoadedFilePath(ciFile)
-            if (fallbackPath != null) decryptedFile = File(fallbackPath)
+          val isVideo = item.content.msgContent is MsgContent.MCVideo || ciFile.fileName.endsWith(".mp4", ignoreCase = true)
+          val mediaType = if (isVideo) TemporaryMediaType.VIDEO else TemporaryMediaType.PHOTO
+          val previewBase64 = when (val content = item.content.msgContent) {
+            is MsgContent.MCVideo -> content.image
+            is MsgContent.MCImage -> content.image
+            else -> null
           }
 
-          val isValid = (decryptedFile != null && decryptedFile.exists() && decryptedFile.length() > 1000) || 
-                        (decryptedBytes != null && decryptedBytes.size > 1000)
-
-          if (isValid) {
+          try {
+            // МЫ БОЛЬШЕ НЕ ПЫТАЕМСЯ КОПИРОВАТЬ ФАЙЛ.
+            // МЫ ПРОСТО ПЕРЕДАЕМ ОБЪЕКТ ChatItem В TemporaryContentManager.
+            TemporaryContentManager.importContactStoryDirect(
+              storyId = storyId,
+              contactId = directContact.contactId,
+              displayName = directContact.displayName,
+              sourceItem = item, // <-- Передаем весь объект сообщения
+              previewBase64 = previewBase64,
+              mediaType = mediaType,
+              durationHours = durationHours,
+              caption = caption,
+              createdAtMillis = item.meta.createdAt.toEpochMilliseconds()
+            )
+            
             importedItemIds.add(item.id)
             downloadingItemIds.remove(item.id)
-
-            val rawText = item.content.text
-            val durationHours = rawText.substringAfter(STORY_TAG_PREFIX, "24]").substringBefore("]").toIntOrNull() ?: 24
-            val caption = rawText.substringAfter("]", "").trim()
-
-            val isVideo = item.content.msgContent is MsgContent.MCVideo ||
-                          ciFile.fileName.endsWith(".mp4", ignoreCase = true) ||
-                          (decryptedFile != null && decryptedFile.name.endsWith(".mp4", ignoreCase = true))
-
-            val mediaType = if (isVideo) TemporaryMediaType.VIDEO else TemporaryMediaType.PHOTO
-            val previewBase64 = when (val content = item.content.msgContent) {
-              is MsgContent.MCVideo -> content.image
-              is MsgContent.MCImage -> content.image
-              else -> null
-            }
-
-            try {
-              // 3. БЕЗОПАСНО ЗЕРКАЛИРУЕМ ФАЙЛ В TEMPORARY CONTENT
-              // СООБЩЕНИЕ ПРИ ЭТОМ НАВСЕГДА ОСТАЕТСЯ В ЧАТЕ!
-              TemporaryContentManager.importContactStory(
-                storyId = storyId,
-                contactId = directContact.contactId,
-                displayName = directContact.displayName,
-                sourceFile = decryptedFile,
-                sourceBytes = decryptedBytes,
-                previewBase64 = previewBase64,
-                mediaType = mediaType,
-                durationHours = durationHours,
-                caption = caption,
-                createdAtMillis = item.meta.createdAt.toEpochMilliseconds()
-              )
-            } catch (e: Exception) {
-              Log.e(TAG, "Error importing story: ${e.message}")
-            }
+            
+            // Удаляем сообщение из видимости чата
+            removeStoryItemFromChat(chatModel, chat, item)
+          } catch (e: Exception) {
+            Log.e(TAG, "Error importing story: ${e.message}")
           }
         }
       }
     }
   }
 
-  private fun getLoadedFilePath(ciFile: CIFile): String? {
-    return try {
-      val name = ciFile.fileName
-      if (name.isBlank()) return null
-      val f1 = File(name)
-      if (f1.exists()) return f1.absolutePath
-      val f2 = File(getAppFilePath(name))
-      if (f2.exists()) return f2.absolutePath
-      null
-    } catch (_: Exception) { null }
+  // Удаляем только визуально из чата, но не из базы, чтобы TemporaryContent мог отображать медиа
+  private fun removeStoryItemFromChat(chatModel: ChatModel, chat: Chat, item: ChatItem) {
+    scope.launch {
+      withContext(Dispatchers.Main) {
+        try { chatModel.chatsContext.removeChatItem(chat.remoteHostId, chat.chatInfo, item) } catch (_: Exception) {}
+      }
+    }
   }
 
   suspend fun publishAndBroadcastStoryWithProgress(
