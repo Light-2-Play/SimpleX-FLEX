@@ -79,59 +79,79 @@ object StorySyncManager {
         val ciFile = item.file ?: continue
         val statusName = ciFile.fileStatus::class.simpleName ?: ""
 
-        // Если файл ещё скачивается
         if (!statusName.contains("Done", ignoreCase = true) && !ciFile.loaded) {
           if (!downloadingItemIds.contains(item.id)) {
             downloadingItemIds.add(item.id)
             withBGApi {
-              try { chatModel.controller.receiveFile(chat.remoteHostId, user, ciFile.fileId) } catch (_: Exception) {}
+              try {
+                chatModel.controller.receiveFile(chat.remoteHostId, user, ciFile.fileId)
+              } catch (e: Exception) {
+                Log.e(TAG, "receiveFile error: ${e.message}")
+              }
             }
           }
           continue
         }
 
-        // ФАЙЛ СКАЧАН: Импорт с защитой от пустых файлов
         if (statusName.contains("Done", ignoreCase = true) || ciFile.loaded) {
-          val loadedPath = getLoadedFilePath(ciFile)
-          if (loadedPath != null) {
-            val fileOnDisk = File(loadedPath)
-            
-            // Защита: импортируем только если файл весит больше 15 KB (отсекает битые микро-эскизы)
-            if (fileOnDisk.exists() && fileOnDisk.length() > 15_000L) {
-              importedItemIds.add(item.id)
-              downloadingItemIds.remove(item.id)
+          
+          // 💥 МАГИЯ ЗДЕСЬ: Просим ядро отдать РАСШИФРОВАННЫЙ файл/байты
+          val fileSource = getLoadedFileSource(ciFile)
+          
+          var decryptedFile: File? = null
+          var decryptedBytes: ByteArray? = null
 
-              val rawText = item.content.text
-              val durationHours = rawText.substringAfter(STORY_TAG_PREFIX, "24]").substringBefore("]").toIntOrNull() ?: 24
-              val caption = rawText.substringAfter("]", "").trim()
+          if (fileSource is String) {
+            decryptedFile = File(fileSource)
+          } else if (fileSource is ByteArray) {
+            decryptedBytes = fileSource
+          } else if (fileSource is File) {
+            decryptedFile = fileSource
+          } else {
+            // Фолбэк на старый метод, если ядро ничего не отдало
+            val fallbackPath = getLoadedFilePath(ciFile)
+            if (fallbackPath != null) decryptedFile = File(fallbackPath)
+          }
 
-              val isVideo = item.content.msgContent is MsgContent.MCVideo ||
-                            ciFile.fileName.endsWith(".mp4", ignoreCase = true) ||
-                            fileOnDisk.name.endsWith(".mp4", ignoreCase = true)
+          val isValid = (decryptedFile != null && decryptedFile.exists() && decryptedFile.length() > 1000) || 
+                        (decryptedBytes != null && decryptedBytes.size > 1000)
 
-              val mediaType = if (isVideo) TemporaryMediaType.VIDEO else TemporaryMediaType.PHOTO
-              val previewBase64 = when (val content = item.content.msgContent) {
-                is MsgContent.MCVideo -> content.image
-                is MsgContent.MCImage -> content.image
-                else -> null
-              }
+          if (isValid) {
+            importedItemIds.add(item.id)
+            downloadingItemIds.remove(item.id)
 
-              try {
-                TemporaryContentManager.importContactStory(
-                  contactId = directContact.contactId,
-                  displayName = directContact.displayName,
-                  sourceFile = fileOnDisk,
-                  previewBase64 = previewBase64,
-                  mediaType = mediaType,
-                  durationHours = durationHours,
-                  caption = caption,
-                  createdAtMillis = item.meta.createdAt.toEpochMilliseconds()
-                )
+            val rawText = item.content.text
+            val durationHours = rawText.substringAfter(STORY_TAG_PREFIX, "24]").substringBefore("]").toIntOrNull() ?: 24
+            val caption = rawText.substringAfter("]", "").trim()
 
-                removeStoryItemFromChat(chatModel, chat, item)
-              } catch (e: Exception) {
-                Log.e(TAG, "Error importing story: ${e.message}")
-              }
+            val isVideo = item.content.msgContent is MsgContent.MCVideo ||
+                          ciFile.fileName.endsWith(".mp4", ignoreCase = true) ||
+                          (decryptedFile != null && decryptedFile.name.endsWith(".mp4", ignoreCase = true))
+
+            val mediaType = if (isVideo) TemporaryMediaType.VIDEO else TemporaryMediaType.PHOTO
+
+            val previewBase64 = when (val content = item.content.msgContent) {
+              is MsgContent.MCVideo -> content.image
+              is MsgContent.MCImage -> content.image
+              else -> null
+            }
+
+            try {
+              TemporaryContentManager.importContactStory(
+                contactId = directContact.contactId,
+                displayName = directContact.displayName,
+                sourceFile = decryptedFile,
+                sourceBytes = decryptedBytes, // Передаем чистые байты
+                previewBase64 = previewBase64,
+                mediaType = mediaType,
+                durationHours = durationHours,
+                caption = caption,
+                createdAtMillis = item.meta.createdAt.toEpochMilliseconds()
+              )
+
+              removeStoryItemFromChat(chatModel, chat, item)
+            } catch (e: Exception) {
+              Log.e(TAG, "Error importing story: ${e.message}")
             }
           }
         }
@@ -204,7 +224,6 @@ object StorySyncManager {
           val appFile = File(getAppFilePath(xftpFileName))
           file.copyTo(appFile, overwrite = true)
 
-          // КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: шифруем файл, если нужно, чтобы ядро не отбросило его
           val cryptoFile = if (chatModel.controller.appPrefs.privacyEncryptLocalFiles.get()) {
             val encFile = File(getAppFilePath("enc_${appFile.name}"))
             val args = encryptCryptoFile(appFile.absolutePath, encFile.absolutePath)
@@ -215,6 +234,7 @@ object StorySyncManager {
           }
 
           val cInfo = chat.chatInfo
+
           chatModel.controller.apiSendMessages(
             rh = chat.remoteHostId, type = cInfo.chatType, id = cInfo.apiId, scope = cInfo.groupChatScope(),
             sendAsGroup = cInfo.sendAsGroup, live = false, ttl = null, sign = false,
