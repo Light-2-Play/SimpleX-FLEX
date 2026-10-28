@@ -136,10 +136,11 @@ object TemporaryContentManager {
     }
   }
 
-  fun importContactStory(
+ fun importContactStory(
     contactId: Long,
     displayName: String,
-    sourceFile: File,
+    sourceFile: File?,
+    sourceBytes: ByteArray?,
     previewBase64: String?,
     mediaType: TemporaryMediaType,
     durationHours: Int,
@@ -152,10 +153,16 @@ object TemporaryContentManager {
       val id = "story_${contactId}_${System.currentTimeMillis()}"
       val destFile = File(dir, "$id.$ext")
       
-      // Просто копируем готовый файл без загрузки его в оперативную память!
-      sourceFile.copyTo(destFile, overwrite = true)
+      // Записываем чистые расшифрованные байты или копируем чистый файл
+      if (sourceBytes != null) {
+        destFile.writeBytes(sourceBytes)
+      } else if (sourceFile != null && sourceFile.exists()) {
+        sourceFile.copyTo(destFile, overwrite = true)
+      } else {
+        return // Если нет ни байтов, ни файла — отменяем импорт
+      }
 
-      // Сохраняем лёгкий 8KB эскиз для интерфейса
+      // Сохраняем лёгкий 8KB эскиз для интерфейса кружков
       if (!previewBase64.isNullOrBlank()) {
         try {
           val thumbFile = File("${destFile.absolutePath}_thumb.jpg")
