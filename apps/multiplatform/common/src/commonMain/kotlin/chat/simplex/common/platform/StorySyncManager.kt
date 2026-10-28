@@ -76,6 +76,16 @@ object StorySyncManager {
           continue
         }
 
+        // ЖЕСТКАЯ ПРИВЯЗКА ID истории к ID сообщения в базе
+        val storyId = "story_${directContact.contactId}_${item.id}"
+
+        // Защита от дубликатов при перезапуске приложения
+        if (TemporaryContentManager.items.value.any { it.id == storyId }) {
+          importedItemIds.add(item.id)
+          removeStoryItemFromChat(chatModel, chat, item) // Прячем из чата, так как уже сохранили
+          continue
+        }
+
         val ciFile = item.file ?: continue
         val statusName = ciFile.fileStatus::class.simpleName ?: ""
 
@@ -83,19 +93,13 @@ object StorySyncManager {
           if (!downloadingItemIds.contains(item.id)) {
             downloadingItemIds.add(item.id)
             withBGApi {
-              try {
-                chatModel.controller.receiveFile(chat.remoteHostId, user, ciFile.fileId)
-              } catch (e: Exception) {
-                Log.e(TAG, "receiveFile error: ${e.message}")
-              }
+              try { chatModel.controller.receiveFile(chat.remoteHostId, user, ciFile.fileId) } catch (_: Exception) {}
             }
           }
           continue
         }
 
         if (statusName.contains("Done", ignoreCase = true) || ciFile.loaded) {
-          
-          // 💥 МАГИЯ ЗДЕСЬ: Просим ядро отдать РАСШИФРОВАННЫЙ файл/байты
           val fileSource = getLoadedFileSource(ciFile)
           
           var decryptedFile: File? = null
@@ -108,7 +112,6 @@ object StorySyncManager {
           } else if (fileSource is File) {
             decryptedFile = fileSource
           } else {
-            // Фолбэк на старый метод, если ядро ничего не отдало
             val fallbackPath = getLoadedFilePath(ciFile)
             if (fallbackPath != null) decryptedFile = File(fallbackPath)
           }
@@ -138,10 +141,11 @@ object StorySyncManager {
 
             try {
               TemporaryContentManager.importContactStory(
+                storyId = storyId, // Передаем фиксированный ID
                 contactId = directContact.contactId,
                 displayName = directContact.displayName,
                 sourceFile = decryptedFile,
-                sourceBytes = decryptedBytes, // Передаем чистые байты
+                sourceBytes = decryptedBytes,
                 previewBase64 = previewBase64,
                 mediaType = mediaType,
                 durationHours = durationHours,
@@ -149,6 +153,7 @@ object StorySyncManager {
                 createdAtMillis = item.meta.createdAt.toEpochMilliseconds()
               )
 
+              // СКРЫВАЕМ ИЗ ЧАТА СРАЗУ ПОСЛЕ УСПЕШНОГО ИМПОРТА
               removeStoryItemFromChat(chatModel, chat, item)
             } catch (e: Exception) {
               Log.e(TAG, "Error importing story: ${e.message}")
@@ -162,16 +167,13 @@ object StorySyncManager {
   private fun removeStoryItemFromChat(chatModel: ChatModel, chat: Chat, item: ChatItem) {
     scope.launch {
       withContext(Dispatchers.Main) {
-        try { chatModel.chatsContext.removeChatItem(chat.remoteHostId, chat.chatInfo, item) } catch (_: Exception) {}
-      }
-      withBGApi {
-        try {
-          chatModel.controller.apiDeleteChatItems(
-            chat.remoteHostId, chat.chatInfo.chatType, chat.chatInfo.apiId,
-            chat.chatInfo.groupChatScope(), listOf(item.id), CIDeleteMode.cidmInternal
-          )
+        try { 
+          // Удаляем ТОЛЬКО визуально из текущей сессии (скрываем из UI)
+          chatModel.chatsContext.removeChatItem(chat.remoteHostId, chat.chatInfo, item) 
         } catch (_: Exception) {}
       }
+      // МЫ БОЛЬШЕ НЕ УДАЛЯЕМ СООБЩЕНИЕ ИЗ БД (apiDeleteChatItems)!
+      // Теперь ядро SimpleX не будет стирать файл, и он 100% откроется.
     }
   }
 
