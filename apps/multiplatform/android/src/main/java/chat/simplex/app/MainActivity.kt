@@ -66,7 +66,6 @@ class MainActivity: FragmentActivity() {
   }
 
   private var usbWatcherJob: Job? = null
-
   private var tempContentCallback: ((ByteArray?) -> Unit)? = null
 
   private val tempMediaLauncher = registerForActivityResult(
@@ -98,7 +97,6 @@ class MainActivity: FragmentActivity() {
             Log.e("MainActivity", "Failed to extract video thumbnail: ${e.message}")
           }
         }
-
         cb(bytes)
       } catch (_: Exception) {
         cb(null)
@@ -132,7 +130,7 @@ class MainActivity: FragmentActivity() {
     mainActivity = WeakReference(this)
     super.onCreate(savedInstanceState)
 
-// Запуск фонового приёма и отправки Temporary Content
+    // Запуск фонового приёма и отправки Temporary Content
     StorySyncManager.startBackgroundObserver(chatModel)
     
     chat.simplex.common.views.usersettings.TemporaryContentPickerBridge.pickMedia = { mediaType, callback ->
@@ -250,14 +248,13 @@ class MainActivity: FragmentActivity() {
             )
           }
         },
-        // Подключение нативного воспроизведения видео внутри сторис
-   LocalStoryVideoPlayer provides { filePath: String, modifier: androidx.compose.ui.Modifier ->
+        LocalStoryVideoPlayer provides { filePath: String, modifier: androidx.compose.ui.Modifier ->
+          androidx.compose.runtime.key(filePath) {
             androidx.compose.ui.viewinterop.AndroidView(
               factory = { ctx ->
                 android.view.TextureView(ctx).apply {
                   surfaceTextureListener = object : android.view.TextureView.SurfaceTextureListener {
                     var mediaPlayer: android.media.MediaPlayer? = null
-
                     override fun onSurfaceTextureAvailable(surfaceTexture: android.graphics.SurfaceTexture, width: Int, height: Int) {
                       try {
                         val file = File(filePath)
@@ -273,7 +270,6 @@ class MainActivity: FragmentActivity() {
                         android.util.Log.e("StoryVideo", "TextureView error: ${e.message}")
                       }
                     }
-
                     override fun onSurfaceTextureSizeChanged(surface: android.graphics.SurfaceTexture, width: Int, height: Int) {}
                     override fun onSurfaceTextureDestroyed(surface: android.graphics.SurfaceTexture): Boolean {
                       try {
@@ -287,11 +283,12 @@ class MainActivity: FragmentActivity() {
                   }
                 }
               },
-              update = {},
               modifier = modifier
             )
-          },
-          LocalStoryImageViewer provides { filePath: String, modifier: androidx.compose.ui.Modifier ->
+          }
+        },
+        LocalStoryImageViewer provides { filePath: String, modifier: androidx.compose.ui.Modifier ->
+          androidx.compose.runtime.key(filePath) {
             androidx.compose.ui.viewinterop.AndroidView(
               factory = { ctx ->
                 android.widget.ImageView(ctx).apply {
@@ -302,10 +299,10 @@ class MainActivity: FragmentActivity() {
                   }
                 }
               },
-              update = {},
               modifier = modifier
             )
           }
+        }
       ) {
         SingBoxComposeDialogs(this@MainActivity)
         AppScreen()
