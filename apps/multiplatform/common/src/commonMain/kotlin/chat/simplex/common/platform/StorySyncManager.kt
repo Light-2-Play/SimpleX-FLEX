@@ -71,17 +71,17 @@ object StorySyncManager {
       }
 
       for (item in storyItems) {
-        // ИСХОДЯЩИЕ: Больше не удаляем их из БД, чтобы не обрывать выгрузку на сервер.
-        // Они скрыты визуально в ChatItemView.
+        // Исходные сообщения отправителя не удаляются, пока идет XFTP передача
         if (item.chatDir.sent) {
           importedItemIds.add(item.id)
           continue
         }
 
-        // ВХОДЯЩИЕ
         val ciFile = item.file ?: continue
+        val statusName = ciFile.fileStatus::class.simpleName ?: ""
 
-        if (!ciFile.loaded) {
+        // 1. Начинаем загрузку, если статус еще не Done
+        if (!statusName.contains("Done", ignoreCase = true) && !ciFile.loaded) {
           if (!downloadingItemIds.contains(item.id)) {
             downloadingItemIds.add(item.id)
             withBGApi {
@@ -95,49 +95,50 @@ object StorySyncManager {
           continue
         }
 
-        val loadedPath = getLoadedFilePath(ciFile)
-        if (loadedPath != null) {
-          val fileOnDisk = File(loadedPath)
-          
-          // Проверяем, что файл скачался и он не пустой (не 0 байт)
-          if (fileOnDisk.exists() && fileOnDisk.length() > 1000) {
-            importedItemIds.add(item.id)
-            downloadingItemIds.remove(item.id)
+        // 2. ИМПОРТ ТОЛЬКО ЕСЛИ ЯДРО ПОДТВЕРДИЛО ЗАВЕРШЕНИЕ СКАЧИВАНИЯ (Done)
+        if (statusName.contains("Done", ignoreCase = true) || ciFile.loaded) {
+          val loadedPath = getLoadedFilePath(ciFile)
+          if (loadedPath != null) {
+            val fileOnDisk = File(loadedPath)
+            
+            // Дополнительная проверка, что файл не пустышка
+            if (fileOnDisk.exists() && fileOnDisk.length() > 1000) {
+              importedItemIds.add(item.id)
+              downloadingItemIds.remove(item.id)
 
-            val rawText = item.content.text
-            val durationHours = rawText.substringAfter(STORY_TAG_PREFIX, "24]").substringBefore("]").toIntOrNull() ?: 24
-            val caption = rawText.substringAfter("]", "").trim()
+              val rawText = item.content.text
+              val durationHours = rawText.substringAfter(STORY_TAG_PREFIX, "24]").substringBefore("]").toIntOrNull() ?: 24
+              val caption = rawText.substringAfter("]", "").trim()
 
-            val isVideo = item.content.msgContent is MsgContent.MCVideo ||
-                          ciFile.fileName.endsWith(".mp4", ignoreCase = true) ||
-                          fileOnDisk.name.endsWith(".mp4", ignoreCase = true)
+              val isVideo = item.content.msgContent is MsgContent.MCVideo ||
+                            ciFile.fileName.endsWith(".mp4", ignoreCase = true) ||
+                            fileOnDisk.name.endsWith(".mp4", ignoreCase = true)
 
-            val mediaType = if (isVideo) TemporaryMediaType.VIDEO else TemporaryMediaType.PHOTO
+              val mediaType = if (isVideo) TemporaryMediaType.VIDEO else TemporaryMediaType.PHOTO
 
-            // Извлекаем превью прямо из сообщения (оно там уже есть и весит 8 КБ)
-            val previewBase64 = when (val content = item.content.msgContent) {
-              is MsgContent.MCVideo -> content.image
-              is MsgContent.MCImage -> content.image
-              else -> null
-            }
+              val previewBase64 = when (val content = item.content.msgContent) {
+                is MsgContent.MCVideo -> content.image
+                is MsgContent.MCImage -> content.image
+                else -> null
+              }
 
-            try {
-              // ИМПОРТ ФАЙЛА БЕЗ READBYTES (предотвращает краш памяти)
-              TemporaryContentManager.importContactStory(
-                contactId = directContact.contactId,
-                displayName = directContact.displayName,
-                sourceFile = fileOnDisk,
-                previewBase64 = previewBase64,
-                mediaType = mediaType,
-                durationHours = durationHours,
-                caption = caption,
-                createdAtMillis = item.meta.createdAt.toEpochMilliseconds()
-              )
+              try {
+                TemporaryContentManager.importContactStory(
+                  contactId = directContact.contactId,
+                  displayName = directContact.displayName,
+                  sourceFile = fileOnDisk,
+                  previewBase64 = previewBase64,
+                  mediaType = mediaType,
+                  durationHours = durationHours,
+                  caption = caption,
+                  createdAtMillis = item.meta.createdAt.toEpochMilliseconds()
+                )
 
-              // Удаляем техническое сообщение только после успешного импорта
-              removeStoryItemFromChat(chatModel, chat, item)
-            } catch (e: Exception) {
-              Log.e(TAG, "Error importing story: ${e.message}")
+                // Стираем из БД чата только когда файл гарантированно импортирован
+                removeStoryItemFromChat(chatModel, chat, item)
+              } catch (e: Exception) {
+                Log.e(TAG, "Error importing story: ${e.message}")
+              }
             }
           }
         }
@@ -148,9 +149,7 @@ object StorySyncManager {
   private fun removeStoryItemFromChat(chatModel: ChatModel, chat: Chat, item: ChatItem) {
     scope.launch {
       withContext(Dispatchers.Main) {
-        try {
-          chatModel.chatsContext.removeChatItem(chat.remoteHostId, chat.chatInfo, item)
-        } catch (_: Exception) {}
+        try { chatModel.chatsContext.removeChatItem(chat.remoteHostId, chat.chatInfo, item) } catch (_: Exception) {}
       }
       withBGApi {
         try {
@@ -168,13 +167,11 @@ object StorySyncManager {
       val name = ciFile.fileName
       if (name.isBlank()) return null
       val f1 = File(name)
-      if (f1.exists() && f1.length() > 0) return f1.absolutePath
+      if (f1.exists()) return f1.absolutePath
       val f2 = File(getAppFilePath(name))
-      if (f2.exists() && f2.length() > 0) return f2.absolutePath
+      if (f2.exists()) return f2.absolutePath
       null
-    } catch (_: Exception) {
-      null
-    }
+    } catch (_: Exception) { null }
   }
 
   suspend fun publishAndBroadcastStoryWithProgress(
@@ -214,7 +211,15 @@ object StorySyncManager {
           val appFile = File(getAppFilePath(xftpFileName))
           file.copyTo(appFile, overwrite = true)
 
-          val cryptoFile = CryptoFile.plain(appFile.name)
+          val cryptoFile = if (chatModel.controller.appPrefs.privacyEncryptLocalFiles.get()) {
+            val encFile = File(getAppFilePath("enc_${appFile.name}"))
+            val args = encryptCryptoFile(appFile.absolutePath, encFile.absolutePath)
+            appFile.delete()
+            CryptoFile(encFile.name, args)
+          } else {
+            CryptoFile.plain(appFile.name)
+          }
+
           val cInfo = chat.chatInfo
 
           chatModel.controller.apiSendMessages(
@@ -227,7 +232,6 @@ object StorySyncManager {
         }
       }
 
-      // Быстрое завершение анимации (настоящая выгрузка идёт в ядре безопасно)
       for (i in 1..10) {
         delay(150L)
         onProgress(40 + (i * 6), "Uploading...")
@@ -249,8 +253,9 @@ object StorySyncManager {
       } else {
         file
       }
-      val b64 = java.util.Base64.getEncoder().encodeToString(sourceFile.readBytes())
-      val bitmap = base64ToBitmap(b64) ?: return ""
+      val bytes = sourceFile.readBytes()
+      val base64Str = java.util.Base64.getEncoder().encodeToString(bytes)
+      val bitmap = base64ToBitmap(base64Str) ?: return ""
       resizeImageToStrSize(bitmap, maxDataSize = 8500)
     } catch (_: Exception) {
       ""
