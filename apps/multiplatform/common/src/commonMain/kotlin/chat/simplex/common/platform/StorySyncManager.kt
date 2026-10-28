@@ -27,7 +27,7 @@ object StorySyncManager {
         } catch (e: Exception) {
           Log.e(TAG, "Observer loop error: ${e.message}")
         }
-        delay(2000L) // Проверяем чаты каждые 2 секунды
+        delay(2000L)
       }
     }
   }
@@ -63,18 +63,19 @@ object StorySyncManager {
       for (item in storyItems) {
         val storyId = "story_${directContact.contactId}_${item.id}"
 
-        // Защита от дублирования: если сторис уже в разделе Temporary Content — удаляем из UI чата и пропускаем
-        if (TemporaryContentManager.items.value.any { it.id == storyId }) {
+        // Если история уже импортирована и файл реально существует (> 1 КБ) — скрываем из чата
+        val existing = TemporaryContentManager.items.value.firstOrNull { it.id == storyId }
+        if (existing != null && File(existing.filePath).length() > 1000L) {
           importedItemIds.add(item.id)
           removeStoryItemFromChat(chatModel, chat, item)
-          continue 
+          continue
         }
 
         // --- ДЛЯ ОТПРАВИТЕЛЯ ---
         if (item.chatDir.sent) {
           val ciFile = item.file
           val statusName = ciFile?.fileStatus?.let { it::class.simpleName } ?: ""
-          if (statusName.contains("Done", ignoreCase = true)) {
+          if (statusName.contains("Done", ignoreCase = true) || ciFile?.loaded == true) {
             importedItemIds.add(item.id)
             removeStoryItemFromChat(chatModel, chat, item)
           }
@@ -85,66 +86,126 @@ object StorySyncManager {
         val ciFile = item.file ?: continue
         val statusName = ciFile.fileStatus::class.simpleName ?: ""
 
-        // 1. Инициируем скачивание
+        // 1. Запускаем скачивание по XFTP, если файл еще не загружен
         if (!statusName.contains("Done", ignoreCase = true) && !ciFile.loaded) {
           if (!downloadingItemIds.contains(item.id)) {
             downloadingItemIds.add(item.id)
             withBGApi {
-              try { chatModel.controller.receiveFile(chat.remoteHostId, user, ciFile.fileId) } catch (_: Exception) {}
+              try {
+                chatModel.controller.receiveFile(chat.remoteHostId, user, ciFile.fileId)
+              } catch (_: Exception) {}
             }
           }
           continue
         }
 
-        // 2. Ядро SimpleX сказало "Done" (файл скачан)
+        // 2. Когда файл полностью скачан (Done) — расшифровываем CryptoFile и сохраняем
         if (statusName.contains("Done", ignoreCase = true) || ciFile.loaded) {
-          
           val rawText = item.content.text
           val durationHours = rawText.substringAfter(STORY_TAG_PREFIX, "24]").substringBefore("]").toIntOrNull() ?: 24
           val caption = rawText.substringAfter("]", "").trim()
 
-          val isVideo = item.content.msgContent is MsgContent.MCVideo || ciFile.fileName.endsWith(".mp4", ignoreCase = true)
+          val isVideo = item.content.msgContent is MsgContent.MCVideo ||
+                        ciFile.fileName.endsWith(".mp4", ignoreCase = true)
           val mediaType = if (isVideo) TemporaryMediaType.VIDEO else TemporaryMediaType.PHOTO
+
           val previewBase64 = when (val content = item.content.msgContent) {
             is MsgContent.MCVideo -> content.image
             is MsgContent.MCImage -> content.image
             else -> null
           }
 
-          try {
-            // МЫ БОЛЬШЕ НЕ ПЫТАЕМСЯ КОПИРОВАТЬ ФАЙЛ.
-            // МЫ ПРОСТО ПЕРЕДАЕМ ОБЪЕКТ ChatItem В TemporaryContentManager.
-            TemporaryContentManager.importContactStoryDirect(
+          val ext = if (isVideo) "mp4" else "jpg"
+          val targetDir = File(getAppFilePath("temporary_content")).apply { if (!exists()) mkdirs() }
+          val destFile = File(targetDir, "$storyId.$ext")
+
+          val extractedOk = extractDecryptedStoryFile(ciFile, destFile)
+
+          if (extractedOk && destFile.exists() && destFile.length() > 1000L) {
+            importedItemIds.add(item.id)
+            downloadingItemIds.remove(item.id)
+
+            TemporaryContentManager.registerImportedStoryFile(
               storyId = storyId,
               contactId = directContact.contactId,
               displayName = directContact.displayName,
-              sourceItem = item, // <-- Передаем весь объект сообщения
+              decryptedFile = destFile,
               previewBase64 = previewBase64,
               mediaType = mediaType,
               durationHours = durationHours,
               caption = caption,
               createdAtMillis = item.meta.createdAt.toEpochMilliseconds()
             )
-            
-            importedItemIds.add(item.id)
-            downloadingItemIds.remove(item.id)
-            
-            // Удаляем сообщение из видимости чата
+
             removeStoryItemFromChat(chatModel, chat, item)
-          } catch (e: Exception) {
-            Log.e(TAG, "Error importing story: ${e.message}")
           }
         }
       }
     }
   }
 
-  // Удаляем только визуально из чата, но не из базы, чтобы TemporaryContent мог отображать медиа
+  /**
+   * Правильно извлекает и расшифровывает файл из CIFile / CryptoFile ядра SimpleX
+   */
+  private fun extractDecryptedStoryFile(ciFile: CIFile, destFile: File): Boolean {
+    return try {
+      val cryptoSource = getLoadedFileSource(ciFile)
+      if (cryptoSource != null) {
+        val rawPath = getLoadedFilePath(ciFile) ?: getAppFilePath(cryptoSource.filePath)
+        val srcFile = File(rawPath)
+        if (!srcFile.exists() || srcFile.length() == 0L) return false
+
+        val args = cryptoSource.cryptoArgs
+        if (args != null) {
+          // Файл зашифрован локальным ключом SimpleX — расшифровываем в destFile
+          if (destFile.exists()) destFile.delete()
+          decryptCryptoFile(srcFile.absolutePath, args, destFile.absolutePath)
+        } else {
+          // Файл не зашифрован — просто копируем
+          srcFile.copyTo(destFile, overwrite = true)
+        }
+        destFile.exists() && destFile.length() > 1000L
+      } else {
+        val fallbackPath = getLoadedFilePath(ciFile) ?: return false
+        val srcFile = File(fallbackPath)
+        if (!srcFile.exists() || srcFile.length() == 0L) return false
+
+        val args = ciFile.fileCryptoArgs
+        if (args != null) {
+          if (destFile.exists()) destFile.delete()
+          decryptCryptoFile(srcFile.absolutePath, args, destFile.absolutePath)
+        } else {
+          srcFile.copyTo(destFile, overwrite = true)
+        }
+        destFile.exists() && destFile.length() > 1000L
+      }
+    } catch (e: Exception) {
+      Log.e(TAG, "extractDecryptedStoryFile error: ${e.message}")
+      false
+    }
+  }
+
   private fun removeStoryItemFromChat(chatModel: ChatModel, chat: Chat, item: ChatItem) {
     scope.launch {
       withContext(Dispatchers.Main) {
-        try { chatModel.chatsContext.removeChatItem(chat.remoteHostId, chat.chatInfo, item) } catch (_: Exception) {}
+        try {
+          chatModel.chatsContext.removeChatItem(chat.remoteHostId, chat.chatInfo, item)
+        } catch (_: Exception) {}
       }
+    }
+  }
+
+  private fun getLoadedFilePath(ciFile: CIFile): String? {
+    return try {
+      val name = ciFile.fileName
+      if (name.isBlank()) return null
+      val f1 = File(name)
+      if (f1.exists() && f1.length() > 0) return f1.absolutePath
+      val f2 = File(getAppFilePath(name))
+      if (f2.exists() && f2.length() > 0) return f2.absolutePath
+      null
+    } catch (_: Exception) {
+      null
     }
   }
 
