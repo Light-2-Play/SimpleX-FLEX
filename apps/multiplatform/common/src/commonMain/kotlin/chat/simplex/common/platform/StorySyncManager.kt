@@ -147,38 +147,33 @@ object StorySyncManager {
   /**
    * Правильно извлекает и расшифровывает файл из CIFile / CryptoFile ядра SimpleX
    */
+ /**
+   * Правильно извлекает и расшифровывает файл из CIFile / CryptoFile ядра SimpleX
+   */
   private fun extractDecryptedStoryFile(ciFile: CIFile, destFile: File): Boolean {
     return try {
       val cryptoSource = getLoadedFileSource(ciFile)
-      if (cryptoSource != null) {
-        val rawPath = getLoadedFilePath(ciFile) ?: getAppFilePath(cryptoSource.filePath)
-        val srcFile = File(rawPath)
-        if (!srcFile.exists() || srcFile.length() == 0L) return false
-
-        val args = cryptoSource.cryptoArgs
-        if (args != null) {
-          // Файл зашифрован локальным ключом SimpleX — расшифровываем в destFile
-          if (destFile.exists()) destFile.delete()
-          decryptCryptoFile(srcFile.absolutePath, args, destFile.absolutePath)
-        } else {
-          // Файл не зашифрован — просто копируем
-          srcFile.copyTo(destFile, overwrite = true)
-        }
-        destFile.exists() && destFile.length() > 1000L
+      val rawPath = if (cryptoSource != null) {
+        getLoadedFilePath(ciFile) ?: getAppFilePath(cryptoSource.filePath)
       } else {
-        val fallbackPath = getLoadedFilePath(ciFile) ?: return false
-        val srcFile = File(fallbackPath)
-        if (!srcFile.exists() || srcFile.length() == 0L) return false
+        getLoadedFilePath(ciFile)
+      } ?: return false
 
-        val args = ciFile.fileCryptoArgs
-        if (args != null) {
-          if (destFile.exists()) destFile.delete()
-          decryptCryptoFile(srcFile.absolutePath, args, destFile.absolutePath)
-        } else {
-          srcFile.copyTo(destFile, overwrite = true)
-        }
-        destFile.exists() && destFile.length() > 1000L
+      val srcFile = File(rawPath)
+      if (!srcFile.exists() || srcFile.length() == 0L) return false
+
+      if (destFile.exists()) destFile.delete()
+
+      val args = cryptoSource?.cryptoArgs
+      if (args != null) {
+        // Файл зашифрован локальным ключом SimpleX — расшифровываем в destFile
+        decryptCryptoFile(srcFile.absolutePath, args, destFile.absolutePath)
+      } else {
+        // Файл не зашифрован (CryptoFile.plain) — просто копируем
+        srcFile.copyTo(destFile, overwrite = true)
       }
+
+      destFile.exists() && destFile.length() > 1000L
     } catch (e: Exception) {
       Log.e(TAG, "extractDecryptedStoryFile error: ${e.message}")
       false
