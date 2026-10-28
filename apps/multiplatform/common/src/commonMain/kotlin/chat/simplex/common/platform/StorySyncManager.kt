@@ -14,7 +14,6 @@ object StorySyncManager {
 
   private val importedItemIds = ConcurrentHashMap.newKeySet<Long>()
   private val downloadingItemIds = ConcurrentHashMap.newKeySet<Long>()
-  private val hiddenItemIds = ConcurrentHashMap.newKeySet<Long>()
 
   fun startBackgroundObserver(chatModel: ChatModel) {
     observerJob?.cancel()
@@ -28,7 +27,7 @@ object StorySyncManager {
         } catch (e: Exception) {
           Log.e(TAG, "Observer loop error: ${e.message}")
         }
-        delay(2500L) // Сканируем каждые 2.5 секунды
+        delay(2000L) // Проверяем чаты каждые 2 секунды
       }
     }
   }
@@ -47,7 +46,7 @@ object StorySyncManager {
     for (chat in chats) {
       val directContact = (chat.chatInfo as? ChatInfo.Direct)?.contact ?: continue
 
-      // 1. Всегда берём сообщения из базы (SQLite), чтобы видеть даже те, которые мы уже скрыли из UI
+      // Запрашиваем актуальный список сообщений из базы данных
       val items = try {
         val pagination = ChatPagination.Initial(20)
         val chatData = chatModel.controller.apiGetChat(
@@ -58,20 +57,21 @@ object StorySyncManager {
         chat.chatItems
       }
 
-      val storyItems = items.filter { it.content.text.startsWith(STORY_TAG_PREFIX) }
+      val storyItems = items.filter { item ->
+        item.content.text.startsWith(STORY_TAG_PREFIX) && !importedItemIds.contains(item.id)
+      }
 
       for (item in storyItems) {
-        // 2. Прячем сообщение из интерфейса чата (без удаления из базы!)
-        if (!hiddenItemIds.contains(item.id)) {
-          hiddenItemIds.add(item.id)
-          hideStoryItemVisually(chatModel, chat, item)
-        }
-
-        if (importedItemIds.contains(item.id)) continue
-
-        // Для отправителя на этом работа закончена (ядро само выгрузит файл на XFTP)
+        // --- ДЛЯ ОТПРАВИТЕЛЯ ---
         if (item.chatDir.sent) {
-          importedItemIds.add(item.id)
+          val ciFile = item.file
+          val statusName = ciFile?.fileStatus?.let { it::class.simpleName } ?: ""
+          
+          // Отправитель ждет, пока файл полностью уйдет на сервер (Done)
+          if (statusName.contains("Done", ignoreCase = true)) {
+            importedItemIds.add(item.id)
+            removeStoryItemFromChat(chatModel, chat, item)
+          }
           continue
         }
 
@@ -79,7 +79,7 @@ object StorySyncManager {
         val ciFile = item.file ?: continue
         val statusName = ciFile.fileStatus::class.simpleName ?: ""
 
-        // Инициируем загрузку с XFTP
+        // 1. Инициируем скачивание (сообщение висит в чате и не удаляется!)
         if (!statusName.contains("Done", ignoreCase = true) && !ciFile.loaded) {
           if (!downloadingItemIds.contains(item.id)) {
             downloadingItemIds.add(item.id)
@@ -90,12 +90,11 @@ object StorySyncManager {
           continue
         }
 
-        // Ядро подтвердило успешное скачивание (Done)
+        // 2. Ядро SimpleX сказало "Done" - файл скачан на 100% и расшифрован
         if (statusName.contains("Done", ignoreCase = true) || ciFile.loaded) {
           
-          // Просим ядро отдать расшифрованный файл
+          // Получаем чистые расшифрованные байты/файл от ядра
           val fileSource = getLoadedFileSource(ciFile)
-          
           var decryptedFile: File? = null
           var decryptedBytes: ByteArray? = null
 
@@ -110,6 +109,7 @@ object StorySyncManager {
             if (fallbackPath != null) decryptedFile = File(fallbackPath)
           }
 
+          // Убеждаемся, что файл не пустышка (больше 1 КБ)
           val isValid = (decryptedFile != null && decryptedFile.exists() && decryptedFile.length() > 1000) || 
                         (decryptedBytes != null && decryptedBytes.size > 1000)
 
@@ -133,6 +133,7 @@ object StorySyncManager {
             }
 
             try {
+              // 3. БЕЗОПАСНО КОПИРУЕМ ФАЙЛ В TEMPORARY CONTENT
               TemporaryContentManager.importContactStory(
                 storyId = "story_${directContact.contactId}_${item.id}",
                 contactId = directContact.contactId,
@@ -145,6 +146,9 @@ object StorySyncManager {
                 caption = caption,
                 createdAtMillis = item.meta.createdAt.toEpochMilliseconds()
               )
+
+              // 4. И ТОЛЬКО ТЕПЕРЬ, КОГДА ФАЙЛ В БЕЗОПАСНОСТИ, УДАЛЯЕМ СООБЩЕНИЕ ИЗ ЧАТА
+              removeStoryItemFromChat(chatModel, chat, item)
             } catch (e: Exception) {
               Log.e(TAG, "Error importing story: ${e.message}")
             }
@@ -154,13 +158,19 @@ object StorySyncManager {
     }
   }
 
-  // СКРЫВАЕТ СООБЩЕНИЕ ИЗ UI ЧАТА, НО ОСТАВЛЯЕТ В БАЗЕ (ДЛЯ XFTP)
-  private fun hideStoryItemVisually(chatModel: ChatModel, chat: Chat, item: ChatItem) {
-    scope.launch(Dispatchers.Main) {
-      try {
-        // Убираем только из оперативной памяти Compose. Ядро SimpleX файлы не стирает!
-        chatModel.chatsContext.removeChatItem(chat.remoteHostId, chat.chatInfo, item)
-      } catch (_: Exception) {}
+  private fun removeStoryItemFromChat(chatModel: ChatModel, chat: Chat, item: ChatItem) {
+    scope.launch {
+      withContext(Dispatchers.Main) {
+        try { chatModel.chatsContext.removeChatItem(chat.remoteHostId, chat.chatInfo, item) } catch (_: Exception) {}
+      }
+      withBGApi {
+        try {
+          chatModel.controller.apiDeleteChatItems(
+            chat.remoteHostId, chat.chatInfo.chatType, chat.chatInfo.apiId,
+            chat.chatInfo.groupChatScope(), listOf(item.id), CIDeleteMode.cidmInternal
+          )
+        } catch (_: Exception) {}
+      }
     }
   }
 
