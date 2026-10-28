@@ -517,9 +517,11 @@ private fun AddTemporaryContentDialog(
           color = primary
         )
         Spacer(Modifier.height(8.dp))
+        
+        // Разделяем на ряды по 4 элемента (для лучшей компоновки 7 элементов)
         val durations = TemporaryDuration.values().toList()
         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-          durations.chunked(3).forEach { rowItems ->
+          durations.chunked(4).forEach { rowItems ->
             Row(
               modifier = Modifier.fillMaxWidth(),
               horizontalArrangement = Arrangement.spacedBy(6.dp)
@@ -538,7 +540,7 @@ private fun AddTemporaryContentDialog(
                     }
                 ) {
                   Text(
-                    text = "${duration.hours} ${if (duration.hours == 1) "hr" else "hrs"}",
+                    text = duration.label,
                     fontSize = 12.sp,
                     fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
                     color = if (isSelected) MaterialTheme.colors.onPrimary else MaterialTheme.colors.onSurface,
@@ -546,6 +548,10 @@ private fun AddTemporaryContentDialog(
                     modifier = Modifier.padding(vertical = 8.dp)
                   )
                 }
+              }
+              // Заполняем пустое пространство, если элементов меньше 4 в ряду
+              repeat(4 - rowItems.size) {
+                Spacer(modifier = Modifier.weight(1f))
               }
             }
           }
@@ -648,7 +654,7 @@ private fun AddTemporaryContentDialog(
               ),
               elevation = null
             ) {
-              Text("Publish (${selectedDuration.label})", fontWeight = FontWeight.Bold)
+              Text("Publish", fontWeight = FontWeight.Bold)
             }
           }
         }
@@ -657,9 +663,6 @@ private fun AddTemporaryContentDialog(
   }
 }
 
-// =====================================================================
-// 4. ПОЛНОЭКРАННЫЙ ПРОСМОТРЩИК TEMPORARY CONTENT
-// =====================================================================
 // =====================================================================
 // 4. ПОЛНОЭКРАННЫЙ ПРОСМОТРЩИК TEMPORARY CONTENT
 // =====================================================================
@@ -703,9 +706,8 @@ fun TemporaryContentStoryViewer(
           }
         }
     ) {
-      // 1. АППАРАТНЫЙ РЕНДЕР МЕДИА 
       val mediaFile = remember(currentItem.filePath) { File(currentItem.filePath) }
-      val isFileReady = mediaFile.exists() && mediaFile.length() > 1000L // Защита от пустых файлов
+      val isFileReady = mediaFile.exists() && mediaFile.length() > 1000L
 
       if (currentItem.mediaType == TemporaryMediaType.VIDEO) {
         val videoPlayer = LocalStoryVideoPlayer.current
@@ -714,15 +716,10 @@ fun TemporaryContentStoryViewer(
           videoPlayer(currentItem.filePath, Modifier.fillMaxSize())
         } else {
           Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-              CircularProgressIndicator(color = Color.White)
-              Spacer(Modifier.height(12.dp))
-              Text("Loading media...", color = Color.White, fontSize = 14.sp)
-            }
+            CircularProgressIndicator(color = Color.White)
           }
         }
       } else {
-        // Нативный ImageView для фото
         val imageViewer = LocalStoryImageViewer.current
         
         if (imageViewer != null && isFileReady) {
@@ -734,12 +731,15 @@ fun TemporaryContentStoryViewer(
         }
       }
 
+      // Отключаем затемнение (градиент) для Фото
+      val gradientAlpha = if (currentItem.mediaType == TemporaryMediaType.VIDEO) 0.65f else 0.0f
+
       // 2. Верхняя панель со статусом и таймером
       Column(
         modifier = Modifier
           .fillMaxWidth()
           .align(Alignment.TopCenter)
-          .background(Brush.verticalGradient(listOf(Color.Black.copy(alpha = 0.85f), Color.Transparent)))
+          .background(Brush.verticalGradient(listOf(Color.Black.copy(alpha = gradientAlpha), Color.Transparent)))
           .statusBarsPadding()
           .padding(top = 10.dp, start = 14.dp, end = 14.dp, bottom = 24.dp)
       ) {
@@ -800,7 +800,7 @@ fun TemporaryContentStoryViewer(
           modifier = Modifier
             .fillMaxWidth()
             .align(Alignment.BottomCenter)
-            .background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.85f))))
+            .background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = gradientAlpha))))
             .navigationBarsPadding()
             .padding(horizontal = 20.dp, vertical = 20.dp),
           contentAlignment = Alignment.Center
@@ -811,6 +811,7 @@ fun TemporaryContentStoryViewer(
     }
   }
 }
+
 // =====================================================================
 // 5. ГЛАВНЫЙ ЭКРАН ВСЕХ ИСТОРИЙ (ДЛЯ СПИСКА ЧАТОВ)
 // =====================================================================
@@ -856,7 +857,6 @@ fun AllStoriesFeedView(close: () -> Unit) {
 
         Spacer(Modifier.height(8.dp))
 
-        // КНОПКА RELOAD ПОД НАДПИСЬЮ
         OutlinedButton(
           onClick = {
             if (!isReloading) {
@@ -902,7 +902,6 @@ fun AllStoriesFeedView(close: () -> Unit) {
         }
       }
 
-      // 1. Блок своего контента
       Surface(
         shape = RoundedCornerShape(24.dp),
         color = primary.copy(alpha = 0.05f),
@@ -963,7 +962,6 @@ fun AllStoriesFeedView(close: () -> Unit) {
         color = MaterialTheme.colors.onSurface.copy(alpha = 0.08f)
       )
 
-      // 2. Блок RECENT UPDATES
       Text(
         text = "RECENT UPDATES",
         fontSize = 12.sp,
@@ -1061,13 +1059,11 @@ fun AllStoriesFeedView(close: () -> Unit) {
   }
 }
 
-// Загрузка миниатюры только для плиток в карусели. Полноэкранные фото рендерятся нативно.
 private fun loadStoryThumbnailSafe(filePath: String): ImageBitmap? {
   return try {
     val thumbFile = File("${filePath}_thumb.jpg")
     val targetFile = if (thumbFile.exists() && thumbFile.length() > 0) thumbFile else File(filePath)
     
-    // Блокировка от переполнения памяти: читаем только файлы до 900 КБ
     if (targetFile.exists() && targetFile.length() in 1..900_000L) {
       val bytes = targetFile.readBytes()
       val base64Str = java.util.Base64.getEncoder().encodeToString(bytes)
