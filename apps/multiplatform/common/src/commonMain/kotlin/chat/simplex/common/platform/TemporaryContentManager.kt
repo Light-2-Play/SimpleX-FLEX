@@ -5,6 +5,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.Transient
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import java.io.File
@@ -33,7 +34,7 @@ data class TemporaryContentItem(
   val id: String,
   val authorContactId: Long? = null,
   val authorDisplayName: String? = null,
-  val filePath: String,
+  val filePath: String, // Для своего контента
   val mediaType: TemporaryMediaType,
   val createdAtMillis: Long,
   val durationHours: Int,
@@ -41,6 +42,10 @@ data class TemporaryContentItem(
   val caption: String = "",
   val audience: TemporaryAudience = TemporaryAudience.CONTACTS
 ) {
+  // Транзиентное свойство для хранения прямой ссылки на объект сообщения
+  @Transient
+  var linkedChatItem: ChatItem? = null
+
   fun remainingTimeText(nowMillis: Long): String {
     val remainingMs = (expiresAtMillis - nowMillis).coerceAtLeast(0L)
     val hours = remainingMs / 3600_000L
@@ -136,12 +141,11 @@ object TemporaryContentManager {
     }
   }
 
-  fun importContactStory(
+  fun importContactStoryDirect(
     storyId: String,
     contactId: Long,
     displayName: String,
-    sourceFile: File?,
-    sourceBytes: ByteArray?,
+    sourceItem: ChatItem,
     previewBase64: String?,
     mediaType: TemporaryMediaType,
     durationHours: Int,
@@ -149,20 +153,13 @@ object TemporaryContentManager {
     createdAtMillis: Long
   ) {
     try {
-      // Предотвращение дублирования после перезапуска приложения
       if (_items.value.any { it.id == storyId }) return
 
+      // Мы больше не копируем гигабайты зашифрованных данных. 
+      // Сохраняем только маленький эскиз для карусели кружочков.
       val dir = getStorageDir()
-      val ext = if (mediaType == TemporaryMediaType.VIDEO) "mp4" else "jpg"
-      val destFile = File(dir, "$storyId.$ext")
-      
-      if (sourceBytes != null) {
-        destFile.writeBytes(sourceBytes)
-      } else if (sourceFile != null && sourceFile.exists()) {
-        sourceFile.copyTo(destFile, overwrite = true)
-      } else {
-        return
-      }
+      val destFile = File(dir, "$storyId.metadata") // Пустышка-заглушка
+      destFile.writeText("linked")
 
       if (!previewBase64.isNullOrBlank()) {
         try {
@@ -184,7 +181,9 @@ object TemporaryContentManager {
         expiresAtMillis = expiresAt,
         caption = caption,
         audience = TemporaryAudience.CONTACTS
-      )
+      ).apply {
+        linkedChatItem = sourceItem // Привязываем ссылку на оригинал сообщения
+      }
 
       val currentList = _items.value.toMutableList()
       currentList.removeAll { it.id == newItem.id }
