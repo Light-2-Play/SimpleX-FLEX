@@ -250,71 +250,76 @@ class MainActivity: FragmentActivity() {
           androidx.compose.runtime.key(filePath) {
             androidx.compose.ui.viewinterop.AndroidView(
               factory = { ctx ->
-                android.view.TextureView(ctx).apply {
-                  surfaceTextureListener = object : android.view.TextureView.SurfaceTextureListener {
-                    var mediaPlayer: android.media.MediaPlayer? = null
-                    var videoWidth = 0f
-                    var videoHeight = 0f
+                val textureView = android.view.TextureView(ctx)
+                textureView.surfaceTextureListener = object : android.view.TextureView.SurfaceTextureListener {
+                  var mediaPlayer: android.media.MediaPlayer? = null
+                  var realVideoWidth = 0f
+                  var realVideoHeight = 0f
 
-                    // Функция центрирования и обрезки видео без растягивания (CENTER_CROP)
-                    fun updateTextureViewSize(viewWidth: Int, viewHeight: Int) {
-                      if (videoWidth == 0f || videoHeight == 0f || viewWidth == 0 || viewHeight == 0) return
-                      val matrix = android.graphics.Matrix()
-                      val viewRatio = viewWidth.toFloat() / viewHeight.toFloat()
-                      val videoRatio = videoWidth / videoHeight
-                      var scaleX = 1f
-                      var scaleY = 1f
+                  // Масштабирование без растягивания (CENTER_CROP)
+                  fun updateTextureMatrix() {
+                    val viewW = textureView.getWidth().toFloat()
+                    val viewH = textureView.getHeight().toFloat()
+                    if (realVideoWidth <= 0f || realVideoHeight <= 0f || viewW <= 0f || viewH <= 0f) return
 
-                      if (videoRatio > viewRatio) {
-                        scaleX = (viewHeight.toFloat() * videoRatio) / viewWidth.toFloat()
-                      } else {
-                        scaleY = (viewWidth.toFloat() / videoRatio) / viewHeight.toFloat()
-                      }
+                    val matrix = android.graphics.Matrix()
+                    val viewRatio = viewW / viewH
+                    val videoRatio = realVideoWidth / realVideoHeight
+                    var scaleX = 1f
+                    var scaleY = 1f
 
-                      matrix.setScale(scaleX, scaleY, viewWidth / 2f, viewHeight / 2f)
-                      this@apply.setTransform(matrix)
+                    if (videoRatio > viewRatio) {
+                      scaleX = (viewH * videoRatio) / viewW
+                    } else {
+                      scaleY = (viewW / videoRatio) / viewH
                     }
 
-                    override fun onSurfaceTextureAvailable(surfaceTexture: android.graphics.SurfaceTexture, width: Int, height: Int) {
-                      try {
-                        val file = File(filePath)
-                        if (!file.exists() || file.length() < 1000L) return
-                        mediaPlayer = android.media.MediaPlayer().apply {
-                          val fis = java.io.FileInputStream(file)
-                          setDataSource(fis.fd)
-                          fis.close()
-                          setSurface(android.view.Surface(surfaceTexture))
-                          isLooping = true
-                          
-                          // Слушаем размер видео, чтобы применить правильную матрицу
-                          setOnVideoSizeChangedListener { _, vWidth, vHeight ->
-                            videoWidth = vWidth.toFloat()
-                            videoHeight = vHeight.toFloat()
-                            updateTextureViewSize(this@apply.width, this@apply.height)
-                          }
-                          
-                          setOnPreparedListener { start() }
-                          prepareAsync()
-                        }
-                      } catch (e: Exception) {
-                        android.util.Log.e("StoryVideo", "TextureView error: ${e.message}")
-                      }
-                    }
-
-                    override fun onSurfaceTextureSizeChanged(surface: android.graphics.SurfaceTexture, width: Int, height: Int) {
-                      updateTextureViewSize(width, height)
-                    }
-                    override fun onSurfaceTextureDestroyed(surface: android.graphics.SurfaceTexture): Boolean {
-                      try {
-                        mediaPlayer?.stop()
-                        mediaPlayer?.release()
-                        mediaPlayer = null
-                      } catch (_: Exception) {}
-                      return true
-                    }
-                    override fun onSurfaceTextureUpdated(surface: android.graphics.SurfaceTexture) {}
+                    matrix.setScale(scaleX, scaleY, viewW / 2f, viewH / 2f)
+                    textureView.setTransform(matrix)
                   }
+
+                  override fun onSurfaceTextureAvailable(surfaceTexture: android.graphics.SurfaceTexture, width: Int, height: Int) {
+                    try {
+                      val file = File(filePath)
+                      if (!file.exists() || file.length() < 1000L) return
+                      val mp = android.media.MediaPlayer()
+                      mediaPlayer = mp
+
+                      val fis = java.io.FileInputStream(file)
+                      mp.setDataSource(fis.fd)
+                      fis.close()
+                      mp.setSurface(android.view.Surface(surfaceTexture))
+                      mp.isLooping = true
+
+                      mp.setOnVideoSizeChangedListener { _, vWidth, vHeight ->
+                        realVideoWidth = vWidth.toFloat()
+                        realVideoHeight = vHeight.toFloat()
+                        updateTextureMatrix()
+                      }
+
+                      mp.setOnPreparedListener { mp.start() }
+                      mp.prepareAsync()
+                    } catch (e: Exception) {
+                      android.util.Log.e("StoryVideo", "TextureView error: ${e.message}")
+                    }
+                  }
+
+                  override fun onSurfaceTextureSizeChanged(surface: android.graphics.SurfaceTexture, width: Int, height: Int) {
+                    updateTextureMatrix()
+                  }
+
+                  override fun onSurfaceTextureDestroyed(surface: android.graphics.SurfaceTexture): Boolean {
+                    try {
+                      mediaPlayer?.stop()
+                      mediaPlayer?.release()
+                      mediaPlayer = null
+                    } catch (_: Exception) {}
+                    return true
+                  }
+
+                  override fun onSurfaceTextureUpdated(surface: android.graphics.SurfaceTexture) {}
                 }
+                textureView
               },
               modifier = modifier
             )
