@@ -246,25 +246,53 @@ class MainActivity: FragmentActivity() {
             )
           }
         },
-        LocalStoryVideoPlayer provides { filePath: String, modifier: androidx.compose.ui.Modifier ->
+       LocalStoryVideoPlayer provides { filePath: String, modifier: androidx.compose.ui.Modifier ->
           androidx.compose.runtime.key(filePath) {
             androidx.compose.ui.viewinterop.AndroidView(
               factory = { ctx ->
                 android.view.TextureView(ctx).apply {
                   surfaceTextureListener = object : android.view.TextureView.SurfaceTextureListener {
                     var mediaPlayer: android.media.MediaPlayer? = null
+                    var videoWidth = 0f
+                    var videoHeight = 0f
+
+                    // Функция центрирования и обрезки видео без растягивания (CENTER_CROP)
+                    fun updateTextureViewSize(viewWidth: Int, viewHeight: Int) {
+                      if (videoWidth == 0f || videoHeight == 0f || viewWidth == 0 || viewHeight == 0) return
+                      val matrix = android.graphics.Matrix()
+                      val viewRatio = viewWidth.toFloat() / viewHeight.toFloat()
+                      val videoRatio = videoWidth / videoHeight
+                      var scaleX = 1f
+                      var scaleY = 1f
+
+                      if (videoRatio > viewRatio) {
+                        scaleX = (viewHeight.toFloat() * videoRatio) / viewWidth.toFloat()
+                      } else {
+                        scaleY = (viewWidth.toFloat() / videoRatio) / viewHeight.toFloat()
+                      }
+
+                      matrix.setScale(scaleX, scaleY, viewWidth / 2f, viewHeight / 2f)
+                      this@apply.setTransform(matrix)
+                    }
 
                     override fun onSurfaceTextureAvailable(surfaceTexture: android.graphics.SurfaceTexture, width: Int, height: Int) {
                       try {
                         val file = File(filePath)
                         if (!file.exists() || file.length() < 1000L) return
                         mediaPlayer = android.media.MediaPlayer().apply {
-                          // Чтение через дескриптор обходит блокировки путей
-                          val fis = FileInputStream(file)
+                          val fis = java.io.FileInputStream(file)
                           setDataSource(fis.fd)
                           fis.close()
                           setSurface(android.view.Surface(surfaceTexture))
                           isLooping = true
+                          
+                          // Слушаем размер видео, чтобы применить правильную матрицу
+                          setOnVideoSizeChangedListener { _, vWidth, vHeight ->
+                            videoWidth = vWidth.toFloat()
+                            videoHeight = vHeight.toFloat()
+                            updateTextureViewSize(this@apply.width, this@apply.height)
+                          }
+                          
                           setOnPreparedListener { start() }
                           prepareAsync()
                         }
@@ -273,7 +301,9 @@ class MainActivity: FragmentActivity() {
                       }
                     }
 
-                    override fun onSurfaceTextureSizeChanged(surface: android.graphics.SurfaceTexture, width: Int, height: Int) {}
+                    override fun onSurfaceTextureSizeChanged(surface: android.graphics.SurfaceTexture, width: Int, height: Int) {
+                      updateTextureViewSize(width, height)
+                    }
                     override fun onSurfaceTextureDestroyed(surface: android.graphics.SurfaceTexture): Boolean {
                       try {
                         mediaPlayer?.stop()
@@ -299,7 +329,6 @@ class MainActivity: FragmentActivity() {
                   try {
                     val file = File(filePath)
                     if (file.exists() && file.length() > 1000L) {
-                      // Декодирование напрямую с диска предотвращает растягивание заглушек
                       setImageBitmap(android.graphics.BitmapFactory.decodeFile(file.absolutePath))
                     }
                   } catch (e: Exception) {
