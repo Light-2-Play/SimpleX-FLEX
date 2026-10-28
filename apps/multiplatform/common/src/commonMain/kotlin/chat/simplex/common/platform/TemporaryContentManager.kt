@@ -5,7 +5,6 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.serialization.Serializable
-import kotlinx.serialization.Transient
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import java.io.File
@@ -34,7 +33,7 @@ data class TemporaryContentItem(
   val id: String,
   val authorContactId: Long? = null,
   val authorDisplayName: String? = null,
-  val filePath: String, // Для своего контента
+  val filePath: String,
   val mediaType: TemporaryMediaType,
   val createdAtMillis: Long,
   val durationHours: Int,
@@ -42,10 +41,6 @@ data class TemporaryContentItem(
   val caption: String = "",
   val audience: TemporaryAudience = TemporaryAudience.CONTACTS
 ) {
-  // Транзиентное свойство для хранения прямой ссылки на объект сообщения
-  @Transient
-  var linkedChatItem: ChatItem? = null
-
   fun remainingTimeText(nowMillis: Long): String {
     val remainingMs = (expiresAtMillis - nowMillis).coerceAtLeast(0L)
     val hours = remainingMs / 3600_000L
@@ -141,11 +136,11 @@ object TemporaryContentManager {
     }
   }
 
-  fun importContactStoryDirect(
+  fun registerImportedStoryFile(
     storyId: String,
     contactId: Long,
     displayName: String,
-    sourceItem: ChatItem,
+    decryptedFile: File,
     previewBase64: String?,
     mediaType: TemporaryMediaType,
     durationHours: Int,
@@ -153,17 +148,11 @@ object TemporaryContentManager {
     createdAtMillis: Long
   ) {
     try {
-      if (_items.value.any { it.id == storyId }) return
-
-      // Мы больше не копируем гигабайты зашифрованных данных. 
-      // Сохраняем только маленький эскиз для карусели кружочков.
-      val dir = getStorageDir()
-      val destFile = File(dir, "$storyId.metadata") // Пустышка-заглушка
-      destFile.writeText("linked")
+      if (!decryptedFile.exists() || decryptedFile.length() <= 1000L) return
 
       if (!previewBase64.isNullOrBlank()) {
         try {
-          val thumbFile = File("${destFile.absolutePath}_thumb.jpg")
+          val thumbFile = File("${decryptedFile.absolutePath}_thumb.jpg")
           val decoded = java.util.Base64.getDecoder().decode(previewBase64)
           thumbFile.writeBytes(decoded)
         } catch (_: Exception) {}
@@ -174,16 +163,14 @@ object TemporaryContentManager {
         id = storyId,
         authorContactId = contactId,
         authorDisplayName = displayName,
-        filePath = destFile.absolutePath,
+        filePath = decryptedFile.absolutePath,
         mediaType = mediaType,
         createdAtMillis = createdAtMillis,
         durationHours = durationHours,
         expiresAtMillis = expiresAt,
         caption = caption,
         audience = TemporaryAudience.CONTACTS
-      ).apply {
-        linkedChatItem = sourceItem // Привязываем ссылку на оригинал сообщения
-      }
+      )
 
       val currentList = _items.value.toMutableList()
       currentList.removeAll { it.id == newItem.id }
@@ -191,7 +178,7 @@ object TemporaryContentManager {
       _items.value = currentList.toList()
       saveMetadataToDisk()
     } catch (e: Exception) {
-      Log.e(TAG, "importContactStory error: ${e.message}")
+      Log.e(TAG, "registerImportedStoryFile error: ${e.message}")
     }
   }
 
@@ -211,7 +198,10 @@ object TemporaryContentManager {
   fun purgeExpired() {
     val now = System.currentTimeMillis()
     val current = _items.value
-    val (active, expired) = current.partition { it.expiresAtMillis > now }
+    val (active, expired) = current.partition {
+      val f = File(it.filePath)
+      it.expiresAtMillis > now && f.exists() && f.length() > 1000L
+    }
     if (expired.isNotEmpty()) {
       expired.forEach { item ->
         try {
@@ -240,7 +230,11 @@ object TemporaryContentManager {
       if (metadataFile.exists()) {
         val text = metadataFile.readText()
         val list = json.decodeFromString<List<TemporaryContentItem>>(text)
-        _items.value = list.filter { File(it.filePath).exists() }
+        // Автоматически отсеиваем старые 6-байтовые .metadata заглушки
+        _items.value = list.filter {
+          val f = File(it.filePath)
+          f.exists() && f.length() > 1000L
+        }
       }
     } catch (e: Exception) {
       Log.e(TAG, "loadMetadataFromDisk error: ${e.message}")
