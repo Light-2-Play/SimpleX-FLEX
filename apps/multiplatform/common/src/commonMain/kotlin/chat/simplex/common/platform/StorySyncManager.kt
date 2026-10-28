@@ -63,7 +63,6 @@ object StorySyncManager {
       for (item in storyItems) {
         val storyId = "story_${directContact.contactId}_${item.id}"
 
-        // Если история уже импортирована и файл реально существует (> 1 КБ) — скрываем из чата
         val existing = TemporaryContentManager.items.value.firstOrNull { it.id == storyId }
         if (existing != null && File(existing.filePath).length() > 1000L) {
           importedItemIds.add(item.id)
@@ -71,7 +70,6 @@ object StorySyncManager {
           continue
         }
 
-        // --- ДЛЯ ОТПРАВИТЕЛЯ ---
         if (item.chatDir.sent) {
           val ciFile = item.file
           val statusName = ciFile?.fileStatus?.let { it::class.simpleName } ?: ""
@@ -82,31 +80,26 @@ object StorySyncManager {
           continue
         }
 
-        // --- ДЛЯ ПОЛУЧАТЕЛЯ ---
         val ciFile = item.file ?: continue
         val statusName = ciFile.fileStatus::class.simpleName ?: ""
 
-        // 1. Запускаем скачивание по XFTP, если файл еще не загружен
         if (!statusName.contains("Done", ignoreCase = true) && !ciFile.loaded) {
           if (!downloadingItemIds.contains(item.id)) {
             downloadingItemIds.add(item.id)
             withBGApi {
-              try {
-                chatModel.controller.receiveFile(chat.remoteHostId, user, ciFile.fileId)
-              } catch (_: Exception) {}
+              try { chatModel.controller.receiveFile(chat.remoteHostId, user, ciFile.fileId) } catch (_: Exception) {}
             }
           }
           continue
         }
 
-        // 2. Когда файл полностью скачан (Done) — расшифровываем CryptoFile и сохраняем
         if (statusName.contains("Done", ignoreCase = true) || ciFile.loaded) {
           val rawText = item.content.text
-          val durationHours = rawText.substringAfter(STORY_TAG_PREFIX, "24]").substringBefore("]").toIntOrNull() ?: 24
+          // Изменено на toFloatOrNull для поддержки 0.5 (30 mins)
+          val durationHours = rawText.substringAfter(STORY_TAG_PREFIX, "24]").substringBefore("]").toFloatOrNull() ?: 24f
           val caption = rawText.substringAfter("]", "").trim()
 
-          val isVideo = item.content.msgContent is MsgContent.MCVideo ||
-                        ciFile.fileName.endsWith(".mp4", ignoreCase = true)
+          val isVideo = item.content.msgContent is MsgContent.MCVideo || ciFile.fileName.endsWith(".mp4", ignoreCase = true)
           val mediaType = if (isVideo) TemporaryMediaType.VIDEO else TemporaryMediaType.PHOTO
 
           val previewBase64 = when (val content = item.content.msgContent) {
@@ -136,7 +129,6 @@ object StorySyncManager {
               caption = caption,
               createdAtMillis = item.meta.createdAt.toEpochMilliseconds()
             )
-
             removeStoryItemFromChat(chatModel, chat, item)
           }
         }
@@ -144,12 +136,6 @@ object StorySyncManager {
     }
   }
 
-  /**
-   * Правильно извлекает и расшифровывает файл из CIFile / CryptoFile ядра SimpleX
-   */
- /**
-   * Правильно извлекает и расшифровывает файл из CIFile / CryptoFile ядра SimpleX
-   */
   private fun extractDecryptedStoryFile(ciFile: CIFile, destFile: File): Boolean {
     return try {
       val cryptoSource = getLoadedFileSource(ciFile)
@@ -166,13 +152,10 @@ object StorySyncManager {
 
       val args = cryptoSource?.cryptoArgs
       if (args != null) {
-        // Файл зашифрован локальным ключом SimpleX — расшифровываем в destFile
         decryptCryptoFile(srcFile.absolutePath, args, destFile.absolutePath)
       } else {
-        // Файл не зашифрован (CryptoFile.plain) — просто копируем
         srcFile.copyTo(destFile, overwrite = true)
       }
-
       destFile.exists() && destFile.length() > 1000L
     } catch (e: Exception) {
       Log.e(TAG, "extractDecryptedStoryFile error: ${e.message}")
@@ -183,9 +166,7 @@ object StorySyncManager {
   private fun removeStoryItemFromChat(chatModel: ChatModel, chat: Chat, item: ChatItem) {
     scope.launch {
       withContext(Dispatchers.Main) {
-        try {
-          chatModel.chatsContext.removeChatItem(chat.remoteHostId, chat.chatInfo, item)
-        } catch (_: Exception) {}
+        try { chatModel.chatsContext.removeChatItem(chat.remoteHostId, chat.chatInfo, item) } catch (_: Exception) {}
       }
     }
   }
@@ -199,9 +180,7 @@ object StorySyncManager {
       val f2 = File(getAppFilePath(name))
       if (f2.exists() && f2.length() > 0) return f2.absolutePath
       null
-    } catch (_: Exception) {
-      null
-    }
+    } catch (_: Exception) { null }
   }
 
   suspend fun publishAndBroadcastStoryWithProgress(
@@ -216,6 +195,15 @@ object StorySyncManager {
         val ci = chat.chatInfo
         if (ci !is ChatInfo.Direct) return@filter false
         val contact = ci.contact
+
+        // ПРОВЕРКА НА ВЕРИФИЦИРОВАННОСТЬ ПОЛЬЗОВАТЕЛЯ!
+        if (item.audience == TemporaryAudience.VERIFIED_USERS) {
+          // В SimpleX статус верификации контакта хранится в свойстве contact.verified
+          try {
+            if (!contact.verified) return@filter false
+          } catch (_: Exception) {} // На случай если ядро обновится
+        }
+
         contact.active && contact.ready && contact.sndReady && !contact.chatDeleted && !ci.chatDeleted && ci.sendMsgEnabled
       }
 
