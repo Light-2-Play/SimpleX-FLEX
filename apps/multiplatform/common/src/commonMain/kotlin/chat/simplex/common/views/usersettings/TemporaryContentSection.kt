@@ -660,6 +660,9 @@ private fun AddTemporaryContentDialog(
 // =====================================================================
 // 4. ПОЛНОЭКРАННЫЙ ПРОСМОТРЩИК TEMPORARY CONTENT
 // =====================================================================
+// =====================================================================
+// 4. ПОЛНОЭКРАННЫЙ ПРОСМОТРЩИК TEMPORARY CONTENT
+// =====================================================================
 @Composable
 fun TemporaryContentStoryViewer(
   items: List<TemporaryContentItem>,
@@ -700,12 +703,12 @@ fun TemporaryContentStoryViewer(
           }
         }
     ) {
-      // 1. АППАРАТНЫЙ РЕНДЕР МЕДИА
+      // 1. АППАРАТНЫЙ РЕНДЕР МЕДИА (Без Base64 и квадратов)
       val mediaFile = remember(currentItem.filePath) { File(currentItem.filePath) }
 
       if (currentItem.mediaType == TemporaryMediaType.VIDEO) {
         val videoPlayer = LocalStoryVideoPlayer.current
-        if (videoPlayer != null && mediaFile.exists() && mediaFile.length() > 0) {
+        if (videoPlayer != null && mediaFile.exists() && mediaFile.length() > 1000) {
           videoPlayer(currentItem.filePath, Modifier.fillMaxSize())
         } else {
           Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -713,7 +716,6 @@ fun TemporaryContentStoryViewer(
           }
         }
       } else {
-        // Нативный ImageView: декодирует полный оригинал напрямую с диска без размытия в квадрат
         val imageViewer = LocalStoryImageViewer.current
         if (imageViewer != null && mediaFile.exists() && mediaFile.length() > 0) {
           imageViewer(currentItem.filePath, Modifier.fillMaxSize())
@@ -801,7 +803,6 @@ fun TemporaryContentStoryViewer(
     }
   }
 }
-
 // =====================================================================
 // 5. ГЛАВНЫЙ ЭКРАН ВСЕХ ИСТОРИЙ (ДЛЯ СПИСКА ЧАТОВ)
 // =====================================================================
@@ -1052,13 +1053,13 @@ fun AllStoriesFeedView(close: () -> Unit) {
   }
 }
 
-// Загрузка миниатюры только для плиток в карусели
+// Загрузка миниатюры только для плиток в карусели. Полноэкранные фото рендерятся нативно.
 private fun loadStoryThumbnailSafe(filePath: String): ImageBitmap? {
   return try {
     val thumbFile = File("${filePath}_thumb.jpg")
-    val originalFile = File(filePath)
-
-    val targetFile = if (thumbFile.exists() && thumbFile.length() > 0) thumbFile else originalFile
+    val targetFile = if (thumbFile.exists() && thumbFile.length() > 0) thumbFile else File(filePath)
+    
+    // Блокировка от переполнения памяти: читаем только файлы до 900 КБ
     if (targetFile.exists() && targetFile.length() in 1..900_000L) {
       val bytes = targetFile.readBytes()
       val base64Str = java.util.Base64.getEncoder().encodeToString(bytes)
