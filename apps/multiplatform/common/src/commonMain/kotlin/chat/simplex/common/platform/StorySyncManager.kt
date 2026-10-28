@@ -14,6 +14,7 @@ object StorySyncManager {
 
   private val importedItemIds = ConcurrentHashMap.newKeySet<Long>()
   private val downloadingItemIds = ConcurrentHashMap.newKeySet<Long>()
+  private val hiddenItemIds = ConcurrentHashMap.newKeySet<Long>()
 
   fun startBackgroundObserver(chatModel: ChatModel) {
     observerJob?.cancel()
@@ -21,29 +22,23 @@ object StorySyncManager {
       while (isActive) {
         try {
           val user = chatModel.currentUser.value
-          if (user == null) {
-            delay(1000L)
-            continue
+          if (user != null) {
+            scanAndProcessStories(chatModel, user)
           }
-          scanAndProcessStories(chatModel, user, forceDatabaseQuery = false)
         } catch (e: Exception) {
           Log.e(TAG, "Observer loop error: ${e.message}")
         }
-        delay(3000L)
+        delay(2500L) // Сканируем каждые 2.5 секунды
       }
     }
   }
 
   suspend fun syncAllStoriesNow(chatModel: ChatModel) = withContext(Dispatchers.IO) {
     val user = chatModel.currentUser.value ?: return@withContext
-    scanAndProcessStories(chatModel, user, forceDatabaseQuery = true)
+    scanAndProcessStories(chatModel, user)
   }
 
-  private suspend fun scanAndProcessStories(
-    chatModel: ChatModel,
-    user: User,
-    forceDatabaseQuery: Boolean
-  ) {
+  private suspend fun scanAndProcessStories(chatModel: ChatModel, user: User) {
     val chats = chatModel.chats.value.filter {
       val ci = it.chatInfo
       ci is ChatInfo.Direct && ci.contact.active
@@ -52,43 +47,39 @@ object StorySyncManager {
     for (chat in chats) {
       val directContact = (chat.chatInfo as? ChatInfo.Direct)?.contact ?: continue
 
-      val items = if (forceDatabaseQuery || chat.chatItems.isEmpty()) {
-        try {
-          val pagination = ChatPagination.Initial(15)
-          val chatData = chatModel.controller.apiGetChat(
-            chat.remoteHostId, chat.chatInfo.chatType, chat.chatInfo.apiId, null, null, pagination
-          )
-          chatData?.first?.chatItems ?: chat.chatItems
-        } catch (_: Exception) {
-          chat.chatItems
-        }
-      } else {
+      // 1. Всегда берём сообщения из базы (SQLite), чтобы видеть даже те, которые мы уже скрыли из UI
+      val items = try {
+        val pagination = ChatPagination.Initial(20)
+        val chatData = chatModel.controller.apiGetChat(
+          chat.remoteHostId, chat.chatInfo.chatType, chat.chatInfo.apiId, null, null, pagination
+        )
+        chatData?.first?.chatItems ?: chat.chatItems
+      } catch (_: Exception) {
         chat.chatItems
       }
 
-      val storyItems = items.filter { item ->
-        item.content.text.startsWith(STORY_TAG_PREFIX) && !importedItemIds.contains(item.id)
-      }
+      val storyItems = items.filter { it.content.text.startsWith(STORY_TAG_PREFIX) }
 
       for (item in storyItems) {
+        // 2. Прячем сообщение из интерфейса чата (без удаления из базы!)
+        if (!hiddenItemIds.contains(item.id)) {
+          hiddenItemIds.add(item.id)
+          hideStoryItemVisually(chatModel, chat, item)
+        }
+
+        if (importedItemIds.contains(item.id)) continue
+
+        // Для отправителя на этом работа закончена (ядро само выгрузит файл на XFTP)
         if (item.chatDir.sent) {
           importedItemIds.add(item.id)
           continue
         }
 
-        // ЖЕСТКАЯ ПРИВЯЗКА ID истории к ID сообщения в базе
-        val storyId = "story_${directContact.contactId}_${item.id}"
-
-        // Защита от дубликатов при перезапуске приложения
-        if (TemporaryContentManager.items.value.any { it.id == storyId }) {
-          importedItemIds.add(item.id)
-          removeStoryItemFromChat(chatModel, chat, item) // Прячем из чата, так как уже сохранили
-          continue
-        }
-
+        // --- ДЛЯ ПОЛУЧАТЕЛЯ ---
         val ciFile = item.file ?: continue
         val statusName = ciFile.fileStatus::class.simpleName ?: ""
 
+        // Инициируем загрузку с XFTP
         if (!statusName.contains("Done", ignoreCase = true) && !ciFile.loaded) {
           if (!downloadingItemIds.contains(item.id)) {
             downloadingItemIds.add(item.id)
@@ -99,7 +90,10 @@ object StorySyncManager {
           continue
         }
 
+        // Ядро подтвердило успешное скачивание (Done)
         if (statusName.contains("Done", ignoreCase = true) || ciFile.loaded) {
+          
+          // Просим ядро отдать расшифрованный файл
           val fileSource = getLoadedFileSource(ciFile)
           
           var decryptedFile: File? = null
@@ -132,7 +126,6 @@ object StorySyncManager {
                           (decryptedFile != null && decryptedFile.name.endsWith(".mp4", ignoreCase = true))
 
             val mediaType = if (isVideo) TemporaryMediaType.VIDEO else TemporaryMediaType.PHOTO
-
             val previewBase64 = when (val content = item.content.msgContent) {
               is MsgContent.MCVideo -> content.image
               is MsgContent.MCImage -> content.image
@@ -141,7 +134,7 @@ object StorySyncManager {
 
             try {
               TemporaryContentManager.importContactStory(
-                storyId = storyId, // Передаем фиксированный ID
+                storyId = "story_${directContact.contactId}_${item.id}",
                 contactId = directContact.contactId,
                 displayName = directContact.displayName,
                 sourceFile = decryptedFile,
@@ -152,9 +145,6 @@ object StorySyncManager {
                 caption = caption,
                 createdAtMillis = item.meta.createdAt.toEpochMilliseconds()
               )
-
-              // СКРЫВАЕМ ИЗ ЧАТА СРАЗУ ПОСЛЕ УСПЕШНОГО ИМПОРТА
-              removeStoryItemFromChat(chatModel, chat, item)
             } catch (e: Exception) {
               Log.e(TAG, "Error importing story: ${e.message}")
             }
@@ -164,16 +154,13 @@ object StorySyncManager {
     }
   }
 
-  private fun removeStoryItemFromChat(chatModel: ChatModel, chat: Chat, item: ChatItem) {
-    scope.launch {
-      withContext(Dispatchers.Main) {
-        try { 
-          // Удаляем ТОЛЬКО визуально из текущей сессии (скрываем из UI)
-          chatModel.chatsContext.removeChatItem(chat.remoteHostId, chat.chatInfo, item) 
-        } catch (_: Exception) {}
-      }
-      // МЫ БОЛЬШЕ НЕ УДАЛЯЕМ СООБЩЕНИЕ ИЗ БД (apiDeleteChatItems)!
-      // Теперь ядро SimpleX не будет стирать файл, и он 100% откроется.
+  // СКРЫВАЕТ СООБЩЕНИЕ ИЗ UI ЧАТА, НО ОСТАВЛЯЕТ В БАЗЕ (ДЛЯ XFTP)
+  private fun hideStoryItemVisually(chatModel: ChatModel, chat: Chat, item: ChatItem) {
+    scope.launch(Dispatchers.Main) {
+      try {
+        // Убираем только из оперативной памяти Compose. Ядро SimpleX файлы не стирает!
+        chatModel.chatsContext.removeChatItem(chat.remoteHostId, chat.chatInfo, item)
+      } catch (_: Exception) {}
     }
   }
 
