@@ -5,6 +5,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.Transient
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import java.io.File
@@ -13,19 +14,21 @@ enum class TemporaryMediaType {
   PHOTO, VIDEO
 }
 
-enum class TemporaryDuration(val hours: Int, val label: String) {
-  HOURS_1(1, "1 hr"),
-  HOURS_6(6, "6 hrs"),
-  HOURS_12(12, "12 hrs"),
-  HOURS_24(24, "24 hrs"),
-  HOURS_48(48, "48 hrs"),
-  HOURS_72(72, "72 hrs");
+// Изменено на Float для поддержки 30 минут (0.5)
+enum class TemporaryDuration(val hours: Float, val label: String) {
+  MINS_30(0.5f, "30m"),
+  HOURS_1(1f, "1h"),
+  HOURS_3(3f, "3h"),
+  HOURS_6(6f, "6h"),
+  HOURS_12(12f, "12h"),
+  HOURS_16(16f, "16h"),
+  HOURS_24(24f, "24h");
 }
 
 enum class TemporaryAudience(val label: String) {
   VERIFIED_USERS("Verified"),
-  CONTACTS("Contacts"),
-  ALL_USERS("All")
+  CONTACTS("Contacts")
+  // Пункт ALL_USERS удален по вашему запросу
 }
 
 @Serializable
@@ -36,11 +39,14 @@ data class TemporaryContentItem(
   val filePath: String,
   val mediaType: TemporaryMediaType,
   val createdAtMillis: Long,
-  val durationHours: Int,
-  val expiresAtMillis: Long = createdAtMillis + (durationHours * 3600_000L),
+  val durationHours: Float, // Теперь Float
+  val expiresAtMillis: Long = createdAtMillis + (durationHours * 3600_000f).toLong(),
   val caption: String = "",
   val audience: TemporaryAudience = TemporaryAudience.CONTACTS
 ) {
+  @Transient
+  var linkedChatItem: ChatItem? = null
+
   fun remainingTimeText(nowMillis: Long): String {
     val remainingMs = (expiresAtMillis - nowMillis).coerceAtLeast(0L)
     val hours = remainingMs / 3600_000L
@@ -53,7 +59,7 @@ data class TemporaryContentItem(
   }
 
   fun remainingProgress(nowMillis: Long): Float {
-    val totalMs = (durationHours * 3600_000L).toFloat()
+    val totalMs = (durationHours * 3600_000f)
     if (totalMs <= 0f) return 0f
     val remainingMs = (expiresAtMillis - nowMillis).coerceIn(0L, totalMs.toLong()).toFloat()
     return (remainingMs / totalMs).coerceIn(0f, 1f)
@@ -111,7 +117,7 @@ object TemporaryContentManager {
       }
 
       val now = System.currentTimeMillis()
-      val expiresAt = now + (duration.hours * 3600_000L)
+      val expiresAt = now + (duration.hours * 3600_000f).toLong()
       val item = TemporaryContentItem(
         id = id,
         authorContactId = null,
@@ -143,7 +149,7 @@ object TemporaryContentManager {
     decryptedFile: File,
     previewBase64: String?,
     mediaType: TemporaryMediaType,
-    durationHours: Int,
+    durationHours: Float, // Теперь Float
     caption: String,
     createdAtMillis: Long
   ) {
@@ -158,7 +164,7 @@ object TemporaryContentManager {
         } catch (_: Exception) {}
       }
 
-      val expiresAt = createdAtMillis + (durationHours * 3600_000L)
+      val expiresAt = createdAtMillis + (durationHours * 3600_000f).toLong()
       val newItem = TemporaryContentItem(
         id = storyId,
         authorContactId = contactId,
@@ -230,7 +236,6 @@ object TemporaryContentManager {
       if (metadataFile.exists()) {
         val text = metadataFile.readText()
         val list = json.decodeFromString<List<TemporaryContentItem>>(text)
-        // Автоматически отсеиваем старые 6-байтовые .metadata заглушки
         _items.value = list.filter {
           val f = File(it.filePath)
           f.exists() && f.length() > 1000L
