@@ -703,21 +703,29 @@ fun TemporaryContentStoryViewer(
           }
         }
     ) {
-      // 1. АППАРАТНЫЙ РЕНДЕР МЕДИА (Без Base64 и квадратов)
+      // 1. АППАРАТНЫЙ РЕНДЕР МЕДИА 
       val mediaFile = remember(currentItem.filePath) { File(currentItem.filePath) }
+      val isFileReady = mediaFile.exists() && mediaFile.length() > 1000L // Защита от пустых файлов
 
       if (currentItem.mediaType == TemporaryMediaType.VIDEO) {
         val videoPlayer = LocalStoryVideoPlayer.current
-        if (videoPlayer != null && mediaFile.exists() && mediaFile.length() > 1000) {
+        
+        if (videoPlayer != null && isFileReady) {
           videoPlayer(currentItem.filePath, Modifier.fillMaxSize())
         } else {
           Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            CircularProgressIndicator(color = Color.White)
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+              CircularProgressIndicator(color = Color.White)
+              Spacer(Modifier.height(12.dp))
+              Text("Loading media...", color = Color.White, fontSize = 14.sp)
+            }
           }
         }
       } else {
+        // Нативный ImageView для фото
         val imageViewer = LocalStoryImageViewer.current
-        if (imageViewer != null && mediaFile.exists() && mediaFile.length() > 0) {
+        
+        if (imageViewer != null && isFileReady) {
           imageViewer(currentItem.filePath, Modifier.fillMaxSize())
         } else {
           Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
