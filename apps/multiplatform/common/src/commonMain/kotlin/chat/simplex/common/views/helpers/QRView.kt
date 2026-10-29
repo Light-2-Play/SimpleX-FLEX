@@ -26,9 +26,34 @@ import androidx.compose.ui.unit.sp
 import boofcv.alg.fiducial.qrcode.QrCode
 import chat.simplex.common.platform.HapticPattern
 import chat.simplex.common.platform.RichHaptics
-import chat.simplex.common.views.qrcode.qrCodeBitmap
+import chat.simplex.common.platform.base64ToBitmap
 
-// 1. ОПРЕДЕЛИТЕЛЬ (ПЕРЕКЛЮЧАТЕЛЬ СТИЛЕЙ)
+// Локальная функция для генерации классического QR-кода, чтобы компилятор не терял её
+fun localQrCodeBitmap(text: String, size: Int, errorLevel: QrCode.ErrorLevel): ImageBitmap {
+    val qr = boofcv.alg.fiducial.qrcode.QrCodeEncoder().apply {
+        setError(errorLevel)
+        addAutomatic(text)
+    }.fixate()
+    val renderer = boofcv.alg.fiducial.qrcode.QrCodeGeneratorImage(8)
+    renderer.render(qr)
+    val img = renderer.gray
+    
+    // Ручная отрисовка пикселей для классического битмапа
+    val stream = java.io.ByteArrayOutputStream()
+    val bitmap = android.graphics.Bitmap.createBitmap(img.width, img.height, android.graphics.Bitmap.Config.ARGB_8888)
+    for (y in 0 until img.height) {
+        for (x in 0 until img.width) {
+            val isBlack = img.get(x, y) < 128
+            bitmap.setPixel(x, y, if (isBlack) android.graphics.Color.BLACK else android.graphics.Color.WHITE)
+        }
+    }
+    
+    val scaled = android.graphics.Bitmap.createScaledBitmap(bitmap, size, size, false)
+    scaled.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, stream)
+    val base64 = java.util.Base64.getEncoder().encodeToString(stream.toByteArray())
+    return base64ToBitmap(base64)!!
+}
+
 @Composable
 fun ToggleableQRCodeView(
     matrix: Array<BooleanArray>?,
@@ -113,7 +138,6 @@ fun ToggleableQRCodeView(
     }
 }
 
-// 2. ОТРИСОВКА В СТИЛЕ MATERIAL 3 EXPRESSIVE
 @Composable
 fun Material3ExpressiveQRCode(
     matrix: Array<BooleanArray>,
@@ -155,18 +179,16 @@ fun Material3ExpressiveQRCode(
     }
 }
 
-// 3. УНИВЕРСАЛЬНЫЙ КОМПОНЕНТ ДЛЯ ЛЮБЫХ ССЫЛОК (ПРОФИЛЬ / ИНВАЙТЫ)
 @Composable
 fun SmartLinkQRCode(
     uri: String,
     modifier: Modifier = Modifier
 ) {
-    val classicQrBitmap = remember<ImageBitmap?>(uri) { // Указываем тип <ImageBitmap?> явно
-        qrCodeBitmap(uri, 1024, QrCode.ErrorLevel.M)
-            .replaceColor(Color.Black.toArgb(), Color(0xFF191C1E).toArgb())
+    val classicQrBitmap = remember<ImageBitmap?>(uri) {
+        localQrCodeBitmap(uri, 1024, QrCode.ErrorLevel.M)
     }
 
-    val qrMatrix = remember<Array<BooleanArray>?>(uri) { // Указываем тип <Array<BooleanArray>?> явно
+    val qrMatrix = remember<Array<BooleanArray>?>(uri) {
         try {
             val qrCode = boofcv.alg.fiducial.qrcode.QrCodeEncoder()
                 .setError(QrCode.ErrorLevel.M)
