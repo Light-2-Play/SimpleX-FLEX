@@ -894,8 +894,7 @@ fun ContactStoriesSection(contactId: Long, contactDisplayName: String) {
     }
   }
 
-// Вставьте этот правильный блок вместо того, что там сейчас:
-  val startIdx = viewingStoryIndex
+val startIdx = viewingStoryIndex
   if (startIdx != null && contactStories.isNotEmpty()) {
     val scope = rememberCoroutineScope()
     TemporaryContentStoryViewer(
@@ -907,7 +906,7 @@ fun ContactStoriesSection(contactId: Long, contactDisplayName: String) {
         scope.launch { chat.simplex.common.platform.StorySyncManager.broadcastStoryDeletion(chatModel, idToDelete) }
       }
     )
-  }
+  } // <--- ВОТ ЭТА ЗАКРЫВАЮЩАЯ СКОБКА ИСПРАВИТ ВСЕ ОШИБКИ В ФАЙЛЕ!
 @Composable
 private fun ContactStoryTile(
   item: TemporaryContentItem,
