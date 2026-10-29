@@ -87,12 +87,12 @@ fun StoryAvatarContainer(
     }
   }
 
- val startIdx = viewingStoryIndex.value
+val startIdx = viewingStoryIndex
         if (startIdx != null && stories.isNotEmpty()) {
             TemporaryContentStoryViewer(
                 items = stories,
                 initialIndex = startIdx.coerceIn(0, stories.lastIndex),
-                onDismiss = { viewingStoryIndex.value = null }
+                onDismiss = { viewingStoryIndex = null }
             )
         }
 }
