@@ -23,7 +23,6 @@ import androidx.compose.ui.unit.sp
 import dev.icerock.moko.resources.StringResource
 import dev.icerock.moko.resources.compose.painterResource
 import dev.icerock.moko.resources.compose.stringResource
-import boofcv.alg.fiducial.qrcode.QrCode
 import chat.simplex.common.platform.*
 import chat.simplex.common.ui.theme.*
 import chat.simplex.common.views.helpers.*
@@ -70,7 +69,6 @@ private fun VerifyCodeLayout(
   ColumnWithScrollBar(Modifier.padding(horizontal = DEFAULT_PADDING)) {
     AppBarTitle(stringResource(MR.strings.security_code), withPadding = false)
 
-    // Заголовок статуса верификации
     Row(
       modifier = Modifier
         .fillMaxWidth()
@@ -94,7 +92,6 @@ private fun VerifyCodeLayout(
       )
     }
 
-    // Material 3 Expressive Verification Card со встроенным переключателем стилей
     ExpressiveVerificationQRCodeCard(
       verificationUri = connectionCode,
       safetyNumberShort = splitToParts(connectionCode, 18),
@@ -121,7 +118,6 @@ private fun VerifyCodeLayout(
       }
     )
 
-    // Пояснительный текст
     Text(
       text = generalGetString(verifyDescription),
       style = MaterialTheme.typography.body2,
@@ -146,51 +142,10 @@ private fun ExpressiveVerificationQRCodeCard(
   onClearVerification: () -> Unit
 ) {
   val clipboardManager = LocalClipboardManager.current
-
   val isLight = MaterialTheme.colors.isLight
   val primary = MaterialTheme.colors.primary
-  val cardBg = lerp(
-    MaterialTheme.colors.surface,
-    primary,
-    if (isLight) 0.06f else 0.09f
-  )
-  val actionBtnBg = lerp(
-    MaterialTheme.colors.surface,
-    primary,
-    if (isLight) 0.14f else 0.20f
-  )
-
-  // 1. Генерируем классический Bitmap (с белой рамкой для надежности)
-  val classicQrBitmap = remember(verificationUri) {
-    qrCodeBitmap(verificationUri, 1024, QrCode.ErrorLevel.M)
-      .replaceColor(Color.Black.toArgb(), Color(0xFF191C1E).toArgb())
-  }
-
-  // 2. Генерируем "чистую" Boolean-матрицу через родной BoofCV QrCodeEncoder
-  val qrMatrix = remember(verificationUri) {
-    try {
-      val qrCode = boofcv.alg.fiducial.qrcode.QrCodeEncoder()
-        .setError(QrCode.ErrorLevel.M)
-        .addAutomatic(verificationUri)
-        .fixate()
-
-      // Рендерим в 1-пиксельную карту без отступов (Border = 0)
-      val renderer = boofcv.alg.fiducial.qrcode.QrCodeGeneratorImage(1)
-      renderer.setBorderModule(0)
-      renderer.render(qrCode)
-      val grayImage = renderer.gray
-      
-      val size = grayImage.width
-      Array(size) { y ->
-        BooleanArray(size) { x ->
-          // Значения меньше 128 считаем черными (модуль с данными)
-          grayImage.get(x, y) < 128
-        }
-      }
-    } catch (e: Exception) {
-      null
-    }
-  }
+  val cardBg = lerp(MaterialTheme.colors.surface, primary, if (isLight) 0.06f else 0.09f)
+  val actionBtnBg = lerp(MaterialTheme.colors.surface, primary, if (isLight) 0.14f else 0.20f)
 
   Surface(
     modifier = Modifier
@@ -207,7 +162,6 @@ private fun ExpressiveVerificationQRCodeCard(
       horizontalAlignment = Alignment.CenterHorizontally,
       verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
-      // 1. Бейдж безопасности
       Surface(
         shape = RoundedCornerShape(percent = 50),
         color = if (isVerified) Color(0xFF4CAF50).copy(alpha = 0.16f) else primary.copy(alpha = 0.12f)
@@ -233,14 +187,8 @@ private fun ExpressiveVerificationQRCodeCard(
         }
       }
 
-      // 2. Умный QR-код с переключателем стилей
-      ToggleableQRCodeView(
-        matrix = qrMatrix,
-        classicBitmap = classicQrBitmap,
-        modifier = Modifier.padding(top = 8.dp)
-      )
+      SmartLinkQRCode(uri = verificationUri, modifier = Modifier.padding(top = 8.dp))
 
-      // 3. Текстовый отпечаток с копированием по тапу
       Surface(
         shape = RoundedCornerShape(16.dp),
         color = primary.copy(alpha = 0.08f),
@@ -273,7 +221,6 @@ private fun ExpressiveVerificationQRCodeCard(
         }
       }
 
-      // 4. Кнопки действий
       Column(
         modifier = Modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(8.dp)
