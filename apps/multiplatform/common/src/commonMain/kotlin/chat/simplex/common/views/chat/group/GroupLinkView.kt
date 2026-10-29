@@ -25,6 +25,7 @@ import chat.simplex.common.views.helpers.*
 import chat.simplex.common.views.newchat.*
 import chat.simplex.common.views.usersettings.SettingsActionItem
 import chat.simplex.res.MR
+import chat.simplex.common.views.helpers.SmartLinkQRCode
 
 @Composable
 fun GroupLinkView(
@@ -229,15 +230,18 @@ fun GroupLinkLayout(
           }
           initialLaunch = false
         }
-        val showShortLink = remember { mutableStateOf(true) }
+       val showShortLink = remember { mutableStateOf(true) }
         SectionViewWithButton(
           titleButton =
             if (!isChannel && groupLink.connLinkContact.connShortLink != null) {
               { ToggleShortLinkButton(showShortLink) }
             } else null) {
-          Box(Modifier.padding(vertical = DEFAULT_PADDING_HALF)) {
-            SimpleXCreatedLinkQRCode(groupLink.connLinkContact, short = showShortLink.value)
-          }
+          
+          // НОВЫЙ СМАРТ-КОМПОНЕНТ ДЛЯ ГРУППОВЫХ ССЫЛОК
+          SmartLinkQRCode(
+            uri = groupLink.connLinkContact.simplexChatUri(short = showShortLink.value),
+            modifier = Modifier.padding(vertical = 12.dp, horizontal = 12.dp)
+          )
           if (!isChannel && groupLink.shouldBeUpgraded) {
             SettingsActionItem(
               painterResource(MR.images.ic_add),
