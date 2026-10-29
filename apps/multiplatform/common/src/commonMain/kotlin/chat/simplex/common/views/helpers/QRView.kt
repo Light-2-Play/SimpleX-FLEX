@@ -19,27 +19,28 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import chat.simplex.common.platform.RichHaptics
+import boofcv.alg.fiducial.qrcode.QrCode
 import chat.simplex.common.platform.HapticPattern
+import chat.simplex.common.platform.RichHaptics
+import chat.simplex.common.platform.qrCodeBitmap
 
 // 1. ОПРЕДЕЛИТЕЛЬ (ПЕРЕКЛЮЧАТЕЛЬ СТИЛЕЙ)
 @Composable
 fun ToggleableQRCodeView(
-    matrix: Array<BooleanArray>?, // Передайте сюда двумерный массив QR из генератора
-    classicBitmap: ImageBitmap?,  // Передайте сюда обычный битмап (BoofCV) для фолбэка
+    matrix: Array<BooleanArray>?,
+    classicBitmap: ImageBitmap?,
     modifier: Modifier = Modifier
 ) {
-    // Состояние переключателя: по умолчанию включен современный стиль
     var isModernStyle by remember { mutableStateOf(true) }
 
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         modifier = modifier.fillMaxWidth()
     ) {
-        // UI Переключателя ("пилюля" в стиле Material 3)
         Surface(
             shape = RoundedCornerShape(percent = 50),
             color = MaterialTheme.colors.primary.copy(alpha = 0.1f),
@@ -86,7 +87,6 @@ fun ToggleableQRCodeView(
             }
         }
 
-        // Отрисовка самого QR-кода на белой подложке (обязательно для сканеров)
         Box(
             modifier = Modifier
                 .size(260.dp)
@@ -98,7 +98,7 @@ fun ToggleableQRCodeView(
                 Material3ExpressiveQRCode(
                     matrix = matrix,
                     modifier = Modifier.fillMaxSize(),
-                    qrColor = Color.Black // QR код всегда чёрный для максимального контраста
+                    qrColor = Color.Black
                 )
             } else if (!isModernStyle && classicBitmap != null) {
                 Image(
@@ -128,7 +128,6 @@ fun Material3ExpressiveQRCode(
         for (x in 0 until size) {
             for (y in 0 until size) {
                 if (matrix[x][y]) {
-                    // Строгая изоляция 3-х угловых маркеров (Finder Patterns: зона 7x7)
                     val isTopLeftMarker = x < 7 && y < 7
                     val isTopRightMarker = x >= size - 7 && y < 7
                     val isBottomLeftMarker = x < 7 && y >= size - 7
@@ -136,15 +135,13 @@ fun Material3ExpressiveQRCode(
                     val isFinderPattern = isTopLeftMarker || isTopRightMarker || isBottomLeftMarker
 
                     if (isFinderPattern) {
-                        // Для сканера: Угловые маркеры рисуем строгими квадратами со слабым скруглением (20%)
                         drawRoundRect(
                             color = qrColor,
                             topLeft = Offset(x * moduleSize, y * moduleSize),
-                            size = Size(moduleSize + 0.5f, moduleSize + 0.5f), // +0.5f закрывает возможные щели
+                            size = Size(moduleSize + 0.5f, moduleSize + 0.5f),
                             cornerRadius = CornerRadius(moduleSize * 0.2f) 
                         )
                     } else {
-                        // Дизайн M3: Информационные модули рисуем в виде "пилюль" (Squircle) со 100% скруглением
                         drawRoundRect(
                             color = qrColor,
                             topLeft = Offset(x * moduleSize + moduleSize * 0.1f, y * moduleSize + moduleSize * 0.1f),
@@ -156,4 +153,43 @@ fun Material3ExpressiveQRCode(
             }
         }
     }
+}
+
+// 3. УНИВЕРСАЛЬНЫЙ КОМПОНЕНТ ДЛЯ ЛЮБЫХ ССЫЛОК (ПРОФИЛЬ / ИНВАЙТЫ)
+@Composable
+fun SmartLinkQRCode(
+    uri: String,
+    modifier: Modifier = Modifier
+) {
+    val classicQrBitmap = remember(uri) {
+        qrCodeBitmap(uri, 1024, QrCode.ErrorLevel.M)
+            .replaceColor(Color.Black.toArgb(), Color(0xFF191C1E).toArgb())
+    }
+
+    val qrMatrix = remember(uri) {
+        try {
+            val qrCode = boofcv.alg.fiducial.qrcode.QrCodeEncoder()
+                .setError(QrCode.ErrorLevel.M)
+                .addAutomatic(uri)
+                .fixate()
+
+            val renderer = boofcv.alg.fiducial.qrcode.QrCodeGeneratorImage(1)
+            renderer.setBorderModule(0)
+            renderer.render(qrCode)
+            val grayImage = renderer.gray
+            
+            val size = grayImage.width
+            Array(size) { y ->
+                BooleanArray(size) { x ->
+                    grayImage.get(x, y) < 128
+                }
+            }
+        } catch (e: Exception) { null }
+    }
+
+    ToggleableQRCodeView(
+        matrix = qrMatrix,
+        classicBitmap = classicQrBitmap,
+        modifier = modifier
+    )
 }
