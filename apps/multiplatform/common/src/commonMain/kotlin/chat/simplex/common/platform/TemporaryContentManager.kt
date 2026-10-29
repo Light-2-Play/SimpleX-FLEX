@@ -18,7 +18,6 @@ enum class TemporaryMediaType {
 enum class TemporaryDuration(val hours: Float, val label: String) {
   MINS_30(0.5f, "30m"),
   HOURS_1(1f, "1h"),
-  HOURS_3(3f, "3h"),
   HOURS_6(6f, "6h"),
   HOURS_12(12f, "12h"),
   HOURS_16(16f, "16h"),
