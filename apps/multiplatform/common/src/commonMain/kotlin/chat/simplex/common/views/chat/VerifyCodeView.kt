@@ -7,7 +7,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.*
 import androidx.compose.runtime.*
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -146,8 +145,6 @@ private fun ExpressiveVerificationQRCodeCard(
   onConfirmVerification: () -> Unit,
   onClearVerification: () -> Unit
 ) {
-  // Для верификации по умолчанию ставим CLASSIC (для надежного считывания камерой)
-  var qrStyle by rememberSaveable { mutableStateOf(QrDesignStyle.CLASSIC) }
   val clipboardManager = LocalClipboardManager.current
 
   val isLight = MaterialTheme.colors.isLight
@@ -163,9 +160,32 @@ private fun ExpressiveVerificationQRCodeCard(
     if (isLight) 0.14f else 0.20f
   )
 
+  // 1. Создаем сырой объект QR-кода из SimpleX / BoofCV
+  val qrCodeObject = remember(verificationUri) {
+    boofcv.alg.fiducial.qrcode.QrCodeGenerator().apply {
+      setVersion(0)
+      setError(boofcv.alg.fiducial.qrcode.QrCode.ErrorLevel.M)
+      setMask(boofcv.alg.fiducial.qrcode.QrCodeMaskPattern.M011)
+      alphanumeric(verificationUri)
+    }.qr
+  }
+
+  // 2. Генерируем классический Bitmap
   val classicQrBitmap = remember(verificationUri) {
     qrCodeBitmap(verificationUri, 1024, QrCode.ErrorLevel.M)
       .replaceColor(Color.Black.toArgb(), Color(0xFF191C1E).toArgb())
+  }
+
+  // 3. Конвертируем QR-объект в BooleanArray матрицу для Modern (M3) рендера
+  val qrMatrix = remember(qrCodeObject) {
+    if (qrCodeObject != null) {
+      val size = qrCodeObject.modules.width
+      Array(size) { y ->
+        BooleanArray(size) { x ->
+          qrCodeObject.modules.get(x, y) == 1
+        }
+      }
+    } else null
   }
 
   Surface(
@@ -209,96 +229,15 @@ private fun ExpressiveVerificationQRCodeCard(
         }
       }
 
-      // 2. Отображение QR-кода (Modern / Classic)
-      Box(
-        modifier = Modifier.size(240.dp),
-        contentAlignment = Alignment.Center
-      ) {
-        if (qrStyle == QrDesignStyle.MODERN) {
-          Material3ExpressiveQRCode(
-            content = verificationUri,
-            size = 240.dp,
-            primaryColor = Color(0xFF191C1E),
-            containerColor = Color.White
-          )
-        } else {
-          Surface(
-            shape = RoundedCornerShape(24.dp),
-            color = Color.White,
-            elevation = 2.dp,
-            modifier = Modifier.size(240.dp)
-          ) {
-            Box(
-              modifier = Modifier
-                .fillMaxSize()
-                .padding(14.dp), // Белая Quiet Zone для надежного сканирования
-              contentAlignment = Alignment.Center
-            ) {
-              Image(
-                bitmap = classicQrBitmap,
-                contentDescription = null,
-                modifier = Modifier.fillMaxSize()
-              )
-            }
-          }
-        }
-      }
+      // 2. Универсальный переключатель и рендерер QR
+      // Передаем нашу матрицу и классический битмап внутрь компонента
+      ToggleableQRCodeView(
+        matrix = qrMatrix,
+        classicBitmap = classicQrBitmap,
+        modifier = Modifier.padding(top = 8.dp)
+      )
 
-      // 3. Переключатель Modern / Classic
-      Surface(
-        shape = RoundedCornerShape(percent = 50),
-        color = primary.copy(alpha = 0.12f),
-        border = BorderStroke(1.dp, primary.copy(alpha = 0.22f))
-      ) {
-        Row(
-          modifier = Modifier.padding(3.dp),
-          verticalAlignment = Alignment.CenterVertically
-        ) {
-          Surface(
-            shape = CircleShape,
-            color = if (qrStyle == QrDesignStyle.MODERN) primary else Color.Transparent,
-            modifier = Modifier
-              .clip(CircleShape)
-              .clickable {
-                if (qrStyle != QrDesignStyle.MODERN) {
-                  RichHaptics.perform(HapticPattern.SELECTION_CHANGE)
-                  qrStyle = QrDesignStyle.MODERN
-                }
-              }
-          ) {
-            Text(
-              text = "Modern",
-              fontSize = 12.5.sp,
-              fontWeight = if (qrStyle == QrDesignStyle.MODERN) FontWeight.Bold else FontWeight.Medium,
-              color = if (qrStyle == QrDesignStyle.MODERN) MaterialTheme.colors.onPrimary else MaterialTheme.colors.onSurface.copy(alpha = 0.7f),
-              modifier = Modifier.padding(horizontal = 14.dp, vertical = 5.dp)
-            )
-          }
-
-          Surface(
-            shape = CircleShape,
-            color = if (qrStyle == QrDesignStyle.CLASSIC) primary else Color.Transparent,
-            modifier = Modifier
-              .clip(CircleShape)
-              .clickable {
-                if (qrStyle != QrDesignStyle.CLASSIC) {
-                  RichHaptics.perform(HapticPattern.SELECTION_CHANGE)
-                  qrStyle = QrDesignStyle.CLASSIC
-                }
-              }
-          ) {
-            Text(
-              text = "Classic",
-              fontSize = 12.5.sp,
-              fontWeight = if (qrStyle == QrDesignStyle.CLASSIC) FontWeight.Bold else FontWeight.Medium,
-              color = if (qrStyle == QrDesignStyle.CLASSIC) MaterialTheme.colors.onPrimary else MaterialTheme.colors.onSurface.copy(alpha = 0.7f),
-              modifier = Modifier.padding(horizontal = 14.dp, vertical = 5.dp)
-            )
-          }
-        }
-      }
-
-      // 4. Текстовый отпечаток с копированием по тапу
+      // 3. Текстовый отпечаток с копированием по тапу
       Surface(
         shape = RoundedCornerShape(16.dp),
         color = primary.copy(alpha = 0.08f),
@@ -331,7 +270,7 @@ private fun ExpressiveVerificationQRCodeCard(
         }
       }
 
-      // 5. Кнопки действий
+      // 4. Кнопки действий
       Column(
         modifier = Modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(8.dp)
