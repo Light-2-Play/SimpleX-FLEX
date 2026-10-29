@@ -674,8 +674,8 @@ fun TemporaryContentStoryViewer(
   items: List<TemporaryContentItem>,
   initialIndex: Int,
   onDismiss: () -> Unit,
-  onDeleteStory: (String) -> Unit // ДОБАВЛЕНО
-) {
+  onDeleteStory: (String) -> Unit = {} // <-- Вот здесь
+)
   var currentIndex by remember { mutableStateOf(initialIndex.coerceIn(0, items.lastIndex)) }
   val currentItem = items.getOrNull(currentIndex) ?: run {
     onDismiss()
