@@ -87,12 +87,12 @@ fun StoryAvatarContainer(
     }
   }
 
-  // Полноэкранный плеер историй этого контакта
-  if (showViewer && activeStories.isNotEmpty()) {
-    TemporaryContentStoryViewer(
-      items = activeStories,
-      initialIndex = 0,
-      onDismiss = { showViewer = false }
-    )
-  }
+ val startIdx = viewingStoryIndex.value
+        if (startIdx != null && stories.isNotEmpty()) {
+            TemporaryContentStoryViewer(
+                items = stories,
+                initialIndex = startIdx.coerceIn(0, stories.lastIndex),
+                onDismiss = { viewingStoryIndex.value = null }
+            )
+        }
 }
