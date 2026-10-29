@@ -199,12 +199,12 @@ fun TemporaryContentProfileSection() {
 
   val startIdx = viewingStartIndex
   if (startIdx != null && myStories.isNotEmpty()) {
-    val scope = rememberCoroutineScope() // ДОБАВЛЕНО: Для запуска удаления
+    val scope = rememberCoroutineScope()
     TemporaryContentStoryViewer(
       items = myStories,
       initialIndex = startIdx.coerceIn(0, myStories.lastIndex),
       onDismiss = { viewingStartIndex = null },
-      onDeleteStory = { idToDelete -> // ДОБАВЛЕНО: Коллбэк удаления
+      onDeleteStory = { idToDelete ->
         TemporaryContentManager.removeContent(idToDelete)
         scope.launch { StorySyncManager.broadcastStoryDeletion(chatModel, idToDelete) }
       }
@@ -674,8 +674,8 @@ fun TemporaryContentStoryViewer(
   items: List<TemporaryContentItem>,
   initialIndex: Int,
   onDismiss: () -> Unit,
-  onDeleteStory: (String) -> Unit = {} // <-- Вот здесь
-)
+  onDeleteStory: (String) -> Unit = {} // <-- Значение по умолчанию решает все ошибки сборки
+) {
   var currentIndex by remember { mutableStateOf(initialIndex.coerceIn(0, items.lastIndex)) }
   val currentItem = items.getOrNull(currentIndex) ?: run {
     onDismiss()
@@ -735,7 +735,7 @@ fun TemporaryContentStoryViewer(
         }
       }
 
-      // 2. Верхняя панель со статусом и таймером (мягкое затенение для всех типов медиа)
+      // 2. Верхняя панель со статусом и таймером
       Column(
         modifier = Modifier
           .fillMaxWidth()
@@ -781,7 +781,7 @@ fun TemporaryContentStoryViewer(
             IconButton(
               onClick = {
                 RichHaptics.perform(HapticPattern.TOGGLE_OFF)
-                onDeleteStory(currentItem.id) // ИСПОЛЬЗУЕМ НОВЫЙ КОЛЛБЭК
+                onDeleteStory(currentItem.id)
                 if (items.size <= 1) onDismiss()
               }
             ) {
@@ -823,7 +823,7 @@ fun AllStoriesFeedView(close: () -> Unit) {
   var nowMillis by remember { mutableStateOf(System.currentTimeMillis()) }
   var viewingStories by remember { mutableStateOf<List<TemporaryContentItem>?>(null) }
   var isReloading by remember { mutableStateOf(false) }
-  val scope = rememberCoroutineScope() // ДОБАВЛЕНО: Для запуска удаления
+  val scope = rememberCoroutineScope()
 
   LaunchedEffect(Unit) {
     StorySyncManager.syncAllStoriesNow(chatModel)
@@ -1056,7 +1056,7 @@ fun AllStoriesFeedView(close: () -> Unit) {
       items = storiesToView,
       initialIndex = 0,
       onDismiss = { viewingStories = null },
-      onDeleteStory = { idToDelete -> // ДОБАВЛЕНО: Коллбэк удаления
+      onDeleteStory = { idToDelete -> 
         TemporaryContentManager.removeContent(idToDelete)
         scope.launch { StorySyncManager.broadcastStoryDeletion(chatModel, idToDelete) }
       }
