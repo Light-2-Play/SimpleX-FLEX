@@ -160,32 +160,36 @@ private fun ExpressiveVerificationQRCodeCard(
     if (isLight) 0.14f else 0.20f
   )
 
-  // 1. Создаем сырой объект QR-кода из SimpleX / BoofCV
-  val qrCodeObject = remember(verificationUri) {
-    boofcv.alg.fiducial.qrcode.QrCodeGenerator().apply {
-      setVersion(0)
-      setError(boofcv.alg.fiducial.qrcode.QrCode.ErrorLevel.M)
-      setMask(boofcv.alg.fiducial.qrcode.QrCodeMaskPattern.M011)
-      alphanumeric(verificationUri)
-    }.qr
-  }
-
-  // 2. Генерируем классический Bitmap
+  // 1. Генерируем классический Bitmap (с белой рамкой для надежности)
   val classicQrBitmap = remember(verificationUri) {
     qrCodeBitmap(verificationUri, 1024, QrCode.ErrorLevel.M)
       .replaceColor(Color.Black.toArgb(), Color(0xFF191C1E).toArgb())
   }
 
-  // 3. Конвертируем QR-объект в BooleanArray матрицу для Modern (M3) рендера
-  val qrMatrix = remember(qrCodeObject) {
-    if (qrCodeObject != null) {
-      val size = qrCodeObject.modules.width
+  // 2. Генерируем "чистую" Boolean-матрицу через родной BoofCV QrCodeEncoder
+  val qrMatrix = remember(verificationUri) {
+    try {
+      val qrCode = boofcv.alg.fiducial.qrcode.QrCodeEncoder()
+        .setError(QrCode.ErrorLevel.M)
+        .addAutomatic(verificationUri)
+        .fixate()
+
+      // Рендерим в 1-пиксельную карту без отступов (Border = 0)
+      val renderer = boofcv.alg.fiducial.qrcode.QrCodeGeneratorImage(1)
+      renderer.setBorderModule(0)
+      renderer.render(qrCode)
+      val grayImage = renderer.gray
+      
+      val size = grayImage.width
       Array(size) { y ->
         BooleanArray(size) { x ->
-          qrCodeObject.modules.get(x, y) == 1
+          // Значения меньше 128 считаем черными (модуль с данными)
+          grayImage.get(x, y) < 128
         }
       }
-    } else null
+    } catch (e: Exception) {
+      null
+    }
   }
 
   Surface(
@@ -229,8 +233,7 @@ private fun ExpressiveVerificationQRCodeCard(
         }
       }
 
-      // 2. Универсальный переключатель и рендерер QR
-      // Передаем нашу матрицу и классический битмап внутрь компонента
+      // 2. Умный QR-код с переключателем стилей
       ToggleableQRCodeView(
         matrix = qrMatrix,
         classicBitmap = classicQrBitmap,
