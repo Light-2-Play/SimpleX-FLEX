@@ -518,10 +518,9 @@ private fun AddTemporaryContentDialog(
         )
         Spacer(Modifier.height(8.dp))
         
-        // Разделяем на ряды по 4 элемента (для лучшей компоновки 7 элементов)
         val durations = TemporaryDuration.values().toList()
         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-          durations.chunked(4).forEach { rowItems ->
+          durations.chunked(3).forEach { rowItems ->
             Row(
               modifier = Modifier.fillMaxWidth(),
               horizontalArrangement = Arrangement.spacedBy(6.dp)
@@ -549,8 +548,7 @@ private fun AddTemporaryContentDialog(
                   )
                 }
               }
-              // Заполняем пустое пространство, если элементов меньше 4 в ряду
-              repeat(4 - rowItems.size) {
+              repeat(3 - rowItems.size) {
                 Spacer(modifier = Modifier.weight(1f))
               }
             }
@@ -731,15 +729,12 @@ fun TemporaryContentStoryViewer(
         }
       }
 
-      // Отключаем затемнение (градиент) для Фото
-      val gradientAlpha = if (currentItem.mediaType == TemporaryMediaType.VIDEO) 0.65f else 0.0f
-
-      // 2. Верхняя панель со статусом и таймером
+      // 2. Верхняя панель со статусом и таймером (мягкое затенение для всех типов медиа)
       Column(
         modifier = Modifier
           .fillMaxWidth()
           .align(Alignment.TopCenter)
-          .background(Brush.verticalGradient(listOf(Color.Black.copy(alpha = gradientAlpha), Color.Transparent)))
+          .background(Brush.verticalGradient(listOf(Color.Black.copy(alpha = 0.45f), Color.Transparent)))
           .statusBarsPadding()
           .padding(top = 10.dp, start = 14.dp, end = 14.dp, bottom = 24.dp)
       ) {
@@ -800,7 +795,7 @@ fun TemporaryContentStoryViewer(
           modifier = Modifier
             .fillMaxWidth()
             .align(Alignment.BottomCenter)
-            .background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = gradientAlpha))))
+            .background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.45f))))
             .navigationBarsPadding()
             .padding(horizontal = 20.dp, vertical = 20.dp),
           contentAlignment = Alignment.Center
