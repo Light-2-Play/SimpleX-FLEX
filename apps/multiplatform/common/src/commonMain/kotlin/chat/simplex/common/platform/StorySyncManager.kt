@@ -56,12 +56,29 @@ object StorySyncManager {
         chat.chatItems
       }
 
+      // 1. ОБРАБОТКА КОМАНД УДАЛЕНИЯ ОТ ОТПРАВИТЕЛЯ
+      val deleteItems = items.filter { it.content.text.startsWith("[STORY_DELETE:") }
+      for (delItem in deleteItems) {
+        if (!delItem.chatDir.sent) {
+          val senderStoryId = delItem.content.text.substringAfter("[STORY_DELETE:").substringBefore("]")
+          val storyIdToDelete = "story_${directContact.contactId}_$senderStoryId"
+          TemporaryContentManager.removeContent(storyIdToDelete) // Стираем с устройства получателя
+        }
+        removeStoryItemFromChat(chatModel, chat, delItem) // Прячем техническую команду из чата
+      }
+
+      // 2. ОБРАБОТКА НОВЫХ ИСТОРИЙ
       val storyItems = items.filter { item ->
         item.content.text.startsWith(STORY_TAG_PREFIX) && !importedItemIds.contains(item.id)
       }
 
       for (item in storyItems) {
-        val storyId = "story_${directContact.contactId}_${item.id}"
+        val rawText = item.content.text
+        val header = rawText.substringAfter(STORY_TAG_PREFIX).substringBefore("]")
+        val durationHours = header.substringBefore("|").toFloatOrNull() ?: 24f
+        // Обратная совместимость + уникальный ID для удаления
+        val senderStoryId = if (header.contains("|")) header.substringAfter("|") else item.id.toString()
+        val storyId = "story_${directContact.contactId}_$senderStoryId"
 
         val existing = TemporaryContentManager.items.value.firstOrNull { it.id == storyId }
         if (existing != null && File(existing.filePath).length() > 1000L) {
@@ -94,11 +111,7 @@ object StorySyncManager {
         }
 
         if (statusName.contains("Done", ignoreCase = true) || ciFile.loaded) {
-          val rawText = item.content.text
-          // Изменено на toFloatOrNull для поддержки 0.5 (30 mins)
-          val durationHours = rawText.substringAfter(STORY_TAG_PREFIX, "24]").substringBefore("]").toFloatOrNull() ?: 24f
           val caption = rawText.substringAfter("]", "").trim()
-
           val isVideo = item.content.msgContent is MsgContent.MCVideo || ciFile.fileName.endsWith(".mp4", ignoreCase = true)
           val mediaType = if (isVideo) TemporaryMediaType.VIDEO else TemporaryMediaType.PHOTO
 
@@ -183,6 +196,29 @@ object StorySyncManager {
     } catch (_: Exception) { null }
   }
 
+  // 3. ОТПРАВКА КОМАНДЫ НА ГЛОБАЛЬНОЕ УДАЛЕНИЕ
+  suspend fun broadcastStoryDeletion(chatModel: ChatModel, storyId: String) = withContext(Dispatchers.IO) {
+    val recipients = chatModel.chats.value.filter { chat ->
+      val ci = chat.chatInfo
+      ci is ChatInfo.Direct && ci.contact.active && ci.contact.ready && ci.sendMsgEnabled
+    }
+    
+    val msgContent = MsgContent.MCText("[STORY_DELETE:$storyId]")
+    
+    recipients.forEach { chat ->
+      try {
+        val cInfo = chat.chatInfo
+        chatModel.controller.apiSendMessages(
+          rh = chat.remoteHostId, type = cInfo.chatType, id = cInfo.apiId, scope = cInfo.groupChatScope(),
+          sendAsGroup = cInfo.sendAsGroup, live = false, ttl = null, sign = false,
+          composedMessages = listOf(ComposedMessage(fileSource = null, quotedItemId = null, msgContent = msgContent, mentions = emptyMap()))
+        )
+      } catch (e: Exception) {
+        Log.e(TAG, "Delete broadcast error: ${e.message}")
+      }
+    }
+  }
+
   suspend fun publishAndBroadcastStoryWithProgress(
     file: File,
     item: TemporaryContentItem,
@@ -196,12 +232,8 @@ object StorySyncManager {
         if (ci !is ChatInfo.Direct) return@filter false
         val contact = ci.contact
 
-        // ПРОВЕРКА НА ВЕРИФИЦИРОВАННОСТЬ ПОЛЬЗОВАТЕЛЯ!
         if (item.audience == TemporaryAudience.VERIFIED_USERS) {
-          // В SimpleX статус верификации контакта хранится в свойстве contact.verified
-          try {
-            if (!contact.verified) return@filter false
-          } catch (_: Exception) {} // На случай если ядро обновится
+          try { if (!contact.verified) return@filter false } catch (_: Exception) {}
         }
 
         contact.active && contact.ready && contact.sndReady && !contact.chatDeleted && !ci.chatDeleted && ci.sendMsgEnabled
@@ -214,7 +246,9 @@ object StorySyncManager {
 
       onProgress(30, "Generating metadata...")
       val previewBase64 = generateSmallPreviewBase64(file, item.mediaType)
-      val taggedCaption = "${STORY_TAG_PREFIX}${item.durationHours}] ${item.caption}".trim()
+      
+      // Вшиваем точный ID истории в тег, чтобы потом её можно было удалить
+      val taggedCaption = "${STORY_TAG_PREFIX}${item.durationHours}|${item.id}] ${item.caption}".trim()
 
       val msgContent = if (item.mediaType == TemporaryMediaType.VIDEO) {
         MsgContent.MCVideo(text = taggedCaption, image = previewBase64, duration = 10)
