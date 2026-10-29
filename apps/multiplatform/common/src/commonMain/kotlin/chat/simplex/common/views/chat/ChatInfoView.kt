@@ -894,13 +894,15 @@ fun ContactStoriesSection(contactId: Long, contactDisplayName: String) {
     }
   }
 
- val startIdx = viewingStories
-  if (startIdx != null && contactStories.isNotEmpty()) {
+// Вставьте этот правильный блок вместо того, что там сейчас:
+  val startIdx = viewingStoryIndex.value
+  val storiesList = contactStories.value
+  if (startIdx != null && storiesList != null && storiesList.isNotEmpty()) {
     val scope = rememberCoroutineScope()
     TemporaryContentStoryViewer(
-      items = contactStories,
-      initialIndex = startIdx.coerceIn(0, contactStories.lastIndex),
-      onDismiss = { viewingStories = null },
+      items = storiesList,
+      initialIndex = startIdx.coerceIn(0, storiesList.lastIndex),
+      onDismiss = { viewingStoryIndex.value = null },
       onDeleteStory = { idToDelete -> 
         chat.simplex.common.platform.TemporaryContentManager.removeContent(idToDelete)
         scope.launch { chat.simplex.common.platform.StorySyncManager.broadcastStoryDeletion(chatModel, idToDelete) }
