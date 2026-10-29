@@ -896,15 +896,12 @@ fun ContactStoriesSection(contactId: Long, contactDisplayName: String) {
 
   val startIdx = viewingStartIndex
   if (startIdx != null) {
-    TemporaryContentStoryViewer(
-      items = stories,
-      initialIndex = startIdx.coerceIn(0, stories.lastIndex),
-      onDismiss = { viewingStartIndex = null }
-   onDeleteStory = { idToDelete ->
-        chat.simplex.common.platform.TemporaryContentManager.removeContent(idToDelete)
-        scope.launch { chat.simplex.common.platform.StorySyncManager.broadcastStoryDeletion(chatModel, idToDelete) }
-    }
+   TemporaryContentStoryViewer(
+  items = contactStories,
+  initialIndex = 0,
+  onDismiss = { viewingStories = false }
 )
+  }   
 @Composable
 private fun ContactStoryTile(
   item: TemporaryContentItem,
