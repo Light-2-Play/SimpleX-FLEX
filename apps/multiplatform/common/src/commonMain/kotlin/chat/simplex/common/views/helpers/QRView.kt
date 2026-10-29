@@ -26,7 +26,7 @@ import androidx.compose.ui.unit.sp
 import boofcv.alg.fiducial.qrcode.QrCode
 import chat.simplex.common.platform.HapticPattern
 import chat.simplex.common.platform.RichHaptics
-import chat.simplex.common.platform.qrCodeBitmap
+import chat.simplex.common.views.qrcode.qrCodeBitmap
 
 // 1. ОПРЕДЕЛИТЕЛЬ (ПЕРЕКЛЮЧАТЕЛЬ СТИЛЕЙ)
 @Composable
@@ -161,12 +161,12 @@ fun SmartLinkQRCode(
     uri: String,
     modifier: Modifier = Modifier
 ) {
-    val classicQrBitmap = remember(uri) {
+    val classicQrBitmap = remember<ImageBitmap?>(uri) { // Указываем тип <ImageBitmap?> явно
         qrCodeBitmap(uri, 1024, QrCode.ErrorLevel.M)
             .replaceColor(Color.Black.toArgb(), Color(0xFF191C1E).toArgb())
     }
 
-    val qrMatrix = remember(uri) {
+    val qrMatrix = remember<Array<BooleanArray>?>(uri) { // Указываем тип <Array<BooleanArray>?> явно
         try {
             val qrCode = boofcv.alg.fiducial.qrcode.QrCodeEncoder()
                 .setError(QrCode.ErrorLevel.M)
