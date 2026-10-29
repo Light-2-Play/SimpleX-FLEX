@@ -900,10 +900,11 @@ fun ContactStoriesSection(contactId: Long, contactDisplayName: String) {
       items = stories,
       initialIndex = startIdx.coerceIn(0, stories.lastIndex),
       onDismiss = { viewingStartIndex = null }
-    )
-  }
-}
-
+   onDeleteStory = { idToDelete ->
+        chat.simplex.common.platform.TemporaryContentManager.removeContent(idToDelete)
+        scope.launch { chat.simplex.common.platform.StorySyncManager.broadcastStoryDeletion(chatModel, idToDelete) }
+    }
+)
 @Composable
 private fun ContactStoryTile(
   item: TemporaryContentItem,
