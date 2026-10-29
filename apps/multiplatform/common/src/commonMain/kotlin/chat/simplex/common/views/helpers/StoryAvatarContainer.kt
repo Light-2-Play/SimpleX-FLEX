@@ -87,12 +87,12 @@ fun StoryAvatarContainer(
     }
   }
 
-val startIdx = viewingStoryIndex
-        if (startIdx != null && stories.isNotEmpty()) {
-            TemporaryContentStoryViewer(
-                items = stories,
-                initialIndex = startIdx.coerceIn(0, stories.lastIndex),
-                onDismiss = { viewingStoryIndex = null }
-            )
-        }
+  // 3. Вызов просмотрщика при нажатии на аватарку
+  if (showViewer && activeStories.isNotEmpty()) {
+    TemporaryContentStoryViewer(
+      items = activeStories,
+      initialIndex = 0,
+      onDismiss = { showViewer = false }
+    )
+  }
 }
