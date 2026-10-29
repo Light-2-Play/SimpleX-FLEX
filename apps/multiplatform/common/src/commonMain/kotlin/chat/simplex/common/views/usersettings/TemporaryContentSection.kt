@@ -199,10 +199,15 @@ fun TemporaryContentProfileSection() {
 
   val startIdx = viewingStartIndex
   if (startIdx != null && myStories.isNotEmpty()) {
+    val scope = rememberCoroutineScope() // ДОБАВЛЕНО: Для запуска удаления
     TemporaryContentStoryViewer(
       items = myStories,
       initialIndex = startIdx.coerceIn(0, myStories.lastIndex),
-      onDismiss = { viewingStartIndex = null }
+      onDismiss = { viewingStartIndex = null },
+      onDeleteStory = { idToDelete -> // ДОБАВЛЕНО: Коллбэк удаления
+        TemporaryContentManager.removeContent(idToDelete)
+        scope.launch { StorySyncManager.broadcastStoryDeletion(chatModel, idToDelete) }
+      }
     )
   }
 }
@@ -668,7 +673,8 @@ private fun AddTemporaryContentDialog(
 fun TemporaryContentStoryViewer(
   items: List<TemporaryContentItem>,
   initialIndex: Int,
-  onDismiss: () -> Unit
+  onDismiss: () -> Unit,
+  onDeleteStory: (String) -> Unit // ДОБАВЛЕНО
 ) {
   var currentIndex by remember { mutableStateOf(initialIndex.coerceIn(0, items.lastIndex)) }
   val currentItem = items.getOrNull(currentIndex) ?: run {
@@ -775,7 +781,7 @@ fun TemporaryContentStoryViewer(
             IconButton(
               onClick = {
                 RichHaptics.perform(HapticPattern.TOGGLE_OFF)
-                TemporaryContentManager.removeContent(currentItem.id)
+                onDeleteStory(currentItem.id) // ИСПОЛЬЗУЕМ НОВЫЙ КОЛЛБЭК
                 if (items.size <= 1) onDismiss()
               }
             ) {
@@ -817,7 +823,7 @@ fun AllStoriesFeedView(close: () -> Unit) {
   var nowMillis by remember { mutableStateOf(System.currentTimeMillis()) }
   var viewingStories by remember { mutableStateOf<List<TemporaryContentItem>?>(null) }
   var isReloading by remember { mutableStateOf(false) }
-  val scope = rememberCoroutineScope()
+  val scope = rememberCoroutineScope() // ДОБАВЛЕНО: Для запуска удаления
 
   LaunchedEffect(Unit) {
     StorySyncManager.syncAllStoriesNow(chatModel)
@@ -1049,7 +1055,11 @@ fun AllStoriesFeedView(close: () -> Unit) {
     TemporaryContentStoryViewer(
       items = storiesToView,
       initialIndex = 0,
-      onDismiss = { viewingStories = null }
+      onDismiss = { viewingStories = null },
+      onDeleteStory = { idToDelete -> // ДОБАВЛЕНО: Коллбэк удаления
+        TemporaryContentManager.removeContent(idToDelete)
+        scope.launch { StorySyncManager.broadcastStoryDeletion(chatModel, idToDelete) }
+      }
     )
   }
 }
