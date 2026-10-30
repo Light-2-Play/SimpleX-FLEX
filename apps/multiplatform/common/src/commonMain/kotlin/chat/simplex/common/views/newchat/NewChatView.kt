@@ -46,6 +46,8 @@ import chat.simplex.common.views.usersettings.*
 import chat.simplex.common.BuildConfigCommon
 import chat.simplex.res.MR
 import kotlinx.coroutines.*
+// ИМПОРТ НОВОГО КОМПОНЕНТА
+import chat.simplex.common.views.helpers.SmartLinkQRCode
 
 enum class NewChatOption {
   INVITE, CONNECT
@@ -177,6 +179,7 @@ fun ModalData.NewChatView(rh: RemoteHostInfo?, selection: NewChatOption, showQRC
   }
 }
 
+// Мы оставим саму карточку для тех случаев, где она еще может понадобиться, но QR-код внутри заменим.
 @Composable
 fun ExpressiveQRCodeCard(
   title: String? = null,
@@ -228,11 +231,11 @@ fun ExpressiveQRCodeCard(
 
       Surface(
         shape = RoundedCornerShape(24.dp),
-        color = Color.White,
+        color = Color.Transparent, // Прозрачный фон, чтобы SmartLinkQRCode вписался
         elevation = 0.dp
       ) {
         Box(
-          modifier = Modifier.padding(14.dp),
+          modifier = Modifier.padding(2.dp),
           contentAlignment = Alignment.Center
         ) {
           content()
@@ -586,8 +589,13 @@ private fun InviteView(rhId: Long?, connLinkInvitation: CreatedConnLink, contact
       Modifier.fillMaxWidth().padding(horizontal = DEFAULT_PADDING, vertical = DEFAULT_PADDING_HALF),
       style = MaterialTheme.typography.body1
     )
+    
+    // ВНЕДРЕНИЕ НОВОГО QR-КОДА ДЛЯ ОНБОРДИНГА
     ExpressiveQRCodeCard {
-      SimpleXCreatedLinkQRCode(connLinkInvitation, short = showShortLink.value, onShare = { chatModel.markShowingInvitationUsed() })
+      SmartLinkQRCode(
+        uri = linkUri,
+        modifier = Modifier.padding(16.dp)
+      )
     }
   } else {
     Text(
@@ -601,6 +609,7 @@ private fun InviteView(rhId: Long?, connLinkInvitation: CreatedConnLink, contact
 
     Spacer(Modifier.height(10.dp))
 
+    // ВНЕДРЕНИЕ НОВОГО QR-КОДА ДЛЯ ОБЫЧНОГО ЭКРАНА
     ExpressiveQRCodeCard(
       title = stringResource(MR.strings.or_show_this_qr_code),
       titleButton = if (connLinkInvitation.connShortLink != null) {
@@ -611,7 +620,10 @@ private fun InviteView(rhId: Long?, connLinkInvitation: CreatedConnLink, contact
         clipboard.shareText(linkUri)
       }
     ) {
-      SimpleXCreatedLinkQRCode(connLinkInvitation, short = showShortLink.value, onShare = { chatModel.markShowingInvitationUsed() })
+      SmartLinkQRCode(
+        uri = linkUri,
+        modifier = Modifier.padding(horizontal = 8.dp, vertical = 12.dp)
+      )
     }
   }
 
