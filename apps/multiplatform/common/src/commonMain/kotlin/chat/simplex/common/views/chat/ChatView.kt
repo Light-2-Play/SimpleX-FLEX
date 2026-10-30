@@ -1431,72 +1431,15 @@ fun BoxScope.ChatInfoToolbar(
     }
   }} else null
 
- // СТАЛО:
- if (oneHandUI.value && chatBottomBar.value && !showSearch.value) {
-    // Мягкий M3 Tonal Container: 7% акцента в светлой теме и 11% в темной
-    val islandContainerColor = if (MaterialTheme.colors.isLight) {
-      androidx.compose.ui.graphics.lerp(MaterialTheme.colors.surface, MaterialTheme.colors.primary, 0.07f)
-    } else {
-      androidx.compose.ui.graphics.lerp(MaterialTheme.colors.surface, MaterialTheme.colors.primary, 0.11f)
-    }
-
-    Row(
-      modifier = Modifier
-        .fillMaxWidth()
-        .padding(horizontal = 8.dp, vertical = 6.dp)
-        .navigationBarsPadding(),
-      horizontalArrangement = Arrangement.spacedBy(8.dp),
-      verticalAlignment = Alignment.CenterVertically
-    ) {
-      // 1. Остров «Назад»
-      if (appPlatform.isAndroid) {
-        Surface(
-          modifier = Modifier.size(48.dp),
-          shape = RoundedCornerShape(percent = 50),
-          color = islandContainerColor,
-          elevation = 0.dp
-        ) {
-          Box(contentAlignment = Alignment.Center) {
-            NavigationButtonBack(onBackClicked)
-          }
-        }
-      }
-
-      // 2. Остров «Информация о чате»
-      Surface(
-        modifier = Modifier
-          .weight(1f)
-          .height(48.dp),
-        shape = RoundedCornerShape(24.dp),
-        color = islandContainerColor,
-        elevation = 0.dp
-      ) {
-        Box(
-          modifier = Modifier
-            .fillMaxSize()
-            .then(if (chatInfo !is ChatInfo.Local) Modifier.clickable(onClick = info) else Modifier),
-          contentAlignment = Alignment.Center
-        ) {
-          ChatInfoToolbarTitle(chatInfo)
-        }
-      }
-
-      // 3. Острова «Поиск» и «Меню»
-      barButtons.forEach { actionButton ->
-        Surface(
-          modifier = Modifier.size(48.dp),
-          shape = RoundedCornerShape(percent = 50),
-          color = islandContainerColor,
-          elevation = 0.dp
-        ) {
-          Box(contentAlignment = Alignment.Center) {
-            Row { actionButton() }
-          }
-        }
-      }
-    }
+ // НОВЫЙ ДИЗАЙН ПЛАВАЮЩЕЙ ПАНЕЛИ (M3 Tonal Container) ДЛЯ ВСЕХ СЛУЧАЕВ
+ val islandContainerColor = if (MaterialTheme.colors.isLight) {
+   androidx.compose.ui.graphics.lerp(MaterialTheme.colors.surface, MaterialTheme.colors.primary, 0.07f)
  } else {
-    // Мягкий динамический цвет вводимого текста и подсказки в строке поиска
+   androidx.compose.ui.graphics.lerp(MaterialTheme.colors.surface, MaterialTheme.colors.primary, 0.11f)
+ }
+
+ // Если открыт поиск — возвращаемся к DefaultAppBar (так как там поле ввода)
+ if (showSearch.value) {
     val searchTextColor = androidx.compose.ui.graphics.lerp(
       MaterialTheme.colors.onSurface,
       MaterialTheme.colors.primary,
@@ -1512,10 +1455,10 @@ fun BoxScope.ChatInfoToolbar(
       )
     ) {
       DefaultAppBar(
-        navigationButton = { if (appPlatform.isAndroid || showSearch.value) { NavigationButtonBack(onBackClicked) }  },
+        navigationButton = { NavigationButtonBack(onBackClicked) },
         title = { ChatInfoToolbarTitle(chatInfo) },
         onTitleClick = if (chatInfo is ChatInfo.Local) null else info,
-        showSearch = showSearch.value,
+        showSearch = true,
         searchAlwaysVisible = contentFilter.value != null,
         onTop = !oneHandUI.value || !chatBottomBar.value,
         searchPlaceholder = searchPlaceholder,
@@ -1524,7 +1467,69 @@ fun BoxScope.ChatInfoToolbar(
         buttons = { barButtons.forEach { it() } }
       )
     }
-  }
+ } else {
+   // НАШ НОВЫЙ ПЛАВАЮЩИЙ ДИЗАЙН ДЛЯ ВЕРХНЕГО/НИЖНЕГО РАСПОЛОЖЕНИЯ
+   Box(
+     modifier = Modifier
+       .fillMaxWidth()
+       .padding(horizontal = 8.dp, vertical = 6.dp)
+       .then(if (oneHandUI.value && chatBottomBar.value) Modifier.navigationBarsPadding() else Modifier.statusBarsPadding())
+   ) {
+     Row(
+       modifier = Modifier.fillMaxWidth(),
+       horizontalArrangement = Arrangement.spacedBy(8.dp),
+       verticalAlignment = Alignment.CenterVertically
+     ) {
+       // 1. Остров «Назад»
+       if (appPlatform.isAndroid) {
+         Surface(
+           modifier = Modifier.size(48.dp),
+           shape = RoundedCornerShape(percent = 50),
+           color = islandContainerColor,
+           elevation = 0.dp
+         ) {
+           Box(contentAlignment = Alignment.Center) {
+             NavigationButtonBack(onBackClicked)
+           }
+         }
+       }
+
+       // 2. Остров «Информация о чате»
+       Surface(
+         modifier = Modifier
+           .weight(1f)
+           .height(48.dp),
+         shape = RoundedCornerShape(24.dp),
+         color = islandContainerColor,
+         elevation = 0.dp
+       ) {
+         Box(
+           modifier = Modifier
+             .fillMaxSize()
+             .then(if (chatInfo !is ChatInfo.Local) Modifier.clickable(onClick = info) else Modifier),
+           contentAlignment = Alignment.Center
+         ) {
+           ChatInfoToolbarTitle(chatInfo)
+         }
+       }
+
+       // 3. Острова кнопок («Поиск», «Звонок», «Меню»)
+       barButtons.forEach { actionButton ->
+         Surface(
+           modifier = Modifier.size(48.dp),
+           shape = RoundedCornerShape(percent = 50),
+           color = islandContainerColor,
+           elevation = 0.dp
+         ) {
+           Box(contentAlignment = Alignment.Center) {
+             Row { actionButton() }
+           }
+         }
+       }
+     }
+   }
+ }
+
   // Динамический тональный контейнер для выпадающих меню (M3 Menu)
   val menuContainerColor = if (MaterialTheme.colors.isLight) {
     androidx.compose.ui.graphics.lerp(MaterialTheme.colors.surface, MaterialTheme.colors.primary, 0.08f)
