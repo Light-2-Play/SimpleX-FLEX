@@ -616,12 +616,9 @@ fun PreviewSettingsLayout() {
 
 @Composable
 fun FlexSettingsView() {
-    // Подключаемся к реальной базе настроек приложения
-    val usbPanicPref = remember { chat.simplex.common.model.ChatController.appPrefs.usbPanic }
-    val advancedHapticsPref = remember { chat.simplex.common.model.ChatController.appPrefs.advancedHaptics }
-    
-    val usbPanicEnabled = remember { usbPanicPref.state }
-    val advancedHapticsEnabled = remember { advancedHapticsPref.state }
+    // 1. Создаем собственные ключи настроек (будут сохраняться локально на устройстве)
+    val usbPanicEnabled = rememberSaveable { mutableStateOf(chat.simplex.common.platform.appPreferences.getBoolean("usbPanic_flex", false)) }
+    val advancedHapticsEnabled = rememberSaveable { mutableStateOf(chat.simplex.common.platform.appPreferences.getBoolean("advancedHaptics_flex", false)) }
 
     ColumnWithScrollBar {
         AppBarTitle("FLEX Settings")
@@ -636,7 +633,9 @@ fun FlexSettingsView() {
                     checked = usbPanicEnabled.value,
                     onCheckedChange = {
                         RichHaptics.perform(if (it) HapticPattern.TOGGLE_ON else HapticPattern.TOGGLE_OFF)
-                        usbPanicPref.set(it) // Моментальное сохранение на устройство
+                        usbPanicEnabled.value = it
+                        // 2. Моментально сохраняем в системные настройки SimpleX
+                        chat.simplex.common.platform.appPreferences.setBoolean("usbPanic_flex", it)
                     }
                 )
             }
@@ -654,7 +653,9 @@ fun FlexSettingsView() {
                     checked = advancedHapticsEnabled.value,
                     onCheckedChange = {
                         RichHaptics.perform(if (it) HapticPattern.TOGGLE_ON else HapticPattern.TOGGLE_OFF)
-                        advancedHapticsPref.set(it) // Моментальное сохранение на устройство
+                        advancedHapticsEnabled.value = it
+                        // 2. Моментально сохраняем в системные настройки SimpleX
+                        chat.simplex.common.platform.appPreferences.setBoolean("advancedHaptics_flex", it)
                     }
                 )
             }
