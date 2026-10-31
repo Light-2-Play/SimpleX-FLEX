@@ -616,9 +616,12 @@ fun PreviewSettingsLayout() {
 
 @Composable
 fun FlexSettingsView() {
-    // Используем локальные переменные для переключателей, пока вы не добавите их в AppPreferences.kt
-    val usbPanicEnabled = remember { mutableStateOf(false) }
-    val advancedHapticsEnabled = remember { mutableStateOf(false) }
+    // Подключаемся к реальной базе настроек приложения
+    val usbPanicPref = remember { chat.simplex.common.model.ChatController.appPrefs.usbPanic }
+    val advancedHapticsPref = remember { chat.simplex.common.model.ChatController.appPrefs.advancedHaptics }
+    
+    val usbPanicEnabled = remember { usbPanicPref.state }
+    val advancedHapticsEnabled = remember { advancedHapticsPref.state }
 
     ColumnWithScrollBar {
         AppBarTitle("FLEX Settings")
@@ -633,23 +636,17 @@ fun FlexSettingsView() {
                     checked = usbPanicEnabled.value,
                     onCheckedChange = {
                         RichHaptics.perform(if (it) HapticPattern.TOGGLE_ON else HapticPattern.TOGGLE_OFF)
-                        usbPanicEnabled.value = it // Обновляем переключатель
+                        usbPanicPref.set(it) // Моментальное сохранение на устройство
                     }
                 )
             }
-            Text(
-                text = "Purge cache, clipboard and kill app on USB plug",
-                style = MaterialTheme.typography.caption,
-                color = MaterialTheme.colors.secondary,
-                modifier = Modifier.padding(start = 54.dp, end = 16.dp, bottom = 12.dp, top = 0.dp)
-            )
         }
 
         SectionDividerSpaced()
 
         SectionView(title = "INTERFACE & FEEDBACK") {
             SettingsActionItemWithContent(
-                icon = painterResource(MR.images.ic_notifications), // Использована стандартная иконка SimpleX
+                icon = painterResource(MR.images.ic_notifications),
                 text = "Advanced Haptics",
                 iconColor = WarningOrange
             ) {
@@ -657,16 +654,10 @@ fun FlexSettingsView() {
                     checked = advancedHapticsEnabled.value,
                     onCheckedChange = {
                         RichHaptics.perform(if (it) HapticPattern.TOGGLE_ON else HapticPattern.TOGGLE_OFF)
-                        advancedHapticsEnabled.value = it // Обновляем переключатель
+                        advancedHapticsPref.set(it) // Моментальное сохранение на устройство
                     }
                 )
             }
-            Text(
-                text = "Tactile vibration and feedback across UI",
-                style = MaterialTheme.typography.caption,
-                color = MaterialTheme.colors.secondary,
-                modifier = Modifier.padding(start = 54.dp, end = 16.dp, bottom = 12.dp, top = 0.dp)
-            )
         }
 
         SectionBottomSpacer()
