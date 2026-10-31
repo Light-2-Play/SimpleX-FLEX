@@ -642,12 +642,13 @@ object FlexPrefs {
     }
 }
 
-// 2. ЧИСТЫЙ ИНТЕРФЕЙС FLEX SETTINGS
 @Composable
 fun FlexSettingsView() {
-    // Теперь состояния железно привязаны к нашему файлу FlexPrefs
-    val usbPanicEnabled = remember { mutableStateOf(FlexPrefs.usbPanic) }
-    val advancedHapticsEnabled = remember { mutableStateOf(FlexPrefs.advancedHaptics) }
+    // Получаем реальное состояние из SharedPreferences (через ваш RichHaptics)
+    val advancedHapticsEnabled = rememberSaveable { mutableStateOf(chat.simplex.common.platform.RichHaptics.isEnabled()) }
+    
+    // Временно оставляем локальное сохранение для USB Panic, пока для него не написан свой менеджер
+    val usbPanicEnabled = rememberSaveable { mutableStateOf(chat.simplex.common.platform.appPreferences.getBoolean("usbPanic_flex", false)) }
 
     ColumnWithScrollBar {
         AppBarTitle("FLEX Settings")
@@ -661,9 +662,10 @@ fun FlexSettingsView() {
                 DefaultSwitch(
                     checked = usbPanicEnabled.value,
                     onCheckedChange = {
-                        RichHaptics.perform(if (it) HapticPattern.TOGGLE_ON else HapticPattern.TOGGLE_OFF)
+                        // Вибрируем (если включено)
+                        chat.simplex.common.platform.RichHaptics.perform(if (it) chat.simplex.common.platform.HapticPattern.TOGGLE_ON else chat.simplex.common.platform.HapticPattern.TOGGLE_OFF)
                         usbPanicEnabled.value = it
-                        FlexPrefs.usbPanic = it // Сохраняем навсегда
+                        chat.simplex.common.platform.appPreferences.setBoolean("usbPanic_flex", it)
                     }
                 )
             }
@@ -680,9 +682,14 @@ fun FlexSettingsView() {
                 DefaultSwitch(
                     checked = advancedHapticsEnabled.value,
                     onCheckedChange = {
-                        RichHaptics.perform(if (it) HapticPattern.TOGGLE_ON else HapticPattern.TOGGLE_OFF)
+                        // 1. Сначала отыгрываем вибрацию клика (пока настройка еще позволяет)
+                        chat.simplex.common.platform.RichHaptics.perform(if (it) chat.simplex.common.platform.HapticPattern.TOGGLE_ON else chat.simplex.common.platform.HapticPattern.TOGGLE_OFF)
+                        
+                        // 2. Обновляем визуальный свитчер
                         advancedHapticsEnabled.value = it
-                        FlexPrefs.advancedHaptics = it // Сохраняем навсегда
+                        
+                        // 3. Записываем новую настройку прямо в ядро вашего RichHaptics
+                        chat.simplex.common.platform.RichHaptics.setEnabled(it)
                     }
                 )
             }
