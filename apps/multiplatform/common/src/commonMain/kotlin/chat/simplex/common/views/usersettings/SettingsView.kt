@@ -38,6 +38,7 @@ import chat.simplex.common.views.onboarding.WhatsNewView
 import chat.simplex.common.views.onboarding.crowdfundingAvailable
 import chat.simplex.common.views.usersettings.networkAndServers.NetworkAndServersView
 import chat.simplex.res.MR
+import java.io.File
 
 @Composable
 fun SettingsView(chatModel: ChatModel, setPerformLA: (Boolean) -> Unit, close: () -> Unit) {
@@ -614,11 +615,39 @@ fun PreviewSettingsLayout() {
   }
 }
 
+// 1. НАШ СОБСТВЕННЫЙ НЕЗАВИСИМЫЙ МЕНЕДЖЕР НАСТРОЕК
+object FlexPrefs {
+    private var usbCache = false
+    private var hapticsCache = false
+    
+    // Файл будет лежать в директории, которая всегда доступна для записи
+    private val file by lazy { File(System.getProperty("java.io.tmpdir") ?: ".", "flex_settings.txt") }
+    
+    var usbPanic: Boolean
+        get() = runCatching { file.readText().lines()[0].toBoolean() }.getOrDefault(usbCache)
+        set(value) { 
+            usbCache = value
+            save() 
+        }
+        
+    var advancedHaptics: Boolean
+        get() = runCatching { file.readText().lines().getOrNull(1)?.toBoolean() ?: false }.getOrDefault(hapticsCache)
+        set(value) { 
+            hapticsCache = value
+            save() 
+        }
+        
+    private fun save() {
+        runCatching { file.writeText("$usbCache\n$hapticsCache") }
+    }
+}
+
+// 2. ЧИСТЫЙ ИНТЕРФЕЙС FLEX SETTINGS
 @Composable
 fun FlexSettingsView() {
-    // Используем rememberSaveable для гарантированной компиляции и сохранения состояния в рамках сессии
-    val usbPanicEnabled = rememberSaveable { mutableStateOf(false) }
-    val advancedHapticsEnabled = rememberSaveable { mutableStateOf(false) }
+    // Теперь состояния железно привязаны к нашему файлу FlexPrefs
+    val usbPanicEnabled = remember { mutableStateOf(FlexPrefs.usbPanic) }
+    val advancedHapticsEnabled = remember { mutableStateOf(FlexPrefs.advancedHaptics) }
 
     ColumnWithScrollBar {
         AppBarTitle("FLEX Settings")
@@ -634,6 +663,7 @@ fun FlexSettingsView() {
                     onCheckedChange = {
                         RichHaptics.perform(if (it) HapticPattern.TOGGLE_ON else HapticPattern.TOGGLE_OFF)
                         usbPanicEnabled.value = it
+                        FlexPrefs.usbPanic = it // Сохраняем навсегда
                     }
                 )
             }
@@ -652,6 +682,7 @@ fun FlexSettingsView() {
                     onCheckedChange = {
                         RichHaptics.perform(if (it) HapticPattern.TOGGLE_ON else HapticPattern.TOGGLE_OFF)
                         advancedHapticsEnabled.value = it
+                        FlexPrefs.advancedHaptics = it // Сохраняем навсегда
                     }
                 )
             }
