@@ -200,26 +200,36 @@ object TemporaryContentManager {
     saveMetadataToDisk()
   }
 
-  fun purgeExpired() {
-    val now = System.currentTimeMillis()
-    val current = _items.value
-    val (active, expired) = current.partition {
-      val f = File(it.filePath)
-      it.expiresAtMillis > now && f.exists() && f.length() > 1000L
+ fun purgeExpired() {
+        val now = System.currentTimeMillis()
+        val ttlMillis = 24L * 60 * 60 * 1000 // 24 часа в миллисекундах
+        
+        var changed = false
+        val currentItems = _items.value.toMutableList()
+        val iterator = currentItems.iterator()
+
+        while (iterator.hasNext()) {
+            val item = iterator.next()
+            // Проверяем, прошло ли 24 часа с момента создания
+            if ((now - item.createdAtMillis) > ttlMillis) {
+                try {
+                    // Удаляем оригинальный файл с устройства
+                    java.io.File(item.filePath).delete()
+                    // Удаляем сгенерированное превью (если есть)
+                    java.io.File("${item.filePath}_thumb.jpg").delete()
+                } catch (e: Exception) {
+                    // Игнорируем ошибки при удалении, если файл уже отсутствует
+                }
+                iterator.remove()
+                changed = true
+            }
+        }
+
+        if (changed) {
+            _items.value = currentItems
+            saveToDisk() // Убедитесь, что у вас есть функция сохранения состояния (например, saveToDisk или save())
+        }
     }
-    if (expired.isNotEmpty()) {
-      expired.forEach { item ->
-        try {
-          val f = File(item.filePath)
-          if (f.exists()) f.delete()
-          val thumb = File("${item.filePath}_thumb.jpg")
-          if (thumb.exists()) thumb.delete()
-        } catch (_: Exception) {}
-      }
-      _items.value = active.toList()
-      saveMetadataToDisk()
-    }
-  }
 
   private fun saveMetadataToDisk() {
     try {
