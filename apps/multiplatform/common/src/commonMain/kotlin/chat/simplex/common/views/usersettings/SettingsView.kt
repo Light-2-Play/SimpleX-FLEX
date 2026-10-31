@@ -646,10 +646,10 @@ object FlexLocalPrefs {
         }
 }
 
-// 2. ИДЕАЛЬНО ЧИСТЫЙ ИНТЕРФЕЙС
 @Composable
 fun FlexSettingsView() {
-    val usbPanicEnabled = rememberSaveable { mutableStateOf(FlexLocalPrefs.usbPanic) }
+    // Теперь ОБЕ настройки надежно берутся из нативной системы Android
+    val usbPanicEnabled = rememberSaveable { mutableStateOf(chat.simplex.common.platform.RichHaptics.isUsbPanicEnabled()) }
     val advancedHapticsEnabled = rememberSaveable { mutableStateOf(chat.simplex.common.platform.RichHaptics.isEnabled()) }
 
     ColumnWithScrollBar {
@@ -664,16 +664,10 @@ fun FlexSettingsView() {
                 DefaultSwitch(
                     checked = usbPanicEnabled.value,
                     onCheckedChange = { newVal ->
-                        // 1. ГАРАНТИРОВАННОЕ мгновенное обновление UI
                         usbPanicEnabled.value = newVal
-                        
-                        // 2. Сохраняем в кэш (теперь папка создается автоматически)
-                        FlexLocalPrefs.usbPanic = newVal
-                        
-                        // 3. Безопасный вызов вибрации
-                        runCatching {
-                            chat.simplex.common.platform.RichHaptics.perform(if (newVal) chat.simplex.common.platform.HapticPattern.TOGGLE_ON else chat.simplex.common.platform.HapticPattern.TOGGLE_OFF)
-                        }
+                        // Мгновенное нативное сохранение в SharedPreferences
+                        runCatching { chat.simplex.common.platform.RichHaptics.setUsbPanicEnabled(newVal) }
+                        runCatching { chat.simplex.common.platform.RichHaptics.perform(if (newVal) chat.simplex.common.platform.HapticPattern.TOGGLE_ON else chat.simplex.common.platform.HapticPattern.TOGGLE_OFF) }
                     }
                 )
             }
@@ -690,16 +684,10 @@ fun FlexSettingsView() {
                 DefaultSwitch(
                     checked = advancedHapticsEnabled.value,
                     onCheckedChange = { newVal ->
-                        // 1. ГАРАНТИРОВАННОЕ мгновенное обновление UI
                         advancedHapticsEnabled.value = newVal
-                        
-                        // 2. Нативное сохранение в ядро RichHaptics
+                        // Мгновенное нативное сохранение в SharedPreferences
                         runCatching { chat.simplex.common.platform.RichHaptics.setEnabled(newVal) }
-                        
-                        // 3. Безопасный вызов вибрации
-                        runCatching {
-                            chat.simplex.common.platform.RichHaptics.perform(if (newVal) chat.simplex.common.platform.HapticPattern.TOGGLE_ON else chat.simplex.common.platform.HapticPattern.TOGGLE_OFF)
-                        }
+                        runCatching { chat.simplex.common.platform.RichHaptics.perform(if (newVal) chat.simplex.common.platform.HapticPattern.TOGGLE_ON else chat.simplex.common.platform.HapticPattern.TOGGLE_OFF) }
                     }
                 )
             }
