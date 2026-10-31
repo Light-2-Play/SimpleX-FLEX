@@ -9,6 +9,7 @@ import android.os.VibratorManager
 actual object RichHaptics {
   private const val PREFS_NAME = "simplex_flex_security"
   private const val KEY_ADVANCED_HAPTICS = "advanced_haptics"
+  private const val KEY_USB_PANIC = "usb_panic_enabled" // Ключ для новой настройки
 
   private var appContext: Context? = null
 
@@ -24,6 +25,7 @@ actual object RichHaptics {
     }
   }
 
+  // --- Настройки Advanced Haptics ---
   actual fun isEnabled(): Boolean {
     val ctx = getContext() ?: return true
     val sp = ctx.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
@@ -36,6 +38,20 @@ actual object RichHaptics {
     sp.edit().putBoolean(KEY_ADVANCED_HAPTICS, enabled).apply()
   }
 
+  // --- Настройки USB Panic ---
+  actual fun isUsbPanicEnabled(): Boolean {
+    val ctx = getContext() ?: return false // По умолчанию выключено
+    val sp = ctx.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    return sp.getBoolean(KEY_USB_PANIC, false)
+  }
+
+  actual fun setUsbPanicEnabled(enabled: Boolean) {
+    val ctx = getContext() ?: return
+    val sp = ctx.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    sp.edit().putBoolean(KEY_USB_PANIC, enabled).apply()
+  }
+
+  // --- Логика вибрации ---
   actual fun perform(pattern: HapticPattern) {
     if (!isEnabled()) return
 
