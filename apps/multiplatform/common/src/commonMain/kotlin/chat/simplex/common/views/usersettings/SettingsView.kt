@@ -618,20 +618,38 @@ fun PreviewSettingsLayout() {
 
 // 1. БЕЗОТКАЗНЫЙ КЭШ ДЛЯ USB PANIC
 object FlexLocalPrefs {
-    private val file by lazy { File(getAppFilePath("flex_prefs.txt")) }
+    private var memoryCache = false
+    private var isLoaded = false
+
+    private fun getFile(): File {
+        // Обязательно создаем папку перед тем как пытаться сохранить файл!
+        val dir = File(getAppFilePath("flex_settings_dir"))
+        if (!dir.exists()) dir.mkdirs() 
+        return File(dir, "usb_panic_state.txt")
+    }
 
     var usbPanic: Boolean
-        get() = try { file.readText().trim() == "true" } catch (e: Exception) { false }
-        set(value) { try { file.writeText(value.toString()) } catch (e: Exception) {} }
+        get() {
+            if (!isLoaded) {
+                try { 
+                    memoryCache = getFile().readText().trim() == "true" 
+                } catch (e: Exception) { 
+                    memoryCache = false 
+                }
+                isLoaded = true
+            }
+            return memoryCache
+        }
+        set(value) {
+            memoryCache = value // Запоминаем в оперативной памяти на случай сбоев ФС
+            try { getFile().writeText(value.toString()) } catch (e: Exception) {}
+        }
 }
 
 // 2. ИДЕАЛЬНО ЧИСТЫЙ ИНТЕРФЕЙС
 @Composable
 fun FlexSettingsView() {
-    // USB Panic использует наш безотказный файловый кэш (ошибок типов больше не будет)
     val usbPanicEnabled = rememberSaveable { mutableStateOf(FlexLocalPrefs.usbPanic) }
-    
-    // Advanced Haptics использует готовый RichHaptics (он уже успешно скомпилировался!)
     val advancedHapticsEnabled = rememberSaveable { mutableStateOf(chat.simplex.common.platform.RichHaptics.isEnabled()) }
 
     ColumnWithScrollBar {
@@ -645,10 +663,17 @@ fun FlexSettingsView() {
             ) {
                 DefaultSwitch(
                     checked = usbPanicEnabled.value,
-                    onCheckedChange = {
-                        chat.simplex.common.platform.RichHaptics.perform(if (it) chat.simplex.common.platform.HapticPattern.TOGGLE_ON else chat.simplex.common.platform.HapticPattern.TOGGLE_OFF)
-                        usbPanicEnabled.value = it
-                        FlexLocalPrefs.usbPanic = it // Мгновенное сохранение
+                    onCheckedChange = { newVal ->
+                        // 1. ГАРАНТИРОВАННОЕ мгновенное обновление UI
+                        usbPanicEnabled.value = newVal
+                        
+                        // 2. Сохраняем в кэш (теперь папка создается автоматически)
+                        FlexLocalPrefs.usbPanic = newVal
+                        
+                        // 3. Безопасный вызов вибрации
+                        runCatching {
+                            chat.simplex.common.platform.RichHaptics.perform(if (newVal) chat.simplex.common.platform.HapticPattern.TOGGLE_ON else chat.simplex.common.platform.HapticPattern.TOGGLE_OFF)
+                        }
                     }
                 )
             }
@@ -664,10 +689,17 @@ fun FlexSettingsView() {
             ) {
                 DefaultSwitch(
                     checked = advancedHapticsEnabled.value,
-                    onCheckedChange = {
-                        chat.simplex.common.platform.RichHaptics.perform(if (it) chat.simplex.common.platform.HapticPattern.TOGGLE_ON else chat.simplex.common.platform.HapticPattern.TOGGLE_OFF)
-                        advancedHapticsEnabled.value = it
-                        chat.simplex.common.platform.RichHaptics.setEnabled(it) // Родное сохранение
+                    onCheckedChange = { newVal ->
+                        // 1. ГАРАНТИРОВАННОЕ мгновенное обновление UI
+                        advancedHapticsEnabled.value = newVal
+                        
+                        // 2. Нативное сохранение в ядро RichHaptics
+                        runCatching { chat.simplex.common.platform.RichHaptics.setEnabled(newVal) }
+                        
+                        // 3. Безопасный вызов вибрации
+                        runCatching {
+                            chat.simplex.common.platform.RichHaptics.perform(if (newVal) chat.simplex.common.platform.HapticPattern.TOGGLE_ON else chat.simplex.common.platform.HapticPattern.TOGGLE_OFF)
+                        }
                     }
                 )
             }
