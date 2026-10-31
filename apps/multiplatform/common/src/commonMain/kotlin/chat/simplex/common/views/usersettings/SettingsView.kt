@@ -39,6 +39,7 @@ import chat.simplex.common.views.onboarding.crowdfundingAvailable
 import chat.simplex.common.views.usersettings.networkAndServers.NetworkAndServersView
 import chat.simplex.res.MR
 import java.io.File
+import chat.simplex.common.platform.getAppFilePath // Добавлен импорт для кэша
 
 @Composable
 fun SettingsView(chatModel: ChatModel, setPerformLA: (Boolean) -> Unit, close: () -> Unit) {
@@ -615,40 +616,23 @@ fun PreviewSettingsLayout() {
   }
 }
 
-// 1. НАШ СОБСТВЕННЫЙ НЕЗАВИСИМЫЙ МЕНЕДЖЕР НАСТРОЕК
-object FlexPrefs {
-    private var usbCache = false
-    private var hapticsCache = false
-    
-    // Файл будет лежать в директории, которая всегда доступна для записи
-    private val file by lazy { File(System.getProperty("java.io.tmpdir") ?: ".", "flex_settings.txt") }
-    
+// 1. БЕЗОТКАЗНЫЙ КЭШ ДЛЯ USB PANIC
+object FlexLocalPrefs {
+    private val file by lazy { File(getAppFilePath("flex_prefs.txt")) }
+
     var usbPanic: Boolean
-        get() = runCatching { file.readText().lines()[0].toBoolean() }.getOrDefault(usbCache)
-        set(value) { 
-            usbCache = value
-            save() 
-        }
-        
-    var advancedHaptics: Boolean
-        get() = runCatching { file.readText().lines().getOrNull(1)?.toBoolean() ?: false }.getOrDefault(hapticsCache)
-        set(value) { 
-            hapticsCache = value
-            save() 
-        }
-        
-    private fun save() {
-        runCatching { file.writeText("$usbCache\n$hapticsCache") }
-    }
+        get() = try { file.readText().trim() == "true" } catch (e: Exception) { false }
+        set(value) { try { file.writeText(value.toString()) } catch (e: Exception) {} }
 }
 
+// 2. ИДЕАЛЬНО ЧИСТЫЙ ИНТЕРФЕЙС
 @Composable
 fun FlexSettingsView() {
-    // Получаем реальное состояние из SharedPreferences (через ваш RichHaptics)
-    val advancedHapticsEnabled = rememberSaveable { mutableStateOf(chat.simplex.common.platform.RichHaptics.isEnabled()) }
+    // USB Panic использует наш безотказный файловый кэш (ошибок типов больше не будет)
+    val usbPanicEnabled = rememberSaveable { mutableStateOf(FlexLocalPrefs.usbPanic) }
     
-    // Временно оставляем локальное сохранение для USB Panic, пока для него не написан свой менеджер
-    val usbPanicEnabled = rememberSaveable { mutableStateOf(chat.simplex.common.platform.appPreferences.getBoolean("usbPanic_flex", false)) }
+    // Advanced Haptics использует готовый RichHaptics (он уже успешно скомпилировался!)
+    val advancedHapticsEnabled = rememberSaveable { mutableStateOf(chat.simplex.common.platform.RichHaptics.isEnabled()) }
 
     ColumnWithScrollBar {
         AppBarTitle("FLEX Settings")
@@ -662,10 +646,9 @@ fun FlexSettingsView() {
                 DefaultSwitch(
                     checked = usbPanicEnabled.value,
                     onCheckedChange = {
-                        // Вибрируем (если включено)
                         chat.simplex.common.platform.RichHaptics.perform(if (it) chat.simplex.common.platform.HapticPattern.TOGGLE_ON else chat.simplex.common.platform.HapticPattern.TOGGLE_OFF)
                         usbPanicEnabled.value = it
-                        chat.simplex.common.platform.appPreferences.setBoolean("usbPanic_flex", it)
+                        FlexLocalPrefs.usbPanic = it // Мгновенное сохранение
                     }
                 )
             }
@@ -682,14 +665,9 @@ fun FlexSettingsView() {
                 DefaultSwitch(
                     checked = advancedHapticsEnabled.value,
                     onCheckedChange = {
-                        // 1. Сначала отыгрываем вибрацию клика (пока настройка еще позволяет)
                         chat.simplex.common.platform.RichHaptics.perform(if (it) chat.simplex.common.platform.HapticPattern.TOGGLE_ON else chat.simplex.common.platform.HapticPattern.TOGGLE_OFF)
-                        
-                        // 2. Обновляем визуальный свитчер
                         advancedHapticsEnabled.value = it
-                        
-                        // 3. Записываем новую настройку прямо в ядро вашего RichHaptics
-                        chat.simplex.common.platform.RichHaptics.setEnabled(it)
+                        chat.simplex.common.platform.RichHaptics.setEnabled(it) // Родное сохранение
                     }
                 )
             }
