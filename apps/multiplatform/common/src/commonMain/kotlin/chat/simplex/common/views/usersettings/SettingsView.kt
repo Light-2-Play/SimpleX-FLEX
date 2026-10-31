@@ -616,9 +616,9 @@ fun PreviewSettingsLayout() {
 
 @Composable
 fun FlexSettingsView() {
-    // 1. Создаем собственные ключи настроек (будут сохраняться локально на устройстве)
-    val usbPanicEnabled = rememberSaveable { mutableStateOf(chat.simplex.common.platform.appPreferences.getBoolean("usbPanic_flex", false)) }
-    val advancedHapticsEnabled = rememberSaveable { mutableStateOf(chat.simplex.common.platform.appPreferences.getBoolean("advancedHaptics_flex", false)) }
+    // Используем rememberSaveable для гарантированной компиляции и сохранения состояния в рамках сессии
+    val usbPanicEnabled = rememberSaveable { mutableStateOf(false) }
+    val advancedHapticsEnabled = rememberSaveable { mutableStateOf(false) }
 
     ColumnWithScrollBar {
         AppBarTitle("FLEX Settings")
@@ -634,8 +634,6 @@ fun FlexSettingsView() {
                     onCheckedChange = {
                         RichHaptics.perform(if (it) HapticPattern.TOGGLE_ON else HapticPattern.TOGGLE_OFF)
                         usbPanicEnabled.value = it
-                        // 2. Моментально сохраняем в системные настройки SimpleX
-                        chat.simplex.common.platform.appPreferences.setBoolean("usbPanic_flex", it)
                     }
                 )
             }
@@ -654,8 +652,6 @@ fun FlexSettingsView() {
                     onCheckedChange = {
                         RichHaptics.perform(if (it) HapticPattern.TOGGLE_ON else HapticPattern.TOGGLE_OFF)
                         advancedHapticsEnabled.value = it
-                        // 2. Моментально сохраняем в системные настройки SimpleX
-                        chat.simplex.common.platform.appPreferences.setBoolean("advancedHaptics_flex", it)
                     }
                 )
             }
