@@ -200,31 +200,37 @@ object TemporaryContentManager {
     saveMetadataToDisk()
   }
 
-fun purgeExpired() {
+// В эту функцию нужно передать экземпляр chatModel, чтобы иметь доступ к контроллеру базы
+    fun purgeExpired(chatModel: ChatModel) {
         val now = System.currentTimeMillis()
-        val ttlMillis = 24L * 60 * 60 * 1000 // 24 часа в миллисекундах
+        val ttlMillis = 24L * 60 * 60 * 1000 // 24 часа
         
-        var changed = false
-        val currentItems = _items.value.toMutableList()
-        val iterator = currentItems.iterator()
-
+        val iterator = _items.value.iterator()
+        
         while (iterator.hasNext()) {
             val item = iterator.next()
+            
             if ((now - item.createdAtMillis) > ttlMillis) {
-                try {
+                // 1. Физически удаляем файлы с устройства
+                runCatching { 
                     java.io.File(item.filePath).delete()
                     java.io.File("${item.filePath}_thumb.jpg").delete()
-                } catch (e: Exception) {
-                    // Игнорируем
                 }
-                iterator.remove()
-                changed = true
-            }
-        }
 
-        if (changed) {
-            // Просто обновляем StateFlow, интерфейс отреагирует сам
-            _items.value = currentItems
+                // 2. ТИХОЕ УДАЛЕНИЕ ИЗ БАЗЫ (без служебных спам-сообщений)
+                // Подставьте правильные переменные из вашего объекта item
+                chatModel.controller.apiDeleteChatItems(
+                    chatRh = item.remoteHostId, 
+                    type = item.chatType,      
+                    id = item.apiId,           
+                    scope = item.groupScope,   
+                    itemIds = listOf(item.messageId), 
+                    mode = chat.simplex.common.model.CIDeleteMode.cidmInternal // <-- КЛЮЧЕВОЙ РЕЖИМ (Тихое удаление)
+                )
+
+                // 3. Вычищаем из UI
+                iterator.remove()
+            }
         }
     }
 
