@@ -613,3 +613,62 @@ fun PreviewSettingsLayout() {
     )
   }
 }
+
+@Composable
+fun FlexSettingsView() {
+    val usbPanicEnabled = remember { appPrefs.usbPanic.state } // Подключите ваш реальный SharedPreference
+    val advancedHapticsEnabled = remember { appPrefs.advancedHaptics.state } // Подключите ваш реальный SharedPreference
+
+    ColumnWithScrollBar {
+        AppBarTitle("FLEX Settings")
+
+        SectionView(title = "SECURITY") {
+            SettingsActionItemWithContent(
+                icon = painterResource(MR.images.ic_security), // Замените на нужную иконку защиты
+                text = "USB Panic",
+                iconColor = MaterialTheme.colors.primary.copy(alpha = 0.85f)
+            ) {
+                DefaultSwitch(
+                    checked = usbPanicEnabled.value,
+                    onCheckedChange = {
+                        RichHaptics.perform(if (it) HapticPattern.TOGGLE_ON else HapticPattern.TOGGLE_OFF)
+                        appPrefs.usbPanic.set(it) // Вызов сохранения
+                    }
+                )
+            }
+            // Добавляем описание как в стандартном SimpleX
+            Text(
+                text = "Purge cache, clipboard and kill app on USB plug",
+                style = MaterialTheme.typography.caption,
+                color = MaterialTheme.colors.secondary,
+                modifier = Modifier.padding(start = 54.dp, end = 16.dp, bottom = 12.dp, top = 0.dp)
+            )
+        }
+
+        SectionDividerSpaced()
+
+        SectionView(title = "INTERFACE & FEEDBACK") {
+            SettingsActionItemWithContent(
+                icon = painterResource(MR.images.ic_notifications_active), // Замените на нужную иконку вибрации
+                text = "Advanced Haptics",
+                iconColor = WarningOrange // Оранжевый цвет иконки как на вашем скриншоте
+            ) {
+                DefaultSwitch(
+                    checked = advancedHapticsEnabled.value,
+                    onCheckedChange = {
+                        RichHaptics.perform(if (it) HapticPattern.TOGGLE_ON else HapticPattern.TOGGLE_OFF)
+                        appPrefs.advancedHaptics.set(it) // Вызов сохранения
+                    }
+                )
+            }
+            Text(
+                text = "Tactile vibration and feedback across UI",
+                style = MaterialTheme.typography.caption,
+                color = MaterialTheme.colors.secondary,
+                modifier = Modifier.padding(start = 54.dp, end = 16.dp, bottom = 12.dp, top = 0.dp)
+            )
+        }
+
+        SectionBottomSpacer()
+    }
+}
