@@ -200,7 +200,7 @@ object TemporaryContentManager {
     saveMetadataToDisk()
   }
 
- fun purgeExpired() {
+fun purgeExpired() {
         val now = System.currentTimeMillis()
         val ttlMillis = 24L * 60 * 60 * 1000 // 24 часа в миллисекундах
         
@@ -210,15 +210,12 @@ object TemporaryContentManager {
 
         while (iterator.hasNext()) {
             val item = iterator.next()
-            // Проверяем, прошло ли 24 часа с момента создания
             if ((now - item.createdAtMillis) > ttlMillis) {
                 try {
-                    // Удаляем оригинальный файл с устройства
                     java.io.File(item.filePath).delete()
-                    // Удаляем сгенерированное превью (если есть)
                     java.io.File("${item.filePath}_thumb.jpg").delete()
                 } catch (e: Exception) {
-                    // Игнорируем ошибки при удалении, если файл уже отсутствует
+                    // Игнорируем
                 }
                 iterator.remove()
                 changed = true
@@ -226,8 +223,8 @@ object TemporaryContentManager {
         }
 
         if (changed) {
+            // Просто обновляем StateFlow, интерфейс отреагирует сам
             _items.value = currentItems
-            saveToDisk() // Убедитесь, что у вас есть функция сохранения состояния (например, saveToDisk или save())
         }
     }
 
