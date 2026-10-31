@@ -616,15 +616,16 @@ fun PreviewSettingsLayout() {
 
 @Composable
 fun FlexSettingsView() {
-    val usbPanicEnabled = remember { appPrefs.usbPanic.state } // Подключите ваш реальный SharedPreference
-    val advancedHapticsEnabled = remember { appPrefs.advancedHaptics.state } // Подключите ваш реальный SharedPreference
+    // Используем локальные переменные для переключателей, пока вы не добавите их в AppPreferences.kt
+    val usbPanicEnabled = remember { mutableStateOf(false) }
+    val advancedHapticsEnabled = remember { mutableStateOf(false) }
 
     ColumnWithScrollBar {
         AppBarTitle("FLEX Settings")
 
         SectionView(title = "SECURITY") {
             SettingsActionItemWithContent(
-                icon = painterResource(MR.images.ic_security), // Замените на нужную иконку защиты
+                icon = painterResource(MR.images.ic_security),
                 text = "USB Panic",
                 iconColor = MaterialTheme.colors.primary.copy(alpha = 0.85f)
             ) {
@@ -632,11 +633,10 @@ fun FlexSettingsView() {
                     checked = usbPanicEnabled.value,
                     onCheckedChange = {
                         RichHaptics.perform(if (it) HapticPattern.TOGGLE_ON else HapticPattern.TOGGLE_OFF)
-                        appPrefs.usbPanic.set(it) // Вызов сохранения
+                        usbPanicEnabled.value = it // Обновляем переключатель
                     }
                 )
             }
-            // Добавляем описание как в стандартном SimpleX
             Text(
                 text = "Purge cache, clipboard and kill app on USB plug",
                 style = MaterialTheme.typography.caption,
@@ -649,15 +649,15 @@ fun FlexSettingsView() {
 
         SectionView(title = "INTERFACE & FEEDBACK") {
             SettingsActionItemWithContent(
-                icon = painterResource(MR.images.ic_notifications_active), // Замените на нужную иконку вибрации
+                icon = painterResource(MR.images.ic_notifications), // Использована стандартная иконка SimpleX
                 text = "Advanced Haptics",
-                iconColor = WarningOrange // Оранжевый цвет иконки как на вашем скриншоте
+                iconColor = WarningOrange
             ) {
                 DefaultSwitch(
                     checked = advancedHapticsEnabled.value,
                     onCheckedChange = {
                         RichHaptics.perform(if (it) HapticPattern.TOGGLE_ON else HapticPattern.TOGGLE_OFF)
-                        appPrefs.advancedHaptics.set(it) // Вызов сохранения
+                        advancedHapticsEnabled.value = it // Обновляем переключатель
                     }
                 )
             }
