@@ -343,10 +343,8 @@ if (contact.contactLink != null) {
           modifier = Modifier.fillMaxWidth().padding(vertical = 16.dp),
           contentAlignment = Alignment.Center
         ) {
-          SmartLinkQRCode(
-            uri = simplexChatLink(contact.contactLink),
-            size = 220.dp
-          )
+          // Вызываем без параметра size, передаем только саму ссылку
+          SmartLinkQRCode(simplexChatLink(contact.contactLink))
         }
         // -------------------------------
         
