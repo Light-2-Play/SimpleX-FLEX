@@ -60,7 +60,7 @@ import kotlinx.serialization.encodeToString
 import java.io.File
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
-import chat.simplex.common.views.newchat.SmartLinkQRCode
+import chat.simplex.common.views.helpers.SmartLinkQRCode
 
 @Composable
 fun ChatInfoView(
@@ -338,16 +338,7 @@ fun ChatInfoLayout(
     
 if (contact.contactLink != null) {
       SectionView(stringResource(MR.strings.address_section_title)) {
-        // --- НОВЫЙ EXPRESSIVE QR КОД ---
-        Box(
-          modifier = Modifier.fillMaxWidth().padding(vertical = 16.dp),
-          contentAlignment = Alignment.Center
-        ) {
-          // Вызываем без параметра size, передаем только саму ссылку
-          SmartLinkQRCode(simplexChatLink(contact.contactLink))
-        }
-        // -------------------------------
-        
+        SimpleXLinkQRCode(contact.contactLink)
         val clipboard = LocalClipboardManager.current
         ShareAddressButton { clipboard.shareText(simplexChatLink(contact.contactLink)) }
       }
