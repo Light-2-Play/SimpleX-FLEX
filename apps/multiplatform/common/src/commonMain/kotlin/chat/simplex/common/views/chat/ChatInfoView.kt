@@ -338,7 +338,17 @@ fun ChatInfoLayout(
     
 if (contact.contactLink != null) {
       SectionView(stringResource(MR.strings.address_section_title)) {
-        SimpleXLinkQRCode(contact.contactLink)
+        // --- НОВЫЙ EXPRESSIVE QR КОД ---
+        Box(
+          modifier = Modifier.fillMaxWidth().padding(vertical = 16.dp),
+          contentAlignment = Alignment.Center
+        ) {
+          SmartLinkQRCode(
+            uri = simplexChatLink(contact.contactLink)
+          )
+        }
+        // -------------------------------
+        
         val clipboard = LocalClipboardManager.current
         ShareAddressButton { clipboard.shareText(simplexChatLink(contact.contactLink)) }
       }
