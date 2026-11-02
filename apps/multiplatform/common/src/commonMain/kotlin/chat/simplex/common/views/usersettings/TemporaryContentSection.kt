@@ -667,150 +667,188 @@ private fun AddTemporaryContentDialog(
 }
 
 // =====================================================================
-// 4. ПОЛНОЭКРАННЫЙ ПРОСМОТРЩИК TEMPORARY CONTENT
+// 4. ПОЛНОЭКРАННЫЙ ПРОСМОТРЩИК TEMPORARY CONTENT (MATERIAL 3 EXPRESSIVE)
 // =====================================================================
 @Composable
 fun TemporaryContentStoryViewer(
-  items: List<TemporaryContentItem>,
-  initialIndex: Int,
-  onDismiss: () -> Unit,
-  onDeleteStory: (String) -> Unit = {} // <-- Значение по умолчанию решает все ошибки сборки
+    items: List<TemporaryContentItem>,
+    initialIndex: Int,
+    onDismiss: () -> Unit,
+    onDeleteStory: (String) -> Unit = {}
 ) {
-  var currentIndex by remember { mutableStateOf(initialIndex.coerceIn(0, items.lastIndex)) }
-  val currentItem = items.getOrNull(currentIndex) ?: run {
-    onDismiss()
-    return
-  }
-
-  val now = System.currentTimeMillis()
-
-  Dialog(
-    onDismissRequest = onDismiss,
-    properties = DialogProperties(usePlatformDefaultWidth = false)
-  ) {
-    Box(
-      modifier = Modifier
-        .fillMaxSize()
-        .background(Color.Black)
-        .pointerInput(currentIndex, items.size) {
-          detectTapGestures { offset ->
-            if (offset.x < size.width * 0.35f) {
-              if (currentIndex > 0) {
-                RichHaptics.perform(HapticPattern.TICK)
-                currentIndex--
-              }
-            } else {
-              if (currentIndex < items.lastIndex) {
-                RichHaptics.perform(HapticPattern.TICK)
-                currentIndex++
-              } else {
-                onDismiss()
-              }
-            }
-          }
-        }
-    ) {
-      val mediaFile = remember(currentItem.filePath) { File(currentItem.filePath) }
-      val isFileReady = mediaFile.exists() && mediaFile.length() > 1000L
-
-      if (currentItem.mediaType == TemporaryMediaType.VIDEO) {
-        val videoPlayer = LocalStoryVideoPlayer.current
-        
-        if (videoPlayer != null && isFileReady) {
-          videoPlayer(currentItem.filePath, Modifier.fillMaxSize())
-        } else {
-          Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            CircularProgressIndicator(color = Color.White)
-          }
-        }
-      } else {
-        val imageViewer = LocalStoryImageViewer.current
-        
-        if (imageViewer != null && isFileReady) {
-          imageViewer(currentItem.filePath, Modifier.fillMaxSize())
-        } else {
-          Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            CircularProgressIndicator(color = Color.White)
-          }
-        }
-      }
-
-      // 2. Верхняя панель со статусом и таймером
-      Column(
-        modifier = Modifier
-          .fillMaxWidth()
-          .align(Alignment.TopCenter)
-          .background(Brush.verticalGradient(listOf(Color.Black.copy(alpha = 0.45f), Color.Transparent)))
-          .statusBarsPadding()
-          .padding(top = 10.dp, start = 14.dp, end = 14.dp, bottom = 24.dp)
-      ) {
-        Row(
-          modifier = Modifier.fillMaxWidth(),
-          horizontalArrangement = Arrangement.spacedBy(4.dp)
-        ) {
-          items.forEachIndexed { idx, it ->
-            val progress = when {
-              idx < currentIndex -> 1f
-              idx == currentIndex -> it.remainingProgress(now)
-              else -> 0f
-            }
-            LinearProgressIndicator(
-              progress = progress,
-              color = Color.White,
-              backgroundColor = Color.White.copy(alpha = 0.35f),
-              modifier = Modifier.weight(1f).height(3.5.dp).clip(CircleShape)
-            )
-          }
-        }
-
-        Spacer(Modifier.height(12.dp))
-
-        Row(
-          modifier = Modifier.fillMaxWidth(),
-          verticalAlignment = Alignment.CenterVertically,
-          horizontalArrangement = Arrangement.SpaceBetween
-        ) {
-          Row(verticalAlignment = Alignment.CenterVertically) {
-            Icon(painterResource(MR.images.ic_timer), null, tint = Color.White, modifier = Modifier.size(18.dp))
-            Spacer(Modifier.width(6.dp))
-            val authorLabel = currentItem.authorDisplayName ?: "Contact"
-            Text("$authorLabel • ${currentItem.remainingTimeText(now)}", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold)
-          }
-
-          Row(verticalAlignment = Alignment.CenterVertically) {
-            IconButton(
-              onClick = {
-                RichHaptics.perform(HapticPattern.TOGGLE_OFF)
-                onDeleteStory(currentItem.id)
-                if (items.size <= 1) onDismiss()
-              }
-            ) {
-              Icon(painterResource(MR.images.ic_delete), null, tint = Color(0xFFFF5252), modifier = Modifier.size(22.dp))
-            }
-
-            IconButton(onClick = onDismiss) {
-              Icon(painterResource(MR.images.ic_close), null, tint = Color.White, modifier = Modifier.size(24.dp))
-            }
-          }
-        }
-      }
-
-      // 3. Подпись снизу
-      if (currentItem.caption.isNotBlank()) {
-        Box(
-          modifier = Modifier
-            .fillMaxWidth()
-            .align(Alignment.BottomCenter)
-            .background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.45f))))
-            .navigationBarsPadding()
-            .padding(horizontal = 20.dp, vertical = 20.dp),
-          contentAlignment = Alignment.Center
-        ) {
-          Text(currentItem.caption, color = Color.White, fontSize = 15.sp, textAlign = TextAlign.Center, maxLines = 3)
-        }
-      }
+    var currentIndex by remember { mutableStateOf(initialIndex.coerceIn(0, items.lastIndex)) }
+    val currentItem = items.getOrNull(currentIndex) ?: run {
+        onDismiss()
+        return
     }
-  }
+
+    val now = System.currentTimeMillis()
+
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false)
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black)
+                .pointerInput(currentIndex, items.size) {
+                    detectTapGestures { offset ->
+                        if (offset.x < size.width * 0.35f) {
+                            if (currentIndex > 0) {
+                                RichHaptics.perform(HapticPattern.TICK)
+                                currentIndex--
+                            }
+                        } else {
+                            if (currentIndex < items.lastIndex) {
+                                RichHaptics.perform(HapticPattern.TICK)
+                                currentIndex++
+                            } else {
+                                onDismiss()
+                            }
+                        }
+                    }
+                }
+        ) {
+            val mediaFile = remember(currentItem.filePath) { File(currentItem.filePath) }
+            val isFileReady = mediaFile.exists() && mediaFile.length() > 1000L
+
+            // 1. Медиа-контент
+            if (currentItem.mediaType == TemporaryMediaType.VIDEO) {
+                val videoPlayer = LocalStoryVideoPlayer.current
+                if (videoPlayer != null && isFileReady) {
+                    videoPlayer(currentItem.filePath, Modifier.fillMaxSize())
+                } else {
+                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        CircularProgressIndicator(color = Color.White)
+                    }
+                }
+            } else {
+                val imageViewer = LocalStoryImageViewer.current
+                if (imageViewer != null && isFileReady) {
+                    imageViewer(currentItem.filePath, Modifier.fillMaxSize())
+                } else {
+                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        CircularProgressIndicator(color = Color.White)
+                    }
+                }
+            }
+
+            // 2. Верхняя панель со статусом и таймером (Плавающий M3-контейнер)
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .align(Alignment.TopCenter)
+                    .statusBarsPadding()
+                    .padding(top = 16.dp, start = 16.dp, end = 16.dp)
+            ) {
+                // Индикаторы прогресса
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    items.forEachIndexed { idx, it ->
+                        val progress = when {
+                            idx < currentIndex -> 1f
+                            idx == currentIndex -> it.remainingProgress(now)
+                            else -> 0f
+                        }
+                        LinearProgressIndicator(
+                            progress = progress,
+                            color = Color.White,
+                            backgroundColor = Color.White.copy(alpha = 0.3f),
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(4.dp)
+                                .clip(CircleShape)
+                        )
+                    }
+                }
+
+                Spacer(Modifier.height(14.dp))
+
+                // Информация об авторе и кнопки
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    // Остров с таймером и именем
+                    Surface(
+                        color = Color.Black.copy(alpha = 0.35f),
+                        shape = RoundedCornerShape(percent = 50),
+                        elevation = 0.dp
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
+                        ) {
+                            Icon(painterResource(MR.images.ic_timer), null, tint = Color.White, modifier = Modifier.size(16.dp))
+                            Spacer(Modifier.width(6.dp))
+                            val authorLabel = currentItem.authorDisplayName ?: "Contact"
+                            Text("$authorLabel • ${currentItem.remainingTimeText(now)}", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+
+                    // Острова с кнопками управления
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Surface(
+                            color = Color.Black.copy(alpha = 0.35f),
+                            shape = CircleShape,
+                            modifier = Modifier.size(36.dp)
+                        ) {
+                            IconButton(
+                                onClick = {
+                                    RichHaptics.perform(HapticPattern.TOGGLE_OFF)
+                                    onDeleteStory(currentItem.id)
+                                    if (items.size <= 1) onDismiss()
+                                }
+                            ) {
+                                Icon(painterResource(MR.images.ic_delete), null, tint = Color(0xFFFF5252), modifier = Modifier.size(18.dp))
+                            }
+                        }
+
+                        Surface(
+                            color = Color.Black.copy(alpha = 0.35f),
+                            shape = CircleShape,
+                            modifier = Modifier.size(36.dp)
+                        ) {
+                            IconButton(onClick = onDismiss) {
+                                Icon(painterResource(MR.images.ic_close), null, tint = Color.White, modifier = Modifier.size(18.dp))
+                            }
+                        }
+                    }
+                }
+            }
+
+            // 3. Плавающая подпись снизу (Плавающий M3-контейнер)
+            if (currentItem.caption.isNotBlank()) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .align(Alignment.BottomCenter)
+                        .navigationBarsPadding()
+                        .padding(horizontal = 24.dp, vertical = 24.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Surface(
+                        color = Color.Black.copy(alpha = 0.45f),
+                        shape = RoundedCornerShape(16.dp),
+                        elevation = 0.dp
+                    ) {
+                        Text(
+                            text = currentItem.caption,
+                            color = Color.White,
+                            fontSize = 15.sp,
+                            textAlign = TextAlign.Center,
+                            maxLines = 4,
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)
+                        )
+                    }
+                }
+            }
+        }
+    }
 }
 
 // =====================================================================
