@@ -65,7 +65,6 @@ class MainActivity: FragmentActivity() {
     const val OLD_ANDROID_UI_FLAGS = View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
   }
 
-  private var usbWatcherJob: Job? = null
   private var tempContentCallback: ((ByteArray?) -> Unit)? = null
 
   private val tempMediaLauncher = registerForActivityResult(
@@ -105,29 +104,14 @@ class MainActivity: FragmentActivity() {
     }
   }
 
-  private fun startForegroundUsbWatcher() {
-    if (!UsbPanicDetector.isEnabled()) return
-    usbWatcherJob?.cancel()
-    usbWatcherJob = lifecycleScope.launch {
-      while (isActive) {
-        UsbPanicDetector.triggerIfConnected(applicationContext, chatModel)
-        delay(350)
-      }
-    }
-  }
-
-  private fun stopForegroundUsbWatcher() {
-    usbWatcherJob?.cancel()
-    usbWatcherJob = null
-  }
-
   override fun onCreate(savedInstanceState: Bundle?) {
-    if (UsbPanicDetector.checkStartupUsbBlock(this)) {
-      return
-    }
-
-    mainActivity = WeakReference(this)
     super.onCreate(savedInstanceState)
+    
+    // FLEX SECURITY: Запускаем мониторинг USB Panic. 
+    // Если кабель вставлен и функция включена, метод сам вызовет exitProcess(0)
+    UsbPanicDetector.startMonitoring()
+    
+    mainActivity = WeakReference(this)
 
     StorySyncManager.startBackgroundObserver(chatModel)
     
@@ -247,84 +231,84 @@ class MainActivity: FragmentActivity() {
           }
         },
        LocalStoryVideoPlayer provides { filePath: String, modifier: androidx.compose.ui.Modifier ->
-          androidx.compose.runtime.key(filePath) {
-            androidx.compose.ui.viewinterop.AndroidView(
-              factory = { ctx ->
-                val textureView = android.view.TextureView(ctx)
-                textureView.surfaceTextureListener = object : android.view.TextureView.SurfaceTextureListener {
-                  var mediaPlayer: android.media.MediaPlayer? = null
-                  var realVideoWidth = 0f
-                  var realVideoHeight = 0f
+         androidx.compose.runtime.key(filePath) {
+           androidx.compose.ui.viewinterop.AndroidView(
+             factory = { ctx ->
+               val textureView = android.view.TextureView(ctx)
+               textureView.surfaceTextureListener = object : android.view.TextureView.SurfaceTextureListener {
+                 var mediaPlayer: android.media.MediaPlayer? = null
+                 var realVideoWidth = 0f
+                 var realVideoHeight = 0f
 
-                  // Масштабирование без растягивания (CENTER_CROP)
-                  fun updateTextureMatrix() {
-                    val viewW = textureView.getWidth().toFloat()
-                    val viewH = textureView.getHeight().toFloat()
-                    if (realVideoWidth <= 0f || realVideoHeight <= 0f || viewW <= 0f || viewH <= 0f) return
+                 // Масштабирование без растягивания (CENTER_CROP)
+                 fun updateTextureMatrix() {
+                   val viewW = textureView.getWidth().toFloat()
+                   val viewH = textureView.getHeight().toFloat()
+                   if (realVideoWidth <= 0f || realVideoHeight <= 0f || viewW <= 0f || viewH <= 0f) return
 
-                    val matrix = android.graphics.Matrix()
-                    val viewRatio = viewW / viewH
-                    val videoRatio = realVideoWidth / realVideoHeight
-                    var scaleX = 1f
-                    var scaleY = 1f
+                   val matrix = android.graphics.Matrix()
+                   val viewRatio = viewW / viewH
+                   val videoRatio = realVideoWidth / realVideoHeight
+                   var scaleX = 1f
+                   var scaleY = 1f
 
-                    if (videoRatio > viewRatio) {
-                      scaleX = (viewH * videoRatio) / viewW
-                    } else {
-                      scaleY = (viewW / videoRatio) / viewH
-                    }
+                   if (videoRatio > viewRatio) {
+                     scaleX = (viewH * videoRatio) / viewW
+                   } else {
+                     scaleY = (viewW / videoRatio) / viewH
+                   }
 
-                    matrix.setScale(scaleX, scaleY, viewW / 2f, viewH / 2f)
-                    textureView.setTransform(matrix)
-                  }
+                   matrix.setScale(scaleX, scaleY, viewW / 2f, viewH / 2f)
+                   textureView.setTransform(matrix)
+                 }
 
-                  override fun onSurfaceTextureAvailable(surfaceTexture: android.graphics.SurfaceTexture, width: Int, height: Int) {
-                    try {
-                      val file = File(filePath)
-                      if (!file.exists() || file.length() < 1000L) return
-                      val mp = android.media.MediaPlayer()
-                      mediaPlayer = mp
+                 override fun onSurfaceTextureAvailable(surfaceTexture: android.graphics.SurfaceTexture, width: Int, height: Int) {
+                   try {
+                     val file = File(filePath)
+                     if (!file.exists() || file.length() < 1000L) return
+                     val mp = android.media.MediaPlayer()
+                     mediaPlayer = mp
 
-                      val fis = java.io.FileInputStream(file)
-                      mp.setDataSource(fis.fd)
-                      fis.close()
-                      mp.setSurface(android.view.Surface(surfaceTexture))
-                      mp.isLooping = true
+                     val fis = java.io.FileInputStream(file)
+                     mp.setDataSource(fis.fd)
+                     fis.close()
+                     mp.setSurface(android.view.Surface(surfaceTexture))
+                     mp.isLooping = true
 
-                      mp.setOnVideoSizeChangedListener { _, vWidth, vHeight ->
-                        realVideoWidth = vWidth.toFloat()
-                        realVideoHeight = vHeight.toFloat()
-                        updateTextureMatrix()
-                      }
+                     mp.setOnVideoSizeChangedListener { _, vWidth, vHeight ->
+                       realVideoWidth = vWidth.toFloat()
+                       realVideoHeight = vHeight.toFloat()
+                       updateTextureMatrix()
+                     }
 
-                      mp.setOnPreparedListener { mp.start() }
-                      mp.prepareAsync()
-                    } catch (e: Exception) {
-                      android.util.Log.e("StoryVideo", "TextureView error: ${e.message}")
-                    }
-                  }
+                     mp.setOnPreparedListener { mp.start() }
+                     mp.prepareAsync()
+                   } catch (e: Exception) {
+                     android.util.Log.e("StoryVideo", "TextureView error: ${e.message}")
+                   }
+                 }
 
-                  override fun onSurfaceTextureSizeChanged(surface: android.graphics.SurfaceTexture, width: Int, height: Int) {
-                    updateTextureMatrix()
-                  }
+                 override fun onSurfaceTextureSizeChanged(surface: android.graphics.SurfaceTexture, width: Int, height: Int) {
+                   updateTextureMatrix()
+                 }
 
-                  override fun onSurfaceTextureDestroyed(surface: android.graphics.SurfaceTexture): Boolean {
-                    try {
-                      mediaPlayer?.stop()
-                      mediaPlayer?.release()
-                      mediaPlayer = null
-                    } catch (_: Exception) {}
-                    return true
-                  }
+                 override fun onSurfaceTextureDestroyed(surface: android.graphics.SurfaceTexture): Boolean {
+                   try {
+                     mediaPlayer?.stop()
+                     mediaPlayer?.release()
+                     mediaPlayer = null
+                   } catch (_: Exception) {}
+                   return true
+                 }
 
-                  override fun onSurfaceTextureUpdated(surface: android.graphics.SurfaceTexture) {}
-                }
-                textureView
-              },
-              modifier = modifier
-            )
-          }
-        },
+                 override fun onSurfaceTextureUpdated(surface: android.graphics.SurfaceTexture) {}
+               }
+               textureView
+             },
+             modifier = modifier
+           )
+         }
+       },
         LocalStoryImageViewer provides { filePath: String, modifier: androidx.compose.ui.Modifier ->
           androidx.compose.runtime.key(filePath) {
             androidx.compose.ui.viewinterop.AndroidView(
@@ -353,7 +337,6 @@ class MainActivity: FragmentActivity() {
 
     SimplexApp.context.schedulePeriodicServiceRestartWorker()
     SimplexApp.context.schedulePeriodicWakeUp()
-    UsbPanicDetector.startMonitoring(applicationContext, chatModel)
   }
 
   override fun onNewIntent(intent: Intent) {
@@ -364,15 +347,12 @@ class MainActivity: FragmentActivity() {
 
   override fun onResume() {
     super.onResume()
-    UsbPanicDetector.triggerIfConnected(applicationContext, chatModel)
-    startForegroundUsbWatcher()
     AppLock.recheckAuthState()
     chat.simplex.common.views.chatlist.ByeDpiBridge.isRunning.value = SingBoxService.isRunning
   }
 
   override fun onPause() {
     super.onPause()
-    stopForegroundUsbWatcher()
     AppLock.appWasHidden()
   }
 
@@ -384,8 +364,6 @@ class MainActivity: FragmentActivity() {
 
   override fun onDestroy() {
     super.onDestroy()
-    stopForegroundUsbWatcher()
-    UsbPanicDetector.stopMonitoring(applicationContext)
     SingBoxService.stop()
   }
 
