@@ -1,11 +1,11 @@
 package chat.simplex.common.platform
 
+import android.annotation.SuppressLint
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.os.BatteryManager
-import chat.simplex.app.SimplexApp.Companion.context as appContext
 import kotlin.system.exitProcess
 
 actual object UsbPanicDetector {
@@ -13,14 +13,21 @@ actual object UsbPanicDetector {
     private const val KEY = "panic_on_usb"
     private var isMonitoring = false
 
+    // Нативный способ получить Context в любом Android-модуле без импортов
+    @SuppressLint("PrivateApi")
+    private fun getCtx(): Context {
+        return Class.forName("android.app.ActivityThread")
+            .getMethod("currentApplication")
+            .invoke(null) as Context
+    }
+
     actual fun isEnabled(): Boolean {
-        val ctx = appContext
-        return ctx?.getSharedPreferences(PREFS, Context.MODE_PRIVATE)?.getBoolean(KEY, false) ?: false
+        return getCtx().getSharedPreferences(PREFS, Context.MODE_PRIVATE).getBoolean(KEY, false)
     }
 
     actual fun setEnabled(enabled: Boolean) {
-        val ctx = appContext ?: return
-        val editor = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
+        // Явное указание типа спасает от ошибки "Cannot infer type"
+        val editor: android.content.SharedPreferences.Editor = getCtx().getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
         editor.putBoolean(KEY, enabled)
         editor.apply()
         
@@ -31,11 +38,10 @@ actual object UsbPanicDetector {
     }
 
     private fun checkAndKill() {
-        val ctx = appContext ?: return
         if (!isEnabled()) return
         
         // Считываем статус подключения на самом низком аппаратном уровне
-        val intent = ctx.registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
+        val intent = getCtx().registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
         val plugged = intent?.getIntExtra(BatteryManager.EXTRA_PLUGGED, -1) ?: -1
         
         // BATTERY_PLUGGED_USB означает именно data-кабель (ПК, отладчик или хакерский дамп)
@@ -48,7 +54,6 @@ actual object UsbPanicDetector {
     }
 
     actual fun startMonitoring() {
-        val ctx = appContext ?: return
         if (isMonitoring) return
         isMonitoring = true
         
@@ -66,6 +71,6 @@ actual object UsbPanicDetector {
             addAction(Intent.ACTION_BATTERY_CHANGED)
             addAction("android.hardware.usb.action.USB_STATE")
         }
-        ctx.registerReceiver(receiver, filter)
+        getCtx().registerReceiver(receiver, filter)
     }
 }
