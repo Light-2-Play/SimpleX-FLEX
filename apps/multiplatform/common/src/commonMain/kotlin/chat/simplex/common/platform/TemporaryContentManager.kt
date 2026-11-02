@@ -81,10 +81,20 @@ object TemporaryContentManager {
 
   private val metadataFile: File
     get() = File(getStorageDir(), "metadata.json")
+   
+  private val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
 
   init {
     loadMetadataFromDisk()
     purgeExpired()
+    
+    // Фоновый таймер: проверяет и удаляет истекший контент каждую минуту
+    scope.launch {
+      while (true) {
+        delay(60_000L) 
+        purgeExpired()
+      }
+    }
   }
 
   fun getActiveItemsFor(contactId: Long?): List<TemporaryContentItem> {
@@ -206,7 +216,7 @@ object TemporaryContentManager {
     val ttlMillis = 24L * 60 * 60 * 1000 // 24 часа
     
     val currentItems = _items.value.toMutableList()
-    val expiredItems = currentItems.filter { (now - it.createdAtMillis) > ttlMillis }
+    val expiredItems = currentItems.filter { now >= it.expiresAtMillis }
 
     if (expiredItems.isNotEmpty()) {
       expiredItems.forEach { item ->
