@@ -307,11 +307,11 @@ fun ChatView(
                   )
                 }
               } else {
-                SelectedItemsButtonsToolbar(
+               SelectedItemsButtonsToolbar(
                   chatsCtx = chatsCtx,
                   selectedChatItems = selectedChatItems,
                   chatInfo = chatInfo,
-                  deleteItems = { canDeleteForAll ->
+                  deleteItems = { canDeleteForAll: Boolean ->
                     val itemIds = selectedChatItems.value
                     val questionText =
                       if (!canDeleteForAll || fullDeleteAllowed || chatInfo is ChatInfo.Local)
@@ -1058,7 +1058,7 @@ val chatInfo = remember(chat) { derivedStateOf<ChatInfo?> { chat.value?.chatInfo
                     chatsCtx = chatsCtx,
                     selectedChatItems = selectedChatItems,
                     chatInfo = chatInfo,
-                    deleteItems = { _ ->
+                    deleteItems = { _: Boolean ->
                       val itemIds = selectedChatItems.value
                       val questionText = generalGetString(MR.strings.delete_messages_cannot_be_undone_warning)
                       if (itemIds != null) {
