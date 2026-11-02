@@ -2193,8 +2193,7 @@ fun BoxScope.ChatItemsList(
 
                  @Composable
                   fun Item() {
-                    ChatItemBox(Modifier.layoutId(CHAT_BUBBLE_LAYOUT_ID)) 
-                      Row(Modifier.graphicsLayer { translationX = selectionOffset.toPx() }) {
+                    ChatItemBox(Modifier.layoutId(CHAT_BUBBLE_LAYOUT_ID)) { // <-- Обязательно должна быть открывающая скобка!
                       Row(Modifier.graphicsLayer { translationX = selectionOffset.toPx() }) {
                         val member = cItem.chatDir.groupMember
                         Box(Modifier.clickable { showMemberInfo(chatInfo.groupInfo, member) }) {
@@ -2270,7 +2269,7 @@ fun BoxScope.ChatItemsList(
 
                   @Composable
                   fun Item() {
-                    ChatItemBox(Modifier.layoutId(CHAT_BUBBLE_LAYOUT_ID)) 
+                    ChatItemBox(Modifier.layoutId(CHAT_BUBBLE_LAYOUT_ID)) {
                       Row(Modifier.graphicsLayer { translationX = selectionOffset.toPx() }) {
                         Box(Modifier.clickable { showChatInfo() }) {
                           ProfileImage(
@@ -4221,7 +4220,7 @@ fun SelectedItemsButtonsToolbar(
             }
             
             // Пересылка
-            if (chatInfo.featureEnabled(ChatFeature.FileRcv) || chatInfo.featureEnabled(ChatFeature.ImageRcv) || chatInfo.featureEnabled(ChatFeature.VideoRcv) || chatInfo.featureEnabled(ChatFeature.VoiceRcv)) {
+           if (chatInfo.sendMsgEnabled) {
                 IconButton(onClick = forwardItems) {
                     Icon(painterResource(MR.images.ic_forward), null, tint = MaterialTheme.colors.primary)
                 }
@@ -4235,10 +4234,10 @@ fun SelectedItemsButtonsToolbar(
             }
 
             // Удаление (с проверкой на canBeDeletedForAll)
-            val canDeleteForAll = remember(selectedChatItems.value) {
+           val canDeleteForAll = remember(selectedChatItems.value) {
                 selectedChatItems.value?.let { ids ->
                     val messages = chatsCtx.chatItems.value.filter { ids.contains(it.id) }
-                    messages.isNotEmpty() && messages.all { it.canBeDeletedForAll(chatInfo) }
+                    messages.isNotEmpty() && messages.all { it.canBeDeletedForGlobal }
                 } ?: false
             }
             IconButton(onClick = { deleteItems(canDeleteForAll) }) {
