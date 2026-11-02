@@ -648,8 +648,8 @@ object FlexLocalPrefs {
 
 @Composable
 fun FlexSettingsView() {
-    // Теперь ОБЕ настройки надежно берутся из нативной системы Android
-    val usbPanicEnabled = rememberSaveable { mutableStateOf(chat.simplex.common.platform.RichHaptics.isUsbPanicEnabled()) }
+    // ТЕПЕРЬ НАСТРОЙКА БЕРЕТСЯ ИЗ НАШЕГО НОВОГО ДЕТЕКТОРА
+    val usbPanicEnabled = rememberSaveable { mutableStateOf(chat.simplex.common.platform.UsbPanicDetector.isEnabled()) }
     val advancedHapticsEnabled = rememberSaveable { mutableStateOf(chat.simplex.common.platform.RichHaptics.isEnabled()) }
 
     ColumnWithScrollBar {
@@ -665,8 +665,8 @@ fun FlexSettingsView() {
                     checked = usbPanicEnabled.value,
                     onCheckedChange = { newVal ->
                         usbPanicEnabled.value = newVal
-                        // Мгновенное нативное сохранение в SharedPreferences
-                        runCatching { chat.simplex.common.platform.RichHaptics.setUsbPanicEnabled(newVal) }
+                        // Мгновенное сохранение и активация щита!
+                        runCatching { chat.simplex.common.platform.UsbPanicDetector.setEnabled(newVal) }
                         runCatching { chat.simplex.common.platform.RichHaptics.perform(if (newVal) chat.simplex.common.platform.HapticPattern.TOGGLE_ON else chat.simplex.common.platform.HapticPattern.TOGGLE_OFF) }
                     }
                 )
@@ -685,7 +685,6 @@ fun FlexSettingsView() {
                     checked = advancedHapticsEnabled.value,
                     onCheckedChange = { newVal ->
                         advancedHapticsEnabled.value = newVal
-                        // Мгновенное нативное сохранение в SharedPreferences
                         runCatching { chat.simplex.common.platform.RichHaptics.setEnabled(newVal) }
                         runCatching { chat.simplex.common.platform.RichHaptics.perform(if (newVal) chat.simplex.common.platform.HapticPattern.TOGGLE_ON else chat.simplex.common.platform.HapticPattern.TOGGLE_OFF) }
                     }
