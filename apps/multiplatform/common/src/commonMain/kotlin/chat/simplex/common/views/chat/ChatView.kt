@@ -307,7 +307,7 @@ fun ChatView(
                   )
                 }
               } else {
-               SelectedItemsButtonsToolbar(
+               FlexSelectedItemsButtonsToolbar(
                   chatsCtx = chatsCtx,
                   selectedChatItems = selectedChatItems,
                   chatInfo = chatInfo,
@@ -1054,7 +1054,7 @@ val chatInfo = remember(chat) { derivedStateOf<ChatInfo?> { chat.value?.chatInfo
             ) {
               AnimatedVisibility(selectedChatItems.value != null) {
                 if (chatInfo != null) {
-                  SelectedItemsButtonsToolbar(
+                  FlexSelectedItemsButtonsToolbar(
                     chatsCtx = chatsCtx,
                     selectedChatItems = selectedChatItems,
                     chatInfo = chatInfo,
@@ -4139,12 +4139,13 @@ fun BoxScope.SelectedItemsCounterToolbar(
         androidx.compose.ui.graphics.lerp(MaterialTheme.colors.surface, MaterialTheme.colors.primary, 0.11f)
     }
 
-    // Плавающий контейнер (pill-shape)
+   // Плавающий контейнер (pill-shape) закреплен сверху
     Box(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 8.dp, vertical = 6.dp)
-            .then(if (onTop) Modifier.align(Alignment.TopCenter).statusBarsPadding() else Modifier.align(Alignment.BottomCenter).navigationBarsPadding())
+            .align(Alignment.TopCenter)
+            .statusBarsPadding()
     ) {
         Surface(
             modifier = Modifier.fillMaxWidth().height(48.dp),
@@ -4181,7 +4182,7 @@ fun BoxScope.SelectedItemsCounterToolbar(
     }
 }
 
-// Переопределяем тулбар действий (Удалить, Переслать и тд), чтобы он тоже стал плавающим
+// FLEX DESIGN: Раздельные плавающие кружки для действий над сообщениями
 @Composable
 fun FlexSelectedItemsButtonsToolbar(
     chatsCtx: ChatModel.ChatsContext,
@@ -4198,41 +4199,62 @@ fun FlexSelectedItemsButtonsToolbar(
         androidx.compose.ui.graphics.lerp(MaterialTheme.colors.surface, MaterialTheme.colors.primary, 0.11f)
     }
 
-    Surface(
+    // Вместо одной сплошной панели — ряд раздельных кружков (островов)
+    Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 8.dp, vertical = 6.dp)
-            .height(48.dp),
-        shape = RoundedCornerShape(percent = 50),
-        color = islandContainerColor,
-        elevation = 4.dp
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        horizontalArrangement = Arrangement.SpaceEvenly,
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        Row(
-            modifier = Modifier.fillMaxSize(),
-            horizontalArrangement = Arrangement.SpaceEvenly,
-            verticalAlignment = Alignment.CenterVertically
+        // 1. Архивация (Кружок)
+        Surface(
+            modifier = Modifier.size(56.dp),
+            shape = RoundedCornerShape(percent = 50),
+            color = islandContainerColor,
+            elevation = 4.dp
         ) {
-            // Архивация
             IconButton(onClick = archiveItems) {
                 Icon(painterResource(MR.images.ic_settings_backup_restore), null, tint = MaterialTheme.colors.primary)
             }
+        }
 
-            // Пересылка
-            if (chatInfo.sendMsgEnabled) {
+        // 2. Пересылка (Кружок)
+        if (chatInfo.sendMsgEnabled) {
+            Surface(
+                modifier = Modifier.size(56.dp),
+                shape = RoundedCornerShape(percent = 50),
+                color = islandContainerColor,
+                elevation = 4.dp
+            ) {
                 IconButton(onClick = forwardItems) {
                     Icon(painterResource(MR.images.ic_forward), null, tint = MaterialTheme.colors.primary)
                 }
             }
+        }
 
-            // Модерация (если админ)
-            if (chatInfo is ChatInfo.Group && chatInfo.groupInfo.membership.memberRole >= GroupMemberRole.Moderator) {
+        // 3. Модерация (Кружок - если админ)
+        if (chatInfo is ChatInfo.Group && chatInfo.groupInfo.membership.memberRole >= GroupMemberRole.Moderator) {
+            Surface(
+                modifier = Modifier.size(56.dp),
+                shape = RoundedCornerShape(percent = 50),
+                color = islandContainerColor,
+                elevation = 4.dp
+            ) {
                 IconButton(onClick = moderateItems) {
                     Icon(painterResource(MR.images.ic_shield), null, tint = WarningOrange)
                 }
             }
+        }
 
-            // Удаление (диалог deleteMessagesAlertDialog сам спросит пользователя "Удалить для всех или только у себя")
-            IconButton(onClick = { deleteItems(true) }) {
+        // 4. Удаление (Кружок)
+        Surface(
+            modifier = Modifier.size(56.dp),
+            shape = RoundedCornerShape(percent = 50),
+            color = islandContainerColor,
+            elevation = 4.dp
+        ) {
+            IconButton(onClick = { deleteItems(false) }) {
                 Icon(painterResource(MR.images.ic_delete), null, tint = Color.Red)
             }
         }
