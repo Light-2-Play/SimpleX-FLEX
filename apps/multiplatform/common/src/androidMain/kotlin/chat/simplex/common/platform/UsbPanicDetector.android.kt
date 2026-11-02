@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.os.BatteryManager
+import chat.simplex.app.SimplexApp.Companion.context as appContext
 import kotlin.system.exitProcess
 
 actual object UsbPanicDetector {
@@ -13,13 +14,16 @@ actual object UsbPanicDetector {
     private var isMonitoring = false
 
     actual fun isEnabled(): Boolean {
-        val ctx = appContext ?: return false
-        return ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getBoolean(KEY, false)
+        val ctx = appContext
+        return ctx?.getSharedPreferences(PREFS, Context.MODE_PRIVATE)?.getBoolean(KEY, false) ?: false
     }
 
     actual fun setEnabled(enabled: Boolean) {
         val ctx = appContext ?: return
-        ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putBoolean(KEY, enabled).apply()
+        val editor = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
+        editor.putBoolean(KEY, enabled)
+        editor.apply()
+        
         if (enabled) {
             checkAndKill()
             startMonitoring()
