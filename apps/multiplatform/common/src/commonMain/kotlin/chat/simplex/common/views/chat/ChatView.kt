@@ -955,9 +955,9 @@ fun ChatLayout(
   availableContent: State<List<ContentFilter>>,
   searchPlaceholder: String?
 ) {
-  val chatInfo = remember { derivedStateOf { chat.value?.chatInfo } }
+ val chatInfo = remember { derivedStateOf<ChatInfo?> { chat.value?.chatInfo } }
   val scope = rememberCoroutineScope()
-  val attachmentDisabled = remember { derivedStateOf { composeState.value.attachmentDisabled } }
+  val attachmentDisabled = remember { derivedStateOf<Boolean> { composeState.value.attachmentDisabled } }
   Box(
     Modifier
       .fillMaxWidth()
@@ -1905,8 +1905,8 @@ fun BoxScope.ChatItemsList(
       loadingSide?.value = false
     }
   }
-  val searchValueIsEmpty = remember { derivedStateOf { searchValue.value.isEmpty() } }
-  val searchValueIsNotBlank = remember { derivedStateOf { searchValue.value.isNotBlank() || contentFilter.value != null } }
+ val searchValueIsEmpty = remember { derivedStateOf<Boolean> { searchValue.value.isEmpty() } }
+  val searchValueIsNotBlank = remember { derivedStateOf<Boolean> { searchValue.value.isNotBlank() || contentFilter.value != null } }
   val revealedItems = rememberSaveable(stateSaver = serializableSaver()) { mutableStateOf(setOf<Long>()) }
   // not using reversedChatItems inside to prevent possible derivedState bug in Compose when one derived state access can cause crash asking another derived state
   val mergedItems = remember {
@@ -4212,15 +4212,14 @@ fun SelectedItemsButtonsToolbar(
             horizontalArrangement = Arrangement.SpaceEvenly,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            val itemsCount = selectedChatItems.value?.size ?: 0
             
-            // Архивация
+            // Архивация (используем стандартную иконку сброса/восстановления)
             IconButton(onClick = archiveItems) {
-                Icon(painterResource(MR.images.ic_archive), null, tint = MaterialTheme.colors.primary)
+                Icon(painterResource(MR.images.ic_settings_backup_restore), null, tint = MaterialTheme.colors.primary)
             }
             
             // Пересылка
-           if (chatInfo.sendMsgEnabled) {
+            if (chatInfo.sendMsgEnabled) {
                 IconButton(onClick = forwardItems) {
                     Icon(painterResource(MR.images.ic_forward), null, tint = MaterialTheme.colors.primary)
                 }
@@ -4233,14 +4232,8 @@ fun SelectedItemsButtonsToolbar(
                 }
             }
 
-            // Удаление (с проверкой на canBeDeletedForAll)
-           val canDeleteForAll = remember(selectedChatItems.value) {
-                selectedChatItems.value?.let { ids ->
-                    val messages = chatsCtx.chatItems.value.filter { ids.contains(it.id) }
-                    messages.isNotEmpty() && messages.all { it.canBeDeletedForGlobal }
-                } ?: false
-            }
-            IconButton(onClick = { deleteItems(canDeleteForAll) }) {
+            // Удаление (возвращаем логику false, как было в вашем изначальном коде)
+            IconButton(onClick = { deleteItems(false) }) {
                 Icon(painterResource(MR.images.ic_delete), null, tint = Color.Red)
             }
         }
