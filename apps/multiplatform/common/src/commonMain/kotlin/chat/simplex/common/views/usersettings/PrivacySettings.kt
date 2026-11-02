@@ -34,9 +34,6 @@ import chat.simplex.common.views.onboarding.ReadableText
 import chat.simplex.common.model.ChatModel
 import chat.simplex.common.platform.*
 import kotlinx.coroutines.*
-import chat.simplex.common.platform.HapticPattern
-import chat.simplex.common.platform.RichHaptics
-import chat.simplex.common.platform.UsbPanicDetector
 
 enum class LAMode {
   SYSTEM,
@@ -65,27 +62,6 @@ fun PrivacySettingsView(
     PrivacyDeviceSection(showSettingsModal, setPerformLA)
     SectionDividerSpaced()
 
-    // Секция экстренной защиты (Panic on USB)
-   SectionView("Emergency Security") {
-      var killOnUsbEnabled by remember { mutableStateOf(UsbPanicDetector.isEnabled()) }
-      PreferenceToggleWithIcon(
-        text = "Panic on USB connect",
-        icon = painterResource(MR.images.ic_bolt),
-        iconColor = Color.Red,
-        checked = killOnUsbEnabled,
-        onChange = { enabled ->
-          killOnUsbEnabled = enabled
-          UsbPanicDetector.setEnabled(enabled) // сохраняем значение в SharedPreferences
-          if (enabled) {
-            RichHaptics.perform(HapticPattern.WARNING)
-          } else {
-            RichHaptics.perform(HapticPattern.TOGGLE_OFF)
-          }
-        }
-      )
-    }
-    SectionDividerSpaced()
-
     SectionView(stringResource(MR.strings.settings_section_title_chats)) {
       SettingsPreferenceItem(
         painterResource(MR.images.ic_travel_explore),
@@ -107,7 +83,6 @@ fun PrivacySettingsView(
         appPrefs.privacyMediaBlurRadius.set(it)
       }
     }
-    // ... далее идёт остальной код файла без изменений
 
     val currentUser = chatModel.currentUser.value
     if (currentUser != null && !chatModel.desktopNoUserNoRemote) {
@@ -164,12 +139,6 @@ fun MorePrivacyView(chatModel: ChatModel) {
         stringResource(MR.strings.verify_simplex_names),
         chatModel.controller.appPrefs.privacyVerifySimplexNames
       )
-      // hidden until message signing is user-facing (recipient-only stage)
-//      SettingsPreferenceItem(
-//        painterResource(MR.images.ic_verified),
-//        stringResource(MR.strings.show_signature),
-//        chatModel.controller.appPrefs.privacyShowSignature
-//      )
     }
     SectionDividerSpaced()
 
@@ -222,7 +191,6 @@ fun MorePrivacyView(chatModel: ChatModel) {
           chatModel.controller.appPrefs.privacyDeliveryReceiptsSet.set(true)
           chatModel.currentUser.value = currentUser.copy(sendRcptsContacts = enable)
           if (clearOverrides) {
-            // For loop here is to prevent ConcurrentModificationException that happens with forEach
             withContext(Dispatchers.Main) {
               for (i in 0 until chatModel.chatsContext.chats.size) {
                 val chat = chatModel.chatsContext.chats[i]
@@ -248,7 +216,6 @@ fun MorePrivacyView(chatModel: ChatModel) {
           chatModel.currentUser.value = currentUser.copy(sendRcptsSmallGroups = enable)
           if (clearOverrides) {
             withContext(Dispatchers.Main) {
-              // For loop here is to prevent ConcurrentModificationException that happens with forEach
               for (i in 0 until chatModel.chatsContext.chats.size) {
                 val chat = chatModel.chatsContext.chats[i]
                 if (chat.chatInfo is ChatInfo.Group) {
