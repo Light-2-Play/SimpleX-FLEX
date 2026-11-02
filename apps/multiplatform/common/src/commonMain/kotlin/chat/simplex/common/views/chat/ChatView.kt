@@ -2121,8 +2121,24 @@ fun BoxScope.ChatItemsList(
         Box {
           val voiceWithTransparentBack = cItem.content.msgContent is MsgContent.MCVoice && cItem.content.text.isEmpty() && cItem.quotedItem == null && cItem.meta.itemForwarded == null
           val selectionVisible = selectedChatItems.value != null && cItem.canBeDeletedForSelf
-          val selectionOffset by animateDpAsState(if (selectionVisible && !sent) 4.dp + 22.dp * fontSizeMultiplier else 0.dp)
-          val swipeableOrSelectionModifier = (if (selectionVisible) Modifier else swipeableModifier).graphicsLayer { translationX = selectionOffset.toPx() }
+          
+          // --- FLEX ВЫДЕЛЕНИЕ СООБЩЕНИЙ ---
+          // 1. Убираем сдвиг (сообщение больше не будет прыгать вправо)
+          val selectionOffset by animateDpAsState(0.dp) 
+          
+          // 2. Создаем красивую заливку, если сообщение выделено
+          val selectionBgColor = if (selectionVisible && selectedChatItems.value?.contains(cItem.id) == true) {
+              MaterialTheme.colors.primary.copy(alpha = 0.15f)
+          } else {
+              Color.Transparent
+          }
+
+          // 3. Применяем заливку и скругление ко всему блоку сообщения
+          val swipeableOrSelectionModifier = (if (selectionVisible) Modifier else swipeableModifier)
+              .background(selectionBgColor, RoundedCornerShape(24.dp))
+              .clip(RoundedCornerShape(24.dp))
+          // --------------------------------
+
           if (chatInfo is ChatInfo.Group) {
             if (cItem.chatDir is CIDirection.GroupRcv) {
               if (showAvatar) {
@@ -2175,12 +2191,10 @@ fun BoxScope.ChatItemsList(
                     }
                   }
 
-                  @Composable
+                 @Composable
                   fun Item() {
-                    ChatItemBox(Modifier.layoutId(CHAT_BUBBLE_LAYOUT_ID)) {
-                      androidx.compose.animation.AnimatedVisibility(selectionVisible, enter = fadeIn(), exit = fadeOut()) {
-                        SelectedListItem(Modifier, cItem.id, selectedChatItems)
-                      }
+                    ChatItemBox(Modifier.layoutId(CHAT_BUBBLE_LAYOUT_ID)) 
+                      Row(Modifier.graphicsLayer { translationX = selectionOffset.toPx() }) {
                       Row(Modifier.graphicsLayer { translationX = selectionOffset.toPx() }) {
                         val member = cItem.chatDir.groupMember
                         Box(Modifier.clickable { showMemberInfo(chatInfo.groupInfo, member) }) {
@@ -2256,10 +2270,7 @@ fun BoxScope.ChatItemsList(
 
                   @Composable
                   fun Item() {
-                    ChatItemBox(Modifier.layoutId(CHAT_BUBBLE_LAYOUT_ID)) {
-                      androidx.compose.animation.AnimatedVisibility(selectionVisible, enter = fadeIn(), exit = fadeOut()) {
-                        SelectedListItem(Modifier, cItem.id, selectedChatItems)
-                      }
+                    ChatItemBox(Modifier.layoutId(CHAT_BUBBLE_LAYOUT_ID)) 
                       Row(Modifier.graphicsLayer { translationX = selectionOffset.toPx() }) {
                         Box(Modifier.clickable { showChatInfo() }) {
                           ProfileImage(
@@ -4110,4 +4121,129 @@ enum class ContentFilter(
 
     val initialList: List<ContentFilter> = listOf(ContentFilter.Images, ContentFilter.Files, ContentFilter.Links)
   }
+}
+
+// ====================================================================================
+// FLEX DESIGN: ПЛАВАЮЩАЯ ПАНЕЛЬ ВЫДЕЛЕНИЯ СООБЩЕНИЯ (MATERIAL 3 EXPRESSIVE)
+// ====================================================================================
+@Composable
+fun BoxScope.SelectedItemsCounterToolbar(
+    selectedChatItems: MutableState<Set<Long>?>,
+    onTop: Boolean
+) {
+    val count = selectedChatItems.value?.size ?: 0
+    if (count == 0) return
+
+    val islandContainerColor = if (MaterialTheme.colors.isLight) {
+        androidx.compose.ui.graphics.lerp(MaterialTheme.colors.surface, MaterialTheme.colors.primary, 0.07f)
+    } else {
+        androidx.compose.ui.graphics.lerp(MaterialTheme.colors.surface, MaterialTheme.colors.primary, 0.11f)
+    }
+
+    // Плавающий контейнер (pill-shape)
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 8.dp, vertical = 6.dp)
+            .then(if (onTop) Modifier.align(Alignment.TopCenter).statusBarsPadding() else Modifier.align(Alignment.BottomCenter).navigationBarsPadding())
+    ) {
+        Surface(
+            modifier = Modifier.fillMaxWidth().height(48.dp),
+            shape = RoundedCornerShape(percent = 50),
+            color = islandContainerColor,
+            elevation = 4.dp
+        ) {
+            Row(
+                modifier = Modifier.fillMaxSize().padding(horizontal = 12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                // Кнопка закрытия
+                IconButton(onClick = { selectedChatItems.value = null }) {
+                    Icon(
+                        painterResource(MR.images.ic_close),
+                        contentDescription = "Cancel",
+                        tint = MaterialTheme.colors.primary
+                    )
+                }
+
+                // Счетчик выбранных
+                Text(
+                    text = "$count selected",
+                    style = MaterialTheme.typography.subtitle1,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colors.onSurface
+                )
+
+                // Пустая коробка для баланса (вместо крестика с другой стороны)
+                Spacer(Modifier.size(48.dp))
+            }
+        }
+    }
+}
+
+// Переопределяем тулбар действий (Удалить, Переслать и тд), чтобы он тоже стал плавающим
+@Composable
+fun SelectedItemsButtonsToolbar(
+    chatsCtx: ChatModel.ChatsContext,
+    selectedChatItems: MutableState<Set<Long>?>,
+    chatInfo: ChatInfo,
+    deleteItems: (Boolean) -> Unit,
+    archiveItems: () -> Unit,
+    moderateItems: () -> Unit,
+    forwardItems: () -> Unit
+) {
+    val islandContainerColor = if (MaterialTheme.colors.isLight) {
+        androidx.compose.ui.graphics.lerp(MaterialTheme.colors.surface, MaterialTheme.colors.primary, 0.07f)
+    } else {
+        androidx.compose.ui.graphics.lerp(MaterialTheme.colors.surface, MaterialTheme.colors.primary, 0.11f)
+    }
+
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 8.dp, vertical = 6.dp)
+            .height(48.dp),
+        shape = RoundedCornerShape(percent = 50),
+        color = islandContainerColor,
+        elevation = 4.dp
+    ) {
+        Row(
+            modifier = Modifier.fillMaxSize(),
+            horizontalArrangement = Arrangement.SpaceEvenly,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            val itemsCount = selectedChatItems.value?.size ?: 0
+            
+            // Архивация
+            IconButton(onClick = archiveItems) {
+                Icon(painterResource(MR.images.ic_archive), null, tint = MaterialTheme.colors.primary)
+            }
+            
+            // Пересылка
+            if (chatInfo.featureEnabled(ChatFeature.FileRcv) || chatInfo.featureEnabled(ChatFeature.ImageRcv) || chatInfo.featureEnabled(ChatFeature.VideoRcv) || chatInfo.featureEnabled(ChatFeature.VoiceRcv)) {
+                IconButton(onClick = forwardItems) {
+                    Icon(painterResource(MR.images.ic_forward), null, tint = MaterialTheme.colors.primary)
+                }
+            }
+
+            // Модерация (если админ)
+            if (chatInfo is ChatInfo.Group && chatInfo.groupInfo.membership.memberRole >= GroupMemberRole.Moderator) {
+                IconButton(onClick = moderateItems) {
+                    Icon(painterResource(MR.images.ic_shield), null, tint = WarningOrange)
+                }
+            }
+
+            // Удаление (с проверкой на canBeDeletedForAll)
+            val canDeleteForAll = remember(selectedChatItems.value) {
+                selectedChatItems.value?.let { ids ->
+                    val messages = chatsCtx.chatItems.value.filter { ids.contains(it.id) }
+                    messages.isNotEmpty() && messages.all { it.canBeDeletedForAll(chatInfo) }
+                } ?: false
+            }
+            IconButton(onClick = { deleteItems(canDeleteForAll) }) {
+                Icon(painterResource(MR.images.ic_delete), null, tint = Color.Red)
+            }
+        }
+    }
 }
