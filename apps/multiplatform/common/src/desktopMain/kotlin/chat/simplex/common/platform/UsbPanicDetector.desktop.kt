@@ -9,3 +9,5 @@ actual object UsbPanicDetector {
   }
   actual fun checkStartupUsbBlock(activity: Any): Boolean = false
 }
+
+actual fun startMonitoring() {}
