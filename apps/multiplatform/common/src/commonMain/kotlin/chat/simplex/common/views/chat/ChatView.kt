@@ -4183,7 +4183,7 @@ fun BoxScope.SelectedItemsCounterToolbar(
 
 // Переопределяем тулбар действий (Удалить, Переслать и тд), чтобы он тоже стал плавающим
 @Composable
-fun SelectedItemsButtonsToolbar(
+fun FlexSelectedItemsButtonsToolbar(
     chatsCtx: ChatModel.ChatsContext,
     selectedChatItems: MutableState<Set<Long>?>,
     chatInfo: ChatInfo,
