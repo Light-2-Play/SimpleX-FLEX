@@ -176,18 +176,17 @@ object StorySyncManager {
     }
   }
 
- // ИСПРАВЛЕНИЕ: Удаляем спам-сообщения из локальной БД навсегда
-  private fun removeStoryItemFromChat(chatModel: ChatModel, chat: Chat, item: ChatItem) {
+private fun removeStoryItemFromChat(chatModel: ChatModel, chat: Chat, item: ChatItem) {
     scope.launch {
       withContext(Dispatchers.IO) {
         try {
-          // 1. Физическое удаление из локальной базы данных (чтобы они больше никогда не появлялись)
+          // Fix: SimpleX core uses plural 'apiDeleteMessages' taking a List of IDs
           val cInfo = chat.chatInfo
-          chatModel.controller.apiDeleteMessage(
-            rh = chat.remoteHostId,
-            type = cInfo.chatType,
-            id = cInfo.apiId,
-            msgId = item.id
+          chatModel.controller.apiDeleteMessages(
+            chat.remoteHostId,
+            cInfo.chatType,
+            cInfo.apiId,
+            listOf(item.id)
           )
         } catch (e: Exception) {
           Log.e(TAG, "Failed to delete technical story item from DB: ${e.message}")
@@ -195,7 +194,7 @@ object StorySyncManager {
       }
       withContext(Dispatchers.Main) {
         try { 
-          // 2. Мгновенное удаление из UI в текущей сессии
+          // Instantly remove from the active UI session
           chatModel.chatsContext.removeChatItem(chat.remoteHostId, chat.chatInfo, item) 
         } catch (_: Exception) {}
       }
