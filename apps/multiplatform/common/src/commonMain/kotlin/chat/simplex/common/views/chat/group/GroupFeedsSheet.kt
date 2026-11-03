@@ -29,6 +29,7 @@ import chat.simplex.common.views.helpers.AlertManager
 import chat.simplex.res.MR
 import dev.icerock.moko.resources.compose.painterResource
 import kotlinx.serialization.encodeToString
+import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.json.Json
 import java.io.File
 
@@ -42,18 +43,25 @@ object FeedStorage {
 
   private fun loadAll(): MutableMap<Long, MutableList<FeedSubscription>> {
     cachedFeeds?.let { return it }
-    val map = try {
+    // Строго указываем возвращаемый тип для try-catch, чтобы избежать 'Any'
+    val map: MutableMap<Long, MutableList<FeedSubscription>> = try {
       if (feedsFile.exists()) {
         val content = feedsFile.readText()
-        json.decodeFromString>>(content)
-          .mapValues { it.value.toMutableList() }
-          .toMutableMap()
+        // Явное указание типа переменной избавляет нас от угловых скобок в вызове функции
+        val parsed: Map<Long, List<FeedSubscription>> = json.decodeFromString(content)
+        
+        val result = mutableMapOf<Long, MutableList<FeedSubscription>>()
+        for ((key, value) in parsed) {
+            result[key] = value.toMutableList()
+        }
+        result
       } else {
-        mutableMapOf()
+        // Явно указываем типы для пустого словаря
+        mutableMapOf<Long, MutableList<FeedSubscription>>()
       }
     } catch (e: Exception) {
       Log.e("FeedStorage", "Error loading feeds: ${e.message}")
-      mutableMapOf()
+      mutableMapOf<Long, MutableList<FeedSubscription>>()
     }
     cachedFeeds = map
     return map
@@ -62,7 +70,9 @@ object FeedStorage {
   private fun saveAll() {
     try {
       val map = cachedFeeds ?: return
-      val content = json.encodeToString(map.toMap())
+      // Явно сохраняем в базовый Map перед сериализацией
+      val contentToSave: Map<Long, List<FeedSubscription>> = map
+      val content = json.encodeToString(contentToSave)
       feedsFile.writeText(content)
     } catch (e: Exception) {
       Log.e("FeedStorage", "Error saving feeds: ${e.message}")
@@ -77,7 +87,7 @@ object FeedStorage {
   @Synchronized
   fun addFeed(groupId: Long, feed: FeedSubscription): Boolean {
     val map = loadAll()
-    val list = map.getOrPut(groupId) { mutableListOf() }
+    val list = map.getOrPut(groupId) { mutableListOf<FeedSubscription>() }
     if (list.size >= MAX_FEEDS_PER_GROUP) {
       return false
     }
@@ -106,7 +116,6 @@ object FeedStorage {
     }
   }
 }
-
 // =====================================================================
 // FULL-SCREEN MATERIAL 3 EXPRESSIVE VIEW
 // =====================================================================
