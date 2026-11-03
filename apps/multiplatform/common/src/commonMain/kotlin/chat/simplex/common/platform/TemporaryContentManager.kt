@@ -103,6 +103,61 @@ object TemporaryContentManager {
     }
   }
 
+fun addContentFromFilePath(
+    sourcePath: String,
+    mediaType: TemporaryMediaType,
+    duration: TemporaryDuration,
+    caption: String,
+    audience: TemporaryAudience
+  ): TemporaryContentItem? {
+    return try {
+      val sourceFile = File(sourcePath)
+      if (!sourceFile.exists()) return null
+
+      val dir = getStorageDir()
+      val ext = if (mediaType == TemporaryMediaType.VIDEO) "mp4" else "jpg"
+      val id = "my_${System.currentTimeMillis()}"
+      val destFile = File(dir, "$id.$ext")
+
+      // Копируем файл из временного кэша в папку историй и удаляем исходник
+      sourceFile.copyTo(destFile, overwrite = true)
+      sourceFile.delete()
+
+      if (mediaType == TemporaryMediaType.VIDEO) {
+        val lastThumb = File(dir, "last_video_thumb.jpg")
+        if (lastThumb.exists()) {
+          val storyThumb = File("${destFile.absolutePath}_thumb.jpg")
+          lastThumb.copyTo(storyThumb, overwrite = true)
+          lastThumb.delete()
+        }
+      }
+
+      val now = System.currentTimeMillis()
+      val expiresAt = now + (duration.hours * 3600_000f).toLong()
+      val item = TemporaryContentItem(
+        id = id,
+        authorContactId = null,
+        authorDisplayName = null,
+        filePath = destFile.absolutePath,
+        mediaType = mediaType,
+        createdAtMillis = now,
+        durationHours = duration.hours,
+        expiresAtMillis = expiresAt,
+        caption = caption,
+        audience = audience
+      )
+
+      val currentList = _items.value.toMutableList()
+      currentList.add(0, item)
+      _items.value = currentList.toList()
+      saveMetadataToDisk()
+      item
+    } catch (e: Exception) {
+      Log.e(TAG, "addContentFromFilePath error: ${e.message}")
+      null
+    }
+  }
+  
   fun getActiveItemsFor(contactId: Long?): List<TemporaryContentItem> {
     val now = System.currentTimeMillis()
     return _items.value.filter { it.authorContactId == contactId && it.expiresAtMillis > now }
