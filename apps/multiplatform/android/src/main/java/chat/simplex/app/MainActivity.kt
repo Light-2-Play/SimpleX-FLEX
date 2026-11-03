@@ -68,61 +68,80 @@ class MainActivity: FragmentActivity() {
   // 1. Меняем ByteArray на String (путь к файлу)
   private var tempContentCallback: ((String?) -> Unit)? = null
 
-  // 2. Обновляем лаунчер для потокового копирования
+// 2. Обновляем лаунчер для асинхронного копирования (защита от фризов и вылетов)
   private val tempMediaLauncher = registerForActivityResult(
     androidx.activity.result.contract.ActivityResultContracts.GetContent()
   ) { uri: Uri? ->
     val cb = tempContentCallback
     tempContentCallback = null
+    
     if (uri != null && cb != null) {
-      try {
-        val isVideo = contentResolver.getType(uri)?.startsWith("video/") == true
-        if (isVideo) {
-          val retriever = MediaMetadataRetriever()
-          try {
-            retriever.setDataSource(applicationContext, uri)
-            
-            // Проверка лимита в 60 секунд
-            val durationStr = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)
-            val durationMs = durationStr?.toLongOrNull() ?: 0L
-            if (durationMs > 61_000L) {
-              chat.simplex.common.views.helpers.AlertManager.shared.showAlertMsg(
-                "Видео слишком длинное",
-                "Максимальная длина видео для Temporary Content — 60 секунд."
-              )
-              cb(null)
-              return@registerForActivityResult
-            }
+      // ИСПРАВЛЕНИЕ: Переносим тяжелое копирование 4K видео в фоновый поток
+      lifecycleScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+        try {
+          val isVideo = contentResolver.getType(uri)?.startsWith("video/") == true
+          
+          // 1. Проверяем видео ДО того, как начать его копировать
+          if (isVideo) {
+            val retriever = MediaMetadataRetriever()
+            try {
+              // Надежный способ чтения видео по URI в современных Android
+              contentResolver.openFileDescriptor(uri, "r")?.use { pfd ->
+                  retriever.setDataSource(pfd.fileDescriptor)
+              }
+              
+              val durationStr = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)
+              val durationMs = durationStr?.toLongOrNull() ?: 0L
+              
+              if (durationMs > 61_000L) {
+                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                  chat.simplex.common.views.helpers.AlertManager.shared.showAlertMsg(
+                    "Video too long",
+                    "The maximum video length for Temporary Content is 60 seconds."
+                  )
+                  cb(null)
+                }
+                return@launch
+              }
 
-            // Извлечение превью
-            val frame = retriever.getFrameAtTime(0)
-            if (frame != null) {
-              val thumbDir = File(getAppFilePath(""), "temporary_content")
-              if (!thumbDir.exists()) thumbDir.mkdirs()
-              val thumbFile = File(thumbDir, "last_video_thumb.jpg")
-              val stream = java.io.ByteArrayOutputStream()
-              frame.compress(android.graphics.Bitmap.CompressFormat.JPEG, 75, stream)
-              thumbFile.writeBytes(stream.toByteArray())
+              // Извлекаем и сохраняем превью
+              val frame = retriever.getFrameAtTime(0)
+              if (frame != null) {
+                val thumbDir = File(getAppFilePath(""), "temporary_content")
+                if (!thumbDir.exists()) thumbDir.mkdirs()
+                val thumbFile = File(thumbDir, "last_video_thumb.jpg")
+                val stream = java.io.ByteArrayOutputStream()
+                frame.compress(android.graphics.Bitmap.CompressFormat.JPEG, 75, stream)
+                thumbFile.writeBytes(stream.toByteArray())
+              }
+            } catch (e: Exception) {
+              android.util.Log.e("MainActivity", "Video processing failed: ${e.message}")
+            } finally {
+              retriever.release()
             }
-          } catch (e: Exception) {
-            android.util.Log.e("MainActivity", "Video processing failed: ${e.message}")
-          } finally {
-            retriever.release()
           }
-        }
-        
-        // ИСПРАВЛЕНИЕ УТЕЧКИ ПАМЯТИ: Потоковое копирование во временный файл
-        val tempFile = File(cacheDir, "temp_upload_${System.currentTimeMillis()}")
-        contentResolver.openInputStream(uri)?.use { input ->
+
+          // 2. Копируем файл во временный кэш
+          val tempFile = File(cacheDir, "temp_upload_${System.currentTimeMillis()}")
+          contentResolver.openInputStream(uri)?.use { input ->
             tempFile.outputStream().use { output ->
-                input.copyTo(output)
+              input.copyTo(output)
             }
+          }
+
+          if (!tempFile.exists() || tempFile.length() == 0L) {
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) { cb(null) }
+            return@launch
+          }
+          
+          // 3. Возвращаем путь к готовому файлу в UI поток
+          kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+            cb(tempFile.absolutePath)
+          }
+        } catch (e: Exception) {
+          android.util.Log.e("MainActivity", "Copying failed: ${e.message}")
+          kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) { cb(null) }
         }
-        
-        // Передаем путь к файлу на диске, а не гигабайты в оперативную память
-        cb(tempFile.absolutePath)
-      } catch (_: Exception) {
-        cb(null)
       }
     } else {
       cb?.invoke(null)
