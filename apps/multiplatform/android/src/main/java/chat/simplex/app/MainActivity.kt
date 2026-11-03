@@ -65,8 +65,10 @@ class MainActivity: FragmentActivity() {
     const val OLD_ANDROID_UI_FLAGS = View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
   }
 
-  private var tempContentCallback: ((ByteArray?) -> Unit)? = null
+  // 1. Меняем ByteArray на String (путь к файлу)
+  private var tempContentCallback: ((String?) -> Unit)? = null
 
+  // 2. Обновляем лаунчер для потокового копирования
   private val tempMediaLauncher = registerForActivityResult(
     androidx.activity.result.contract.ActivityResultContracts.GetContent()
   ) { uri: Uri? ->
@@ -75,13 +77,12 @@ class MainActivity: FragmentActivity() {
     if (uri != null && cb != null) {
       try {
         val isVideo = contentResolver.getType(uri)?.startsWith("video/") == true
-        
         if (isVideo) {
           val retriever = MediaMetadataRetriever()
           try {
             retriever.setDataSource(applicationContext, uri)
             
-            // 1. ФИНАЛЬНЫЙ ШТРИХ: ПРОВЕРКА ЛИМИТА 60 СЕКУНД (с запасом 1 сек на округление)
+            // Проверка лимита в 60 секунд
             val durationStr = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)
             val durationMs = durationStr?.toLongOrNull() ?: 0L
             if (durationMs > 61_000L) {
@@ -89,11 +90,11 @@ class MainActivity: FragmentActivity() {
                 "Видео слишком длинное",
                 "Максимальная длина видео для Temporary Content — 60 секунд."
               )
-              cb(null) // Отменяем загрузку
+              cb(null)
               return@registerForActivityResult
             }
 
-            // 2. ИЗВЛЕКАЕМ ПРЕВЬЮ
+            // Извлечение превью
             val frame = retriever.getFrameAtTime(0)
             if (frame != null) {
               val thumbDir = File(getAppFilePath(""), "temporary_content")
@@ -110,9 +111,16 @@ class MainActivity: FragmentActivity() {
           }
         }
         
-        // Читаем байты ТОЛЬКО если проверка пройдена (или это фото)
-        val bytes = contentResolver.openInputStream(uri)?.use { it.readBytes() }
-        cb(bytes)
+        // ИСПРАВЛЕНИЕ УТЕЧКИ ПАМЯТИ: Потоковое копирование во временный файл
+        val tempFile = File(cacheDir, "temp_upload_${System.currentTimeMillis()}")
+        contentResolver.openInputStream(uri)?.use { input ->
+            tempFile.outputStream().use { output ->
+                input.copyTo(output)
+            }
+        }
+        
+        // Передаем путь к файлу на диске, а не гигабайты в оперативную память
+        cb(tempFile.absolutePath)
       } catch (_: Exception) {
         cb(null)
       }
@@ -120,7 +128,7 @@ class MainActivity: FragmentActivity() {
       cb?.invoke(null)
     }
   }
-
+  
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
     
