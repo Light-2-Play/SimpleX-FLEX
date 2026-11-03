@@ -44,7 +44,7 @@ val LocalStoryVideoPlayer = compositionLocalOf<(@Composable (filePath: String, m
 val LocalStoryImageViewer = compositionLocalOf<(@Composable (filePath: String, modifier: Modifier) -> Unit)?> { null }
 
 object TemporaryContentPickerBridge {
-  var pickMedia: ((TemporaryMediaType, (ByteArray?) -> Unit) -> Unit)? = null
+    var pickMedia: ((TemporaryMediaType, (ByteArray?) -> Unit) -> Unit)? = null
 }
 
 // =====================================================================
@@ -62,7 +62,6 @@ fun TemporaryContentProfileSection() {
     }
 
     LaunchedEffect(Unit) {
-        // ИСПРАВЛЕНИЕ: Очищаем память и грузим истории ТОЛЬКО текущего профиля
         TemporaryContentManager.reload()
         StorySyncManager.syncAllStoriesNow(chatModel)
         while (true) {
@@ -76,6 +75,19 @@ fun TemporaryContentProfileSection() {
     val primary = MaterialTheme.colors.primary
     val cardBg = if (isLight) lerp(Color.White, primary, 0.055f) else lerp(MaterialTheme.colors.surface, primary, 0.12f)
     val borderColor = primary.copy(alpha = if (isLight) 0.16f else 0.24f)
+
+    val handleAddClick = {
+        if (myStories.size >= 4) {
+            RichHaptics.perform(HapticPattern.WARNING)
+            AlertManager.shared.showAlertMsg(
+                "Лимит исчерпан",
+                "Вы можете публиковать максимум 4 элемента Temporary Content одновременно."
+            )
+        } else {
+            RichHaptics.perform(HapticPattern.CLICK)
+            showAddDialog = true
+        }
+    }
 
     Surface(
         shape = RoundedCornerShape(26.dp),
@@ -134,10 +146,7 @@ fun TemporaryContentProfileSection() {
                     color = primary,
                     modifier = Modifier
                         .clip(CircleShape)
-                        .clickable {
-                            RichHaptics.perform(HapticPattern.CLICK)
-                            showAddDialog = true
-                        }
+                        .clickable(onClick = handleAddClick)
                 ) {
                     Row(
                         modifier = Modifier.padding(horizontal = 14.dp, vertical = 7.dp),
@@ -168,10 +177,7 @@ fun TemporaryContentProfileSection() {
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 item {
-                    AddStoryCardTile(onClick = {
-                        RichHaptics.perform(HapticPattern.CLICK)
-                        showAddDialog = true
-                    })
+                    AddStoryCardTile(onClick = handleAddClick)
                 }
 
                 itemsIndexed(myStories, key = { _, item -> item.id }) { index, item ->
@@ -187,7 +193,7 @@ fun TemporaryContentProfileSection() {
             }
         }
     }
-
+    
     if (showAddDialog) {
         AddTemporaryContentDialog(
             onDismiss = { showAddDialog = false },
@@ -206,7 +212,6 @@ fun TemporaryContentProfileSection() {
             initialIndex = startIdx.coerceIn(0, myStories.lastIndex),
             onDismiss = { viewingStartIndex = null },
             onDeleteStory = { idToDelete ->
-                // ИСПРАВЛЕНИЕ СПАМА: Бродкастим удаление только если это наша история
                 val isMyStory = TemporaryContentManager.items.value.find { it.id == idToDelete }?.authorContactId == null
                 TemporaryContentManager.removeContent(idToDelete)
                 if (isMyStory) {
@@ -869,7 +874,6 @@ fun AllStoriesFeedView(close: () -> Unit) {
     val scope = rememberCoroutineScope()
 
     LaunchedEffect(Unit) {
-        // ИСПРАВЛЕНИЕ: Очищаем память и грузим истории ТОЛЬКО текущего профиля
         TemporaryContentManager.reload()
         StorySyncManager.syncAllStoriesNow(chatModel)
         while (true) {
@@ -886,6 +890,19 @@ fun AllStoriesFeedView(close: () -> Unit) {
         .sortedByDescending { it.last().createdAtMillis }
 
     val primary = MaterialTheme.colors.primary
+
+    val handleAddClick = {
+        if (myStories.size >= 4) {
+            RichHaptics.perform(HapticPattern.WARNING)
+            AlertManager.shared.showAlertMsg(
+                "Лимит исчерпан",
+                "Вы можете публиковать максимум 4 элемента Temporary Content одновременно."
+            )
+        } else {
+            RichHaptics.perform(HapticPattern.CLICK)
+            showAddDialog = true
+        }
+    }
 
     ModalView(close = close, cardScreen = true) {
         ColumnWithScrollBar {
@@ -958,7 +975,7 @@ fun AllStoriesFeedView(close: () -> Unit) {
                         if (myStories.isNotEmpty()) {
                             viewingStories = myStories
                         } else {
-                            showAddDialog = true
+                            handleAddClick()
                         }
                     }.padding(16.dp),
                     verticalAlignment = Alignment.CenterVertically
@@ -994,7 +1011,7 @@ fun AllStoriesFeedView(close: () -> Unit) {
                     }
                     if (myStories.isNotEmpty()) {
                         IconButton(
-                            onClick = { showAddDialog = true },
+                            onClick = handleAddClick,
                             modifier = Modifier.background(primary.copy(alpha = 0.1f), CircleShape)
                         ) {
                             Icon(painterResource(MR.images.ic_add), null, tint = primary)
@@ -1102,7 +1119,6 @@ fun AllStoriesFeedView(close: () -> Unit) {
             initialIndex = 0,
             onDismiss = { viewingStories = null },
             onDeleteStory = { idToDelete -> 
-                // ИСПРАВЛЕНИЕ СПАМА: Бродкастим удаление только если это наша история
                 val isMyStory = TemporaryContentManager.items.value.find { it.id == idToDelete }?.authorContactId == null
                 TemporaryContentManager.removeContent(idToDelete)
                 if (isMyStory) {
