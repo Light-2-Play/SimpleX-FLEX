@@ -74,13 +74,26 @@ class MainActivity: FragmentActivity() {
     tempContentCallback = null
     if (uri != null && cb != null) {
       try {
-        val bytes = contentResolver.openInputStream(uri)?.use { it.readBytes() }
-
         val isVideo = contentResolver.getType(uri)?.startsWith("video/") == true
+        
         if (isVideo) {
+          val retriever = MediaMetadataRetriever()
           try {
-            val retriever = MediaMetadataRetriever()
             retriever.setDataSource(applicationContext, uri)
+            
+            // 1. ФИНАЛЬНЫЙ ШТРИХ: ПРОВЕРКА ЛИМИТА 60 СЕКУНД (с запасом 1 сек на округление)
+            val durationStr = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)
+            val durationMs = durationStr?.toLongOrNull() ?: 0L
+            if (durationMs > 61_000L) {
+              chat.simplex.common.views.helpers.AlertManager.shared.showAlertMsg(
+                "Видео слишком длинное",
+                "Максимальная длина видео для Temporary Content — 60 секунд."
+              )
+              cb(null) // Отменяем загрузку
+              return@registerForActivityResult
+            }
+
+            // 2. ИЗВЛЕКАЕМ ПРЕВЬЮ
             val frame = retriever.getFrameAtTime(0)
             if (frame != null) {
               val thumbDir = File(getAppFilePath(""), "temporary_content")
@@ -90,11 +103,15 @@ class MainActivity: FragmentActivity() {
               frame.compress(android.graphics.Bitmap.CompressFormat.JPEG, 75, stream)
               thumbFile.writeBytes(stream.toByteArray())
             }
-            retriever.release()
           } catch (e: Exception) {
-            Log.e("MainActivity", "Failed to extract video thumbnail: ${e.message}")
+            android.util.Log.e("MainActivity", "Video processing failed: ${e.message}")
+          } finally {
+            retriever.release()
           }
         }
+        
+        // Читаем байты ТОЛЬКО если проверка пройдена (или это фото)
+        val bytes = contentResolver.openInputStream(uri)?.use { it.readBytes() }
         cb(bytes)
       } catch (_: Exception) {
         cb(null)
