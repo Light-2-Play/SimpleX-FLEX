@@ -176,10 +176,28 @@ object StorySyncManager {
     }
   }
 
+ // ИСПРАВЛЕНИЕ: Удаляем спам-сообщения из локальной БД навсегда
   private fun removeStoryItemFromChat(chatModel: ChatModel, chat: Chat, item: ChatItem) {
     scope.launch {
+      withContext(Dispatchers.IO) {
+        try {
+          // 1. Физическое удаление из локальной базы данных (чтобы они больше никогда не появлялись)
+          val cInfo = chat.chatInfo
+          chatModel.controller.apiDeleteMessage(
+            rh = chat.remoteHostId,
+            type = cInfo.chatType,
+            id = cInfo.apiId,
+            msgId = item.id
+          )
+        } catch (e: Exception) {
+          Log.e(TAG, "Failed to delete technical story item from DB: ${e.message}")
+        }
+      }
       withContext(Dispatchers.Main) {
-        try { chatModel.chatsContext.removeChatItem(chat.remoteHostId, chat.chatInfo, item) } catch (_: Exception) {}
+        try { 
+          // 2. Мгновенное удаление из UI в текущей сессии
+          chatModel.chatsContext.removeChatItem(chat.remoteHostId, chat.chatInfo, item) 
+        } catch (_: Exception) {}
       }
     }
   }
