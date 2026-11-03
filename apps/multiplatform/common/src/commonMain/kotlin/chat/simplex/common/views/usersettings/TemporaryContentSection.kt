@@ -44,7 +44,6 @@ val LocalStoryVideoPlayer = compositionLocalOf<(@Composable (filePath: String, m
 val LocalStoryImageViewer = compositionLocalOf<(@Composable (filePath: String, modifier: Modifier) -> Unit)?> { null }
 
 object TemporaryContentPickerBridge {
-  // Меняем ByteArray на String
   var pickMedia: ((TemporaryMediaType, (String?) -> Unit) -> Unit)? = null
 }
 
@@ -345,7 +344,7 @@ private fun TemporaryStoryTile(
 }
 
 // =====================================================================
-// 3. ADD DIALOG WITH UPLOAD PROGRESS
+// 3. ДИАЛОГ ДОБАВЛЕНИЯ С ОТОБРАЖЕНИЕМ ПРОЦЕНТОВ ОТПРАВКИ
 // =====================================================================
 @Composable
 private fun AddTemporaryContentDialog(
@@ -677,6 +676,7 @@ private fun AddTemporaryContentDialog(
     }
   }
 }
+
 // =====================================================================
 // 4. ПОЛНОЭКРАННЫЙ ПРОСМОТРЩИК TEMPORARY CONTENT (MATERIAL 3 EXPRESSIVE)
 // =====================================================================
