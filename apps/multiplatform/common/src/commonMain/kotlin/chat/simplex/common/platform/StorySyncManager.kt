@@ -176,30 +176,20 @@ object StorySyncManager {
     }
   }
 
-private fun removeStoryItemFromChat(chatModel: ChatModel, chat: Chat, item: ChatItem) {
+// ИСПРАВЛЕНИЕ: Удаляем технические пакеты через встроенный менеджер чата
+  private fun removeStoryItemFromChat(chatModel: ChatModel, chat: Chat, item: ChatItem) {
     scope.launch {
-      withContext(Dispatchers.IO) {
-        try {
-          // Используем apiDeleteChatItems вместо apiDeleteMessages
-          val cInfo = chat.chatInfo
-          chatModel.controller.apiDeleteChatItems(
-            chat.remoteHostId,
-            cInfo.chatType,
-            cInfo.apiId,
-            listOf(item.id)
-          )
-        } catch (e: Exception) {
-          Log.e(TAG, "Failed to delete technical story item from DB: ${e.message}")
-        }
-      }
       withContext(Dispatchers.Main) {
-        try { 
-          chatModel.chatsContext.removeChatItem(chat.remoteHostId, chat.chatInfo, item) 
-        } catch (_: Exception) {}
+        try {
+          // Используем существующий метод removeChatItem из вашего ChatModel.kt
+          chatModel.chatsContext.removeChatItem(chat.remoteHostId, chat.chatInfo, item)
+        } catch (e: Exception) {
+          Log.e(TAG, "Failed to remove technical story item: ${e.message}")
+        }
       }
     }
   }
-
+  
   private fun getLoadedFilePath(ciFile: CIFile): String? {
     return try {
       val name = ciFile.fileName
