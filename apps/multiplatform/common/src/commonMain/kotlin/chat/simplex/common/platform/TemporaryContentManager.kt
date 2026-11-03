@@ -264,3 +264,11 @@ object TemporaryContentManager {
     }
   }
 }
+
+// ДОБАВИТЬ ЭТОТ МЕТОД ВНИЗУ TemporaryContentManager:
+  // Принудительно очищает оперативную память и читает диск текущего профиля
+  fun reload() {
+    _items.value = emptyList()
+    loadMetadataFromDisk()
+    purgeExpired()
+  }
