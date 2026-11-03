@@ -176,16 +176,29 @@ object StorySyncManager {
     }
   }
 
-// ИСПРАВЛЕНИЕ: Удаляем технические пакеты через встроенный менеджер чата
-  private fun removeStoryItemFromChat(chatModel: ChatModel, chat: Chat, item: ChatItem) {
+private fun removeStoryItemFromChat(chatModel: ChatModel, chat: Chat, item: ChatItem) {
     scope.launch {
-      withContext(Dispatchers.Main) {
+      withContext(Dispatchers.IO) {
         try {
-          // Используем существующий метод removeChatItem из вашего ChatModel.kt
-          chatModel.chatsContext.removeChatItem(chat.remoteHostId, chat.chatInfo, item)
+          val cInfo = chat.chatInfo
+          // Физическое удаление из локальной БД (чтобы сообщение не появилось при перезапуске)
+          chatModel.controller.apiDeleteMessages(
+            rh = chat.remoteHostId,
+            type = cInfo.chatType,
+            id = cInfo.apiId,
+            scope = cInfo.groupChatScope(),
+            itemIds = listOf(item.id),
+            mode = CIDeleteMode.cidmInternal // Внутреннее удаление без дополнительных бродкастов
+          )
         } catch (e: Exception) {
-          Log.e(TAG, "Failed to remove technical story item: ${e.message}")
+          Log.e(TAG, "Failed to delete technical story item from DB: ${e.message}")
         }
+      }
+      withContext(Dispatchers.Main) {
+        try { 
+          // Мгновенное скрытие из текущего интерфейса
+          chatModel.chatsContext.removeChatItem(chat.remoteHostId, chat.chatInfo, item) 
+        } catch (_: Exception) {}
       }
     }
   }
