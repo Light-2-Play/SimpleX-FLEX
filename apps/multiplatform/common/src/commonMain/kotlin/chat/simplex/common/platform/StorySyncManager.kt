@@ -180,9 +180,9 @@ private fun removeStoryItemFromChat(chatModel: ChatModel, chat: Chat, item: Chat
     scope.launch {
       withContext(Dispatchers.IO) {
         try {
-          // Fix: SimpleX core uses plural 'apiDeleteMessages' taking a List of IDs
+          // Используем apiDeleteChatItems вместо apiDeleteMessages
           val cInfo = chat.chatInfo
-          chatModel.controller.apiDeleteMessages(
+          chatModel.controller.apiDeleteChatItems(
             chat.remoteHostId,
             cInfo.chatType,
             cInfo.apiId,
@@ -194,7 +194,6 @@ private fun removeStoryItemFromChat(chatModel: ChatModel, chat: Chat, item: Chat
       }
       withContext(Dispatchers.Main) {
         try { 
-          // Instantly remove from the active UI session
           chatModel.chatsContext.removeChatItem(chat.remoteHostId, chat.chatInfo, item) 
         } catch (_: Exception) {}
       }
