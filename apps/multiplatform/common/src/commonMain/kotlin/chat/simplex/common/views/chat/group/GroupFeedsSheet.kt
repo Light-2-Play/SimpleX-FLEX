@@ -6,6 +6,7 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.*
 import androidx.compose.runtime.*
@@ -15,6 +16,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -43,7 +45,7 @@ object FeedStorage {
     val map = try {
       if (feedsFile.exists()) {
         val content = feedsFile.readText()
-        json.decodeFromString<Map<Long, List<FeedSubscription>>>(content)
+        json.decodeFromString>>(content)
           .mapValues { it.value.toMutableList() }
           .toMutableMap()
       } else {
@@ -105,143 +107,137 @@ object FeedStorage {
   }
 }
 
+// =====================================================================
+// FULL-SCREEN MATERIAL 3 EXPRESSIVE VIEW
+// =====================================================================
 @Composable
 fun GroupFeedsSheet(
   chatModel: ChatModel,
   groupInfo: GroupInfo,
   close: () -> Unit
 ) {
-  // Загружаем сохранённые фиды именно для текущей группы
   var feeds by remember { mutableStateOf(FeedStorage.getFeeds(groupInfo.groupId)) }
   var showAddDialog by remember { mutableStateOf(false) }
 
   val isLight = MaterialTheme.colors.isLight
-  val sheetBg = lerp(MaterialTheme.colors.surface, MaterialTheme.colors.primary, if (isLight) 0.04f else 0.07f)
-  val cardBg = lerp(MaterialTheme.colors.surface, MaterialTheme.colors.primary, if (isLight) 0.08f else 0.12f)
+  val sheetBg = if (isLight) Color(0xFFF4F4F6) else Color(0xFF141416)
+  val islandColor = lerp(MaterialTheme.colors.surface, MaterialTheme.colors.primary, if (isLight) 0.05f else 0.10f)
   val isLimitReached = feeds.size >= MAX_FEEDS_PER_GROUP
 
-  // Подложка на весь экран: центрирует шторку строго снизу
+  // Полноэкранный фон от края до края
   Box(
     modifier = Modifier
       .fillMaxSize()
-      .clickable(
-        interactionSource = remember { MutableInteractionSource() },
-        indication = null,
-        onClick = close // закрытие по клику в полупрозрачную область сверху
-      ),
-    contentAlignment = Alignment.BottomCenter
+      .background(sheetBg)
+      .statusBarsPadding()
+      .navigationBarsPadding(),
+    contentAlignment = Alignment.TopCenter
   ) {
     Column(
       modifier = Modifier
-        .fillMaxWidth()
-        .clip(RoundedCornerShape(topStart = 32.dp, topEnd = 32.dp))
-        .background(sheetBg)
-        .clickable(
-          interactionSource = remember { MutableInteractionSource() },
-          indication = null,
-          onClick = {} // предотвращаем случайное закрытие при нажатии на саму панель
-        )
-        .navigationBarsPadding()
-        .padding(horizontal = 16.dp, vertical = 12.dp)
+        .fillMaxSize()
+        .padding(horizontal = 16.dp, vertical = 20.dp)
     ) {
-      // Полоска-хэндл
-      Box(
-        modifier = Modifier
-          .align(Alignment.CenterHorizontally)
-          .size(width = 36.dp, height = 4.dp)
-          .clip(RoundedCornerShape(percent = 50))
-          .background(MaterialTheme.colors.onSurface.copy(alpha = 0.2f))
-      )
-
-      Spacer(Modifier.height(14.dp))
-
-      // Шапка со счетчиком (X/4)
-      Row(
+      // 1. Верхний плавающий остров (Header)
+      Surface(
         modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically
+        shape = RoundedCornerShape(28.dp),
+        color = islandColor,
+        elevation = 2.dp
       ) {
-        Column {
-          Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(
-              "Zero-Relay Feeds",
-              style = MaterialTheme.typography.h6,
-              fontWeight = FontWeight.Bold,
-              color = MaterialTheme.colors.onSurface
-            )
-            Spacer(Modifier.width(8.dp))
-            Surface(
-              shape = RoundedCornerShape(percent = 50),
-              color = if (isLimitReached) MaterialTheme.colors.error.copy(alpha = 0.15f) else MaterialTheme.colors.primary.copy(alpha = 0.12f)
-            ) {
-              Text(
-                "${feeds.size}/$MAX_FEEDS_PER_GROUP",
-                modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
-                fontSize = 11.sp,
-                fontWeight = FontWeight.Bold,
-                color = if (isLimitReached) MaterialTheme.colors.error else MaterialTheme.colors.primary
-              )
-            }
-          }
-          Text(
-            "RSS / Mastodon bridge directly to this chat",
-            fontSize = 12.sp,
-            color = MaterialTheme.colors.onSurface.copy(alpha = 0.65f)
-          )
-        }
-
-        // Кнопка добавления
-        Surface(
-          shape = RoundedCornerShape(percent = 50),
-          color = if (isLimitReached) MaterialTheme.colors.onSurface.copy(alpha = 0.12f) else MaterialTheme.colors.primary,
-          modifier = Modifier.size(40.dp)
+        Row(
+          modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 20.dp, vertical = 18.dp),
+          horizontalArrangement = Arrangement.SpaceBetween,
+          verticalAlignment = Alignment.CenterVertically
         ) {
-          IconButton(onClick = {
-            if (isLimitReached) {
-              RichHaptics.perform(HapticPattern.WARNING)
-              AlertManager.shared.showAlertMsg(
-                "Лимит исчерпан",
-                "В одном чате или канале можно подключить максимум $MAX_FEEDS_PER_GROUP источника."
+          Column(modifier = Modifier.weight(1f)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+              Text(
+                "Zero-Relay Feeds",
+                style = MaterialTheme.typography.h6,
+                fontWeight = FontWeight.ExtraBold,
+                color = MaterialTheme.colors.onSurface
               )
-            } else {
-              RichHaptics.perform(HapticPattern.CLICK)
-              showAddDialog = true
+              Spacer(Modifier.width(10.dp))
+              Surface(
+                shape = RoundedCornerShape(percent = 50),
+                color = if (isLimitReached) MaterialTheme.colors.error.copy(alpha = 0.15f) else MaterialTheme.colors.primary.copy(alpha = 0.15f)
+              ) {
+                Text(
+                  "${feeds.size}/$MAX_FEEDS_PER_GROUP",
+                  modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                  fontSize = 12.sp,
+                  fontWeight = FontWeight.Bold,
+                  color = if (isLimitReached) MaterialTheme.colors.error else MaterialTheme.colors.primary
+                )
+              }
             }
-          }) {
-            Icon(
-              painterResource(MR.images.ic_add),
-              contentDescription = "Add feed",
-              tint = if (isLimitReached) MaterialTheme.colors.onSurface.copy(alpha = 0.38f) else MaterialTheme.colors.onPrimary,
-              modifier = Modifier.size(20.dp)
+            Spacer(Modifier.height(4.dp))
+            Text(
+              "RSS / Mastodon bridge to this chat",
+              fontSize = 13.sp,
+              color = MaterialTheme.colors.onSurface.copy(alpha = 0.65f)
             )
+          }
+
+          // Кнопка закрытия
+          Surface(
+            shape = CircleShape,
+            color = MaterialTheme.colors.onSurface.copy(alpha = 0.08f),
+            modifier = Modifier.size(44.dp)
+          ) {
+            IconButton(onClick = close) {
+              Icon(
+                painterResource(MR.images.ic_close),
+                contentDescription = "Close",
+                tint = MaterialTheme.colors.onSurface,
+                modifier = Modifier.size(24.dp)
+              )
+            }
           }
         }
       }
 
-      Spacer(Modifier.height(16.dp))
+      Spacer(Modifier.height(24.dp))
 
+      // 2. Список Фидов
       if (feeds.isEmpty()) {
         Box(
           modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = 36.dp),
+            .weight(1f),
           contentAlignment = Alignment.Center
         ) {
-          Text(
-            "No active feeds yet. Tap + to connect an RSS or Fediverse account.",
-            color = MaterialTheme.colors.secondary,
-            fontSize = 14.sp
-          )
+          Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Icon(
+              painterResource(MR.images.ic_wifi_tethering),
+              contentDescription = null,
+              tint = MaterialTheme.colors.primary.copy(alpha = 0.5f),
+              modifier = Modifier.size(72.dp)
+            )
+            Spacer(Modifier.height(16.dp))
+            Text(
+              "No active feeds yet.\nTap below to connect.",
+              color = MaterialTheme.colors.secondary,
+              fontSize = 16.sp,
+              textAlign = TextAlign.Center
+            )
+          }
         }
       } else {
         LazyColumn(
-          verticalArrangement = Arrangement.spacedBy(8.dp),
-          modifier = Modifier.fillMaxWidth()
+          verticalArrangement = Arrangement.spacedBy(16.dp),
+          contentPadding = PaddingValues(bottom = 100.dp), // Отступ для плавающей кнопки
+          modifier = Modifier
+            .fillMaxWidth()
+            .weight(1f)
         ) {
           items(feeds, key = { it.id }) { sub ->
             FeedItemCard(
               sub = sub,
-              cardBg = cardBg,
+              cardBg = islandColor,
               onToggle = { enabled ->
                 val updated = sub.copy(enabled = enabled)
                 FeedStorage.updateFeed(groupInfo.groupId, updated)
@@ -264,9 +260,55 @@ fun GroupFeedsSheet(
         }
       }
     }
+
+    // 3. Плавающая кнопка добавления (FAB в стиле M3)
+    Box(
+      modifier = Modifier
+        .align(Alignment.BottomCenter)
+        .padding(bottom = 32.dp)
+    ) {
+      Surface(
+        shape = RoundedCornerShape(24.dp),
+        color = if (isLimitReached) MaterialTheme.colors.onSurface.copy(alpha = 0.12f) else MaterialTheme.colors.primary,
+        elevation = if (isLimitReached) 0.dp else 8.dp,
+        modifier = Modifier.height(64.dp)
+      ) {
+        Row(
+          modifier = Modifier
+            .clickable(enabled = !isLimitReached) {
+              if (isLimitReached) {
+                RichHaptics.perform(HapticPattern.WARNING)
+                AlertManager.shared.showAlertMsg(
+                  "Лимит исчерпан",
+                  "В одном чате или канале можно подключить максимум $MAX_FEEDS_PER_GROUP источника."
+                )
+              } else {
+                RichHaptics.perform(HapticPattern.CLICK)
+                showAddDialog = true
+              }
+            }
+            .padding(horizontal = 24.dp),
+          verticalAlignment = Alignment.CenterVertically,
+          horizontalArrangement = Arrangement.Center
+        ) {
+          Icon(
+            painterResource(MR.images.ic_add),
+            contentDescription = "Add feed",
+            tint = if (isLimitReached) MaterialTheme.colors.onSurface.copy(alpha = 0.38f) else MaterialTheme.colors.onPrimary,
+            modifier = Modifier.size(24.dp)
+          )
+          Spacer(Modifier.width(12.dp))
+          Text(
+            text = "New Feed",
+            color = if (isLimitReached) MaterialTheme.colors.onSurface.copy(alpha = 0.38f) else MaterialTheme.colors.onPrimary,
+            fontSize = 16.sp,
+            fontWeight = FontWeight.Bold
+          )
+        }
+      }
+    }
   }
 
-  // Диалог добавления фида
   if (showAddDialog) {
     AddFeedDialog(
       onDismiss = { showAddDialog = false },
@@ -285,8 +327,6 @@ fun GroupFeedsSheet(
         if (added) {
           feeds = FeedStorage.getFeeds(groupInfo.groupId)
           showAddDialog = false
-
-          // Запуск первой фоновой синхронизации
           ZeroRelayFeedEngine.syncFeed(chatModel, newSub) { updated ->
             FeedStorage.updateFeed(groupInfo.groupId, updated)
             feeds = FeedStorage.getFeeds(groupInfo.groupId)
@@ -294,6 +334,145 @@ fun GroupFeedsSheet(
         }
       }
     )
+  }
+}
+
+// =====================================================================
+// M3 EXPRESSIVE FEED ITEM CARD
+// =====================================================================
+@Composable
+private fun FeedItemCard(
+  sub: FeedSubscription,
+  cardBg: Color,
+  onToggle: (Boolean) -> Unit,
+  onSyncNow: () -> Unit,
+  onDelete: () -> Unit
+) {
+  Surface(
+    shape = RoundedCornerShape(28.dp),
+    color = cardBg,
+    elevation = 2.dp,
+    modifier = Modifier.fillMaxWidth()
+  ) {
+    Column(
+      modifier = Modifier
+        .fillMaxWidth()
+        .padding(20.dp)
+    ) {
+      Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically
+      ) {
+        // Иконка в мягком кружке
+        Surface(
+          shape = CircleShape,
+          color = MaterialTheme.colors.primary.copy(alpha = 0.15f),
+          modifier = Modifier.size(52.dp)
+        ) {
+          Icon(
+            painterResource(if (sub.type == FeedType.RSS_ATOM) MR.images.ic_wifi_tethering else MR.images.ic_tag),
+            contentDescription = null,
+            tint = MaterialTheme.colors.primary,
+            modifier = Modifier
+              .padding(14.dp)
+              .fillMaxSize()
+          )
+        }
+
+        Spacer(Modifier.width(16.dp))
+
+        Column(modifier = Modifier.weight(1f)) {
+          Text(
+            text = sub.title,
+            fontWeight = FontWeight.ExtraBold,
+            fontSize = 17.sp,
+            color = MaterialTheme.colors.onSurface,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+          )
+          Spacer(Modifier.height(4.dp))
+          Text(
+            text = sub.url,
+            fontSize = 13.sp,
+            color = MaterialTheme.colors.onSurface.copy(alpha = 0.6f),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+          )
+        }
+
+        Spacer(Modifier.width(12.dp))
+
+        Switch(
+          checked = sub.enabled,
+          onCheckedChange = {
+            RichHaptics.perform(if (it) HapticPattern.TOGGLE_ON else HapticPattern.TOGGLE_OFF)
+            onToggle(it)
+          },
+          colors = SwitchDefaults.colors(
+            checkedThumbColor = MaterialTheme.colors.primary,
+            checkedTrackColor = MaterialTheme.colors.primary.copy(alpha = 0.5f)
+          )
+        )
+      }
+
+      Spacer(Modifier.height(18.dp))
+      Divider(color = MaterialTheme.colors.onSurface.copy(alpha = 0.08f))
+      Spacer(Modifier.height(14.dp))
+
+      Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.End,
+        verticalAlignment = Alignment.CenterVertically
+      ) {
+        // Остров "Синхронизировать"
+        Surface(
+          shape = CircleShape,
+          color = MaterialTheme.colors.primary.copy(alpha = 0.1f),
+          modifier = Modifier.height(40.dp)
+        ) {
+          Row(
+            modifier = Modifier
+              .clickable { onSyncNow() }
+              .padding(horizontal = 18.dp),
+            verticalAlignment = Alignment.CenterVertically
+          ) {
+            Icon(
+              painterResource(MR.images.ic_refresh),
+              contentDescription = "Sync",
+              tint = MaterialTheme.colors.primary,
+              modifier = Modifier.size(18.dp)
+            )
+            Spacer(Modifier.width(8.dp))
+            Text("Sync Now", color = MaterialTheme.colors.primary, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+          }
+        }
+
+        Spacer(Modifier.width(12.dp))
+
+        // Остров "Удалить"
+        Surface(
+          shape = CircleShape,
+          color = MaterialTheme.colors.error.copy(alpha = 0.1f),
+          modifier = Modifier.height(40.dp)
+        ) {
+          Row(
+            modifier = Modifier
+              .clickable { onDelete() }
+              .padding(horizontal = 18.dp),
+            verticalAlignment = Alignment.CenterVertically
+          ) {
+            Icon(
+              painterResource(MR.images.ic_delete),
+              contentDescription = "Delete",
+              tint = MaterialTheme.colors.error,
+              modifier = Modifier.size(18.dp)
+            )
+            Spacer(Modifier.width(8.dp))
+            Text("Delete", color = MaterialTheme.colors.error, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+          }
+        }
+      }
+    }
   }
 }
 
@@ -420,88 +599,4 @@ private fun AddFeedDialog(
       }
     }
   )
-}
-
-@Composable
-private fun FeedItemCard(
-  sub: FeedSubscription,
-  cardBg: Color,
-  onToggle: (Boolean) -> Unit,
-  onSyncNow: () -> Unit,
-  onDelete: () -> Unit
-) {
-  Surface(
-    shape = RoundedCornerShape(20.dp),
-    color = cardBg,
-    elevation = 0.dp,
-    modifier = Modifier.fillMaxWidth()
-  ) {
-    Row(
-      modifier = Modifier
-        .fillMaxWidth()
-        .padding(horizontal = 14.dp, vertical = 10.dp),
-      verticalAlignment = Alignment.CenterVertically
-    ) {
-      Icon(
-        painterResource(if (sub.type == FeedType.RSS_ATOM) MR.images.ic_wifi_tethering else MR.images.ic_tag),
-        contentDescription = null,
-        tint = MaterialTheme.colors.primary,
-        modifier = Modifier.size(24.dp)
-      )
-
-      Spacer(Modifier.width(12.dp))
-
-      Column(modifier = Modifier.weight(1f)) {
-        Text(
-          text = sub.title,
-          fontWeight = FontWeight.SemiBold,
-          fontSize = 15.sp,
-          color = MaterialTheme.colors.onSurface,
-          maxLines = 1,
-          overflow = TextOverflow.Ellipsis
-        )
-        Text(
-          text = sub.url,
-          fontSize = 11.5.sp,
-          color = MaterialTheme.colors.onSurface.copy(alpha = 0.6f),
-          maxLines = 1,
-          overflow = TextOverflow.Ellipsis
-        )
-      }
-
-      // Кнопка ручной синхронизации
-      IconButton(onClick = onSyncNow, modifier = Modifier.size(34.dp)) {
-        Icon(
-          painterResource(MR.images.ic_refresh),
-          contentDescription = "Sync",
-          tint = MaterialTheme.colors.primary,
-          modifier = Modifier.size(18.dp)
-        )
-      }
-
-      // Кнопка удаления ленты (освобождает слот)
-      IconButton(onClick = onDelete, modifier = Modifier.size(34.dp)) {
-        Icon(
-          painterResource(MR.images.ic_delete),
-          contentDescription = "Delete",
-          tint = MaterialTheme.colors.error.copy(alpha = 0.8f),
-          modifier = Modifier.size(18.dp)
-        )
-      }
-
-      Spacer(Modifier.width(4.dp))
-
-      // Переключатель активности
-      Switch(
-        checked = sub.enabled,
-        onCheckedChange = {
-          RichHaptics.perform(if (it) HapticPattern.TOGGLE_ON else HapticPattern.TOGGLE_OFF)
-          onToggle(it)
-        },
-        colors = SwitchDefaults.colors(
-          checkedThumbColor = MaterialTheme.colors.primary
-        )
-      )
-    }
-  }
 }
