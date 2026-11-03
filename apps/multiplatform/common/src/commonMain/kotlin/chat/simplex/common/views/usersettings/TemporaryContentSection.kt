@@ -52,164 +52,169 @@ object TemporaryContentPickerBridge {
 // =====================================================================
 @Composable
 fun TemporaryContentProfileSection() {
-  val items by TemporaryContentManager.items.collectAsState()
-  var showAddDialog by remember { mutableStateOf(false) }
-  var viewingStartIndex by remember { mutableStateOf<Int?>(null) }
-  var nowMillis by remember { mutableStateOf(System.currentTimeMillis()) }
+    val items by TemporaryContentManager.items.collectAsState()
+    var showAddDialog by remember { mutableStateOf(false) }
+    var viewingStartIndex by remember { mutableStateOf<Int?>(null) }
+    var nowMillis by remember { mutableStateOf(System.currentTimeMillis()) }
 
-  val myStories = remember(items) {
-    TemporaryContentManager.getActiveItemsFor(null)
-  }
-
-  LaunchedEffect(Unit) {
-    TemporaryContentManager.purgeExpired()
-    StorySyncManager.syncAllStoriesNow(chatModel)
-    while (true) {
-      delay(15_000L)
-      TemporaryContentManager.purgeExpired()
-      nowMillis = System.currentTimeMillis()
+    val myStories = remember(items) {
+        TemporaryContentManager.getActiveItemsFor(null)
     }
-  }
 
-  val isLight = MaterialTheme.colors.isLight
-  val primary = MaterialTheme.colors.primary
-  val cardBg = if (isLight) lerp(Color.White, primary, 0.055f) else lerp(MaterialTheme.colors.surface, primary, 0.12f)
-  val borderColor = primary.copy(alpha = if (isLight) 0.16f else 0.24f)
+    LaunchedEffect(Unit) {
+        // ИСПРАВЛЕНИЕ: Очищаем память и грузим истории ТОЛЬКО текущего профиля
+        TemporaryContentManager.reload()
+        StorySyncManager.syncAllStoriesNow(chatModel)
+        while (true) {
+            delay(15_000L)
+            TemporaryContentManager.purgeExpired()
+            nowMillis = System.currentTimeMillis()
+        }
+    }
 
-  Surface(
-    shape = RoundedCornerShape(26.dp),
-    color = cardBg,
-    elevation = 0.dp,
-    modifier = Modifier
-      .fillMaxWidth()
-      .padding(vertical = 4.dp)
-      .border(0.75.dp, borderColor, RoundedCornerShape(26.dp))
-  ) {
-    Column(
-      modifier = Modifier
-        .fillMaxWidth()
-        .padding(vertical = 14.dp)
-    ) {
-      Row(
+    val isLight = MaterialTheme.colors.isLight
+    val primary = MaterialTheme.colors.primary
+    val cardBg = if (isLight) lerp(Color.White, primary, 0.055f) else lerp(MaterialTheme.colors.surface, primary, 0.12f)
+    val borderColor = primary.copy(alpha = if (isLight) 0.16f else 0.24f)
+
+    Surface(
+        shape = RoundedCornerShape(26.dp),
+        color = cardBg,
+        elevation = 0.dp,
         modifier = Modifier
-          .fillMaxWidth()
-          .padding(horizontal = 16.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.SpaceBetween
-      ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-          Box(
+            .fillMaxWidth()
+            .padding(vertical = 4.dp)
+            .border(0.75.dp, borderColor, RoundedCornerShape(26.dp))
+    ) {
+        Column(
             modifier = Modifier
-              .size(36.dp)
-              .clip(RoundedCornerShape(12.dp))
-              .background(primary.copy(alpha = 0.15f)),
-            contentAlignment = Alignment.Center
-          ) {
-            Icon(
-              painter = painterResource(MR.images.ic_timer),
-              contentDescription = null,
-              tint = primary,
-              modifier = Modifier.size(20.dp)
-            )
-          }
-          Spacer(Modifier.width(12.dp))
-          Column {
-            Text(
-              text = "Temporary Content",
-              fontSize = 16.sp,
-              fontWeight = FontWeight.Bold,
-              color = MaterialTheme.colors.onSurface
-            )
-            Text(
-              text = if (myStories.isEmpty()) "Auto-expiring photos & videos" else "${myStories.size} active • auto-delete enabled",
-              fontSize = 12.sp,
-              color = MaterialTheme.colors.onSurface.copy(alpha = 0.6f)
-            )
-          }
-        }
-
-        Surface(
-          shape = CircleShape,
-          color = primary,
-          modifier = Modifier
-            .clip(CircleShape)
-            .clickable {
-              RichHaptics.perform(HapticPattern.CLICK)
-              showAddDialog = true
-            }
+                .fillMaxWidth()
+                .padding(vertical = 14.dp)
         ) {
-          Row(
-            modifier = Modifier.padding(horizontal = 14.dp, vertical = 7.dp),
-            verticalAlignment = Alignment.CenterVertically
-          ) {
-            Icon(
-              painter = painterResource(MR.images.ic_add),
-              contentDescription = "Add Temporary Content",
-              tint = MaterialTheme.colors.onPrimary,
-              modifier = Modifier.size(16.dp)
-            )
-            Spacer(Modifier.width(4.dp))
-            Text(
-              text = "Add",
-              fontSize = 13.sp,
-              fontWeight = FontWeight.SemiBold,
-              color = MaterialTheme.colors.onPrimary
-            )
-          }
-        }
-      }
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(
+                        modifier = Modifier
+                            .size(36.dp)
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(primary.copy(alpha = 0.15f)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            painter = painterResource(MR.images.ic_timer),
+                            contentDescription = null,
+                            tint = primary,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                    Spacer(Modifier.width(12.dp))
+                    Column {
+                        Text(
+                            text = "Temporary Content",
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colors.onSurface
+                        )
+                        Text(
+                            text = if (myStories.isEmpty()) "Auto-expiring photos & videos" else "${myStories.size} active • auto-delete enabled",
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colors.onSurface.copy(alpha = 0.6f)
+                        )
+                    }
+                }
 
-      Spacer(Modifier.height(14.dp))
-
-      LazyRow(
-        contentPadding = PaddingValues(horizontal = 16.dp),
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-        verticalAlignment = Alignment.CenterVertically
-      ) {
-        item {
-          AddStoryCardTile(onClick = {
-            RichHaptics.perform(HapticPattern.CLICK)
-            showAddDialog = true
-          })
-        }
-
-        itemsIndexed(myStories, key = { _, item -> item.id }) { index, item ->
-          TemporaryStoryTile(
-            item = item,
-            nowMillis = nowMillis,
-            onClick = {
-              RichHaptics.perform(HapticPattern.CLICK)
-              viewingStartIndex = index
+                Surface(
+                    shape = CircleShape,
+                    color = primary,
+                    modifier = Modifier
+                        .clip(CircleShape)
+                        .clickable {
+                            RichHaptics.perform(HapticPattern.CLICK)
+                            showAddDialog = true
+                        }
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 7.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            painter = painterResource(MR.images.ic_add),
+                            contentDescription = "Add Temporary Content",
+                            tint = MaterialTheme.colors.onPrimary,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(Modifier.width(4.dp))
+                        Text(
+                            text = "Add",
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colors.onPrimary
+                        )
+                    }
+                }
             }
-          )
+
+            Spacer(Modifier.height(14.dp))
+
+            LazyRow(
+                contentPadding = PaddingValues(horizontal = 16.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                item {
+                    AddStoryCardTile(onClick = {
+                        RichHaptics.perform(HapticPattern.CLICK)
+                        showAddDialog = true
+                    })
+                }
+
+                itemsIndexed(myStories, key = { _, item -> item.id }) { index, item ->
+                    TemporaryStoryTile(
+                        item = item,
+                        nowMillis = nowMillis,
+                        onClick = {
+                            RichHaptics.perform(HapticPattern.CLICK)
+                            viewingStartIndex = index
+                        }
+                    )
+                }
+            }
         }
-      }
     }
-  }
 
-  if (showAddDialog) {
-    AddTemporaryContentDialog(
-      onDismiss = { showAddDialog = false },
-      onPublished = {
-        showAddDialog = false
-        nowMillis = System.currentTimeMillis()
-      }
-    )
-  }
+    if (showAddDialog) {
+        AddTemporaryContentDialog(
+            onDismiss = { showAddDialog = false },
+            onPublished = {
+                showAddDialog = false
+                nowMillis = System.currentTimeMillis()
+            }
+        )
+    }
 
-  val startIdx = viewingStartIndex
-  if (startIdx != null && myStories.isNotEmpty()) {
-    val scope = rememberCoroutineScope()
-    TemporaryContentStoryViewer(
-      items = myStories,
-      initialIndex = startIdx.coerceIn(0, myStories.lastIndex),
-      onDismiss = { viewingStartIndex = null },
-      onDeleteStory = { idToDelete ->
-        TemporaryContentManager.removeContent(idToDelete)
-        scope.launch { StorySyncManager.broadcastStoryDeletion(chatModel, idToDelete) }
-      }
-    )
-  }
+    val startIdx = viewingStartIndex
+    if (startIdx != null && myStories.isNotEmpty()) {
+        val scope = rememberCoroutineScope()
+        TemporaryContentStoryViewer(
+            items = myStories,
+            initialIndex = startIdx.coerceIn(0, myStories.lastIndex),
+            onDismiss = { viewingStartIndex = null },
+            onDeleteStory = { idToDelete ->
+                // ИСПРАВЛЕНИЕ СПАМА: Бродкастим удаление только если это наша история
+                val isMyStory = TemporaryContentManager.items.value.find { it.id == idToDelete }?.authorContactId == null
+                TemporaryContentManager.removeContent(idToDelete)
+                if (isMyStory) {
+                    scope.launch { StorySyncManager.broadcastStoryDeletion(chatModel, idToDelete) }
+                }
+            }
+        )
+    }
 }
 
 // =====================================================================
@@ -856,250 +861,256 @@ fun TemporaryContentStoryViewer(
 // =====================================================================
 @Composable
 fun AllStoriesFeedView(close: () -> Unit) {
-  val items by TemporaryContentManager.items.collectAsState()
-  var showAddDialog by remember { mutableStateOf(false) }
-  var nowMillis by remember { mutableStateOf(System.currentTimeMillis()) }
-  var viewingStories by remember { mutableStateOf<List<TemporaryContentItem>?>(null) }
-  var isReloading by remember { mutableStateOf(false) }
-  val scope = rememberCoroutineScope()
+    val items by TemporaryContentManager.items.collectAsState()
+    var showAddDialog by remember { mutableStateOf(false) }
+    var nowMillis by remember { mutableStateOf(System.currentTimeMillis()) }
+    var viewingStories by remember { mutableStateOf<List<TemporaryContentItem>?>(null) }
+    var isReloading by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
 
-  LaunchedEffect(Unit) {
-    StorySyncManager.syncAllStoriesNow(chatModel)
-    while (true) {
-      delay(8_000L)
-      StorySyncManager.syncAllStoriesNow(chatModel)
-      nowMillis = System.currentTimeMillis()
-    }
-  }
-
-  val myStories = items.filter { it.authorContactId == null }.sortedBy { it.createdAtMillis }
-  val contactStories = items.filter { it.authorContactId != null }
-    .groupBy { it.authorContactId }
-    .values.map { list -> list.sortedBy { it.createdAtMillis } }
-    .sortedByDescending { it.last().createdAtMillis }
-
-  val primary = MaterialTheme.colors.primary
-
-  ModalView(close = close, cardScreen = true) {
-    ColumnWithScrollBar {
-      Column(
-        modifier = Modifier
-          .fillMaxWidth()
-          .padding(horizontal = 16.dp, vertical = 12.dp)
-      ) {
-        Text(
-          text = "Temporary Content",
-          style = MaterialTheme.typography.h1,
-          fontWeight = FontWeight.Bold,
-          color = MaterialTheme.colors.onSurface
-        )
-
-        Spacer(Modifier.height(8.dp))
-
-        OutlinedButton(
-          onClick = {
-            if (!isReloading) {
-              isReloading = true
-              RichHaptics.perform(HapticPattern.CLICK)
-              scope.launch {
-                TemporaryContentManager.purgeExpired()
-                StorySyncManager.syncAllStoriesNow(chatModel)
-                delay(600L)
-                isReloading = false
-                RichHaptics.perform(HapticPattern.SUCCESS)
-              }
-            }
-          },
-          shape = CircleShape,
-          border = BorderStroke(1.dp, primary.copy(alpha = 0.35f)),
-          colors = ButtonDefaults.outlinedButtonColors(
-            backgroundColor = primary.copy(alpha = if (isReloading) 0.15f else 0.05f)
-          ),
-          contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp)
-        ) {
-          if (isReloading) {
-            CircularProgressIndicator(
-              color = primary,
-              strokeWidth = 2.dp,
-              modifier = Modifier.size(16.dp)
-            )
-          } else {
-            Icon(
-              imageVector = Icons.Default.Refresh,
-              contentDescription = "Reload",
-              tint = primary,
-              modifier = Modifier.size(16.dp)
-            )
-          }
-          Spacer(Modifier.width(6.dp))
-          Text(
-            text = if (isReloading) "Updating..." else "Reload",
-            fontSize = 13.sp,
-            fontWeight = FontWeight.SemiBold,
-            color = primary
-          )
+    LaunchedEffect(Unit) {
+        // ИСПРАВЛЕНИЕ: Очищаем память и грузим истории ТОЛЬКО текущего профиля
+        TemporaryContentManager.reload()
+        StorySyncManager.syncAllStoriesNow(chatModel)
+        while (true) {
+            delay(8_000L)
+            StorySyncManager.syncAllStoriesNow(chatModel)
+            nowMillis = System.currentTimeMillis()
         }
-      }
+    }
 
-      Surface(
-        shape = RoundedCornerShape(24.dp),
-        color = primary.copy(alpha = 0.05f),
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)
-      ) {
-        Row(
-          modifier = Modifier.clickable {
-            if (myStories.isNotEmpty()) {
-              viewingStories = myStories
+    val myStories = items.filter { it.authorContactId == null }.sortedBy { it.createdAtMillis }
+    val contactStories = items.filter { it.authorContactId != null }
+        .groupBy { it.authorContactId }
+        .values.map { list -> list.sortedBy { it.createdAtMillis } }
+        .sortedByDescending { it.last().createdAtMillis }
+
+    val primary = MaterialTheme.colors.primary
+
+    ModalView(close = close, cardScreen = true) {
+        ColumnWithScrollBar {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 12.dp)
+            ) {
+                Text(
+                    text = "Temporary Content",
+                    style = MaterialTheme.typography.h1,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colors.onSurface
+                )
+
+                Spacer(Modifier.height(8.dp))
+
+                OutlinedButton(
+                    onClick = {
+                        if (!isReloading) {
+                            isReloading = true
+                            RichHaptics.perform(HapticPattern.CLICK)
+                            scope.launch {
+                                TemporaryContentManager.reload() // Перезагружаем при ручном обновлении
+                                StorySyncManager.syncAllStoriesNow(chatModel)
+                                delay(600L)
+                                isReloading = false
+                                RichHaptics.perform(HapticPattern.SUCCESS)
+                            }
+                        }
+                    },
+                    shape = CircleShape,
+                    border = BorderStroke(1.dp, primary.copy(alpha = 0.35f)),
+                    colors = ButtonDefaults.outlinedButtonColors(
+                        backgroundColor = primary.copy(alpha = if (isReloading) 0.15f else 0.05f)
+                    ),
+                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp)
+                ) {
+                    if (isReloading) {
+                        CircularProgressIndicator(
+                            color = primary,
+                            strokeWidth = 2.dp,
+                            modifier = Modifier.size(16.dp)
+                        )
+                    } else {
+                        Icon(
+                            imageVector = Icons.Default.Refresh,
+                            contentDescription = "Reload",
+                            tint = primary,
+                            modifier = Modifier.size(16.dp)
+                        )
+                    }
+                    Spacer(Modifier.width(6.dp))
+                    Text(
+                        text = if (isReloading) "Updating..." else "Reload",
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = primary
+                    )
+                }
+            }
+
+            Surface(
+                shape = RoundedCornerShape(24.dp),
+                color = primary.copy(alpha = 0.05f),
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)
+            ) {
+                Row(
+                    modifier = Modifier.clickable {
+                        if (myStories.isNotEmpty()) {
+                            viewingStories = myStories
+                        } else {
+                            showAddDialog = true
+                        }
+                    }.padding(16.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(56.dp)
+                            .clip(CircleShape)
+                            .background(if (myStories.isNotEmpty()) primary else primary.copy(alpha = 0.15f))
+                            .border(2.dp, primary.copy(alpha = 0.3f), CircleShape),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            painter = painterResource(if (myStories.isNotEmpty()) MR.images.ic_play_arrow_filled else MR.images.ic_add),
+                            contentDescription = null,
+                            tint = if (myStories.isNotEmpty()) Color.White else primary,
+                            modifier = Modifier.size(24.dp)
+                        )
+                    }
+                    Spacer(Modifier.width(16.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "My Content",
+                            fontSize = 17.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colors.onSurface
+                        )
+                        Text(
+                            text = if (myStories.isNotEmpty()) "${myStories.size} active • Tap to view" else "Tap to add photo or video",
+                            fontSize = 13.sp,
+                            color = MaterialTheme.colors.onSurface.copy(alpha = 0.65f)
+                        )
+                    }
+                    if (myStories.isNotEmpty()) {
+                        IconButton(
+                            onClick = { showAddDialog = true },
+                            modifier = Modifier.background(primary.copy(alpha = 0.1f), CircleShape)
+                        ) {
+                            Icon(painterResource(MR.images.ic_add), null, tint = primary)
+                        }
+                    }
+                }
+            }
+
+            Divider(
+                modifier = Modifier.padding(vertical = 12.dp),
+                color = MaterialTheme.colors.onSurface.copy(alpha = 0.08f)
+            )
+
+            Text(
+                text = "RECENT UPDATES",
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Bold,
+                letterSpacing = 1.sp,
+                color = primary,
+                modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp)
+            )
+
+            if (contactStories.isEmpty()) {
+                Surface(
+                    shape = RoundedCornerShape(20.dp),
+                    color = primary.copy(alpha = 0.04f),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 6.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(24.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = "No updates from contacts yet",
+                            color = MaterialTheme.colors.secondary,
+                            fontSize = 14.sp
+                        )
+                    }
+                }
             } else {
-              showAddDialog = true
+                contactStories.forEach { userStories ->
+                    val authorName = userStories.first().authorDisplayName ?: "Contact"
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { viewingStories = userStories }
+                            .padding(horizontal = 16.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(56.dp)
+                                .clip(CircleShape)
+                                .border(2.5.dp, Brush.linearGradient(listOf(primary, Color(0xFFFF6D00))), CircleShape)
+                                .padding(4.dp)
+                                .background(Color(0xFF1E1E24), CircleShape),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                painter = painterResource(MR.images.ic_person),
+                                contentDescription = null,
+                                tint = Color.White.copy(alpha = 0.7f),
+                                modifier = Modifier.size(28.dp)
+                            )
+                        }
+                        Spacer(Modifier.width(16.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = authorName,
+                                fontSize = 17.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colors.onSurface
+                            )
+                            Text(
+                                text = "${userStories.size} active • expires in ${userStories.first().remainingTimeText(nowMillis)}",
+                                fontSize = 13.sp,
+                                color = MaterialTheme.colors.onSurface.copy(alpha = 0.65f)
+                            )
+                        }
+                    }
+                }
             }
-          }.padding(16.dp),
-          verticalAlignment = Alignment.CenterVertically
-        ) {
-          Box(
-            modifier = Modifier
-              .size(56.dp)
-              .clip(CircleShape)
-              .background(if (myStories.isNotEmpty()) primary else primary.copy(alpha = 0.15f))
-              .border(2.dp, primary.copy(alpha = 0.3f), CircleShape),
-            contentAlignment = Alignment.Center
-          ) {
-            Icon(
-              painter = painterResource(if (myStories.isNotEmpty()) MR.images.ic_play_arrow_filled else MR.images.ic_add),
-              contentDescription = null,
-              tint = if (myStories.isNotEmpty()) Color.White else primary,
-              modifier = Modifier.size(24.dp)
-            )
-          }
-          Spacer(Modifier.width(16.dp))
-          Column(modifier = Modifier.weight(1f)) {
-            Text(
-              text = "My Content",
-              fontSize = 17.sp,
-              fontWeight = FontWeight.Bold,
-              color = MaterialTheme.colors.onSurface
-            )
-            Text(
-              text = if (myStories.isNotEmpty()) "${myStories.size} active • Tap to view" else "Tap to add photo or video",
-              fontSize = 13.sp,
-              color = MaterialTheme.colors.onSurface.copy(alpha = 0.65f)
-            )
-          }
-          if (myStories.isNotEmpty()) {
-            IconButton(
-              onClick = { showAddDialog = true },
-              modifier = Modifier.background(primary.copy(alpha = 0.1f), CircleShape)
-            ) {
-              Icon(painterResource(MR.images.ic_add), null, tint = primary)
-            }
-          }
+
+            Spacer(Modifier.navigationBarsPadding().height(24.dp))
         }
-      }
-
-      Divider(
-        modifier = Modifier.padding(vertical = 12.dp),
-        color = MaterialTheme.colors.onSurface.copy(alpha = 0.08f)
-      )
-
-      Text(
-        text = "RECENT UPDATES",
-        fontSize = 12.sp,
-        fontWeight = FontWeight.Bold,
-        letterSpacing = 1.sp,
-        color = primary,
-        modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp)
-      )
-
-      if (contactStories.isEmpty()) {
-        Surface(
-          shape = RoundedCornerShape(20.dp),
-          color = primary.copy(alpha = 0.04f),
-          modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 6.dp)
-        ) {
-          Box(
-            modifier = Modifier
-              .fillMaxWidth()
-              .padding(24.dp),
-            contentAlignment = Alignment.Center
-          ) {
-            Text(
-              text = "No updates from contacts yet",
-              color = MaterialTheme.colors.secondary,
-              fontSize = 14.sp
-            )
-          }
-        }
-      } else {
-        contactStories.forEach { userStories ->
-          val authorName = userStories.first().authorDisplayName ?: "Contact"
-          Row(
-            modifier = Modifier
-              .fillMaxWidth()
-              .clickable { viewingStories = userStories }
-              .padding(horizontal = 16.dp, vertical = 10.dp),
-            verticalAlignment = Alignment.CenterVertically
-          ) {
-            Box(
-              modifier = Modifier
-                .size(56.dp)
-                .clip(CircleShape)
-                .border(2.5.dp, Brush.linearGradient(listOf(primary, Color(0xFFFF6D00))), CircleShape)
-                .padding(4.dp)
-                .background(Color(0xFF1E1E24), CircleShape),
-              contentAlignment = Alignment.Center
-            ) {
-              Icon(
-                painter = painterResource(MR.images.ic_person),
-                contentDescription = null,
-                tint = Color.White.copy(alpha = 0.7f),
-                modifier = Modifier.size(28.dp)
-              )
-            }
-            Spacer(Modifier.width(16.dp))
-            Column(modifier = Modifier.weight(1f)) {
-              Text(
-                text = authorName,
-                fontSize = 17.sp,
-                fontWeight = FontWeight.SemiBold,
-                color = MaterialTheme.colors.onSurface
-              )
-              Text(
-                text = "${userStories.size} active • expires in ${userStories.first().remainingTimeText(nowMillis)}",
-                fontSize = 13.sp,
-                color = MaterialTheme.colors.onSurface.copy(alpha = 0.65f)
-              )
-            }
-          }
-        }
-      }
-
-      Spacer(Modifier.navigationBarsPadding().height(24.dp))
     }
-  }
 
-  if (showAddDialog) {
-    AddTemporaryContentDialog(
-      onDismiss = { showAddDialog = false },
-      onPublished = {
-        showAddDialog = false
-        nowMillis = System.currentTimeMillis()
-      }
-    )
-  }
+    if (showAddDialog) {
+        AddTemporaryContentDialog(
+            onDismiss = { showAddDialog = false },
+            onPublished = {
+                showAddDialog = false
+                nowMillis = System.currentTimeMillis()
+            }
+        )
+    }
 
-  viewingStories?.let { storiesToView ->
-    TemporaryContentStoryViewer(
-      items = storiesToView,
-      initialIndex = 0,
-      onDismiss = { viewingStories = null },
-      onDeleteStory = { idToDelete -> 
-        TemporaryContentManager.removeContent(idToDelete)
-        scope.launch { StorySyncManager.broadcastStoryDeletion(chatModel, idToDelete) }
-      }
-    )
-  }
+    viewingStories?.let { storiesToView ->
+        TemporaryContentStoryViewer(
+            items = storiesToView,
+            initialIndex = 0,
+            onDismiss = { viewingStories = null },
+            onDeleteStory = { idToDelete -> 
+                // ИСПРАВЛЕНИЕ СПАМА: Бродкастим удаление только если это наша история
+                val isMyStory = TemporaryContentManager.items.value.find { it.id == idToDelete }?.authorContactId == null
+                TemporaryContentManager.removeContent(idToDelete)
+                if (isMyStory) {
+                    scope.launch { StorySyncManager.broadcastStoryDeletion(chatModel, idToDelete) }
+                }
+            }
+        )
+    }
 }
 
 private fun loadStoryThumbnailSafe(filePath: String): ImageBitmap? {
