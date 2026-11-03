@@ -345,7 +345,7 @@ private fun TemporaryStoryTile(
 }
 
 // =====================================================================
-// 3. ДИАЛОГ ДОБАВЛЕНИЯ С ОТОБРАЖЕНИЕМ ПРОЦЕНТОВ ОТПРАВКИ
+// 3. ADD DIALOG WITH UPLOAD PROGRESS
 // =====================================================================
 @Composable
 private fun AddTemporaryContentDialog(
@@ -355,7 +355,7 @@ private fun AddTemporaryContentDialog(
   var selectedDuration by remember { mutableStateOf(TemporaryDuration.HOURS_24) }
   var selectedMediaType by remember { mutableStateOf(TemporaryMediaType.PHOTO) }
   var selectedAudience by remember { mutableStateOf(TemporaryAudience.CONTACTS) }
- var selectedFilePath by remember { mutableStateOf<String?>(null) }
+  var selectedFilePath by remember { mutableStateOf<String?>(null) }
   var caption by remember { mutableStateOf("") }
 
   var isUploading by remember { mutableStateOf(false) }
@@ -411,7 +411,7 @@ private fun AddTemporaryContentDialog(
                 .clickable(enabled = !isUploading) {
                   RichHaptics.perform(HapticPattern.SELECTION_CHANGE)
                   selectedMediaType = type
-                  selectedBytes = null
+                  selectedFilePath = null
                 }
             ) {
               Row(
@@ -450,9 +450,9 @@ private fun AddTemporaryContentDialog(
             .clip(RoundedCornerShape(18.dp))
             .clickable(enabled = !isUploading) {
               RichHaptics.perform(HapticPattern.CLICK)
-             TemporaryContentPickerBridge.pickMedia?.invoke(selectedMediaType) { path ->
-      selectedFilePath = path
-  }
+              TemporaryContentPickerBridge.pickMedia?.invoke(selectedMediaType) { path ->
+                selectedFilePath = path
+              }
             }
         ) {
           Row(
@@ -463,18 +463,19 @@ private fun AddTemporaryContentDialog(
             horizontalArrangement = Arrangement.Center
           ) {
             Icon(
-              painter = painterResource(if (selectedBytes != null) MR.images.ic_check_filled else MR.images.ic_upload_file),
+              painter = painterResource(if (selectedFilePath != null) MR.images.ic_check_filled else MR.images.ic_upload_file),
               contentDescription = null,
               tint = primary,
               modifier = Modifier.size(22.dp)
             )
             Spacer(Modifier.width(10.dp))
-           Text(
-      text = if (selectedFilePath != null) {
-          "Media successfully selected"
-      } else {
-          "Tap to choose ${if (selectedMediaType == TemporaryMediaType.PHOTO) "Photo" else "Video"}"
-      },
+            Text(
+              text = if (selectedFilePath != null) {
+                val kb = try { File(selectedFilePath!!).length() / 1024 } catch (e: Exception) { 0 }
+                "Media selected ($kb KB)"
+              } else {
+                "Tap to choose ${if (selectedMediaType == TemporaryMediaType.PHOTO) "Photo" else "Video"}"
+              },
               fontSize = 14.sp,
               fontWeight = FontWeight.SemiBold,
               color = primary
@@ -625,21 +626,20 @@ private fun AddTemporaryContentDialog(
             }
             Spacer(Modifier.width(8.dp))
             Button(
-    onClick = {
-      val rawPath = selectedFilePath ?: return@Button
-      RichHaptics.perform(HapticPattern.CLICK)
+              onClick = {
+                val rawPath = selectedFilePath ?: return@Button
+                RichHaptics.perform(HapticPattern.CLICK)
 
-      // Используем новый метод для загрузки по пути
-      val newItem = TemporaryContentManager.addContentFromFilePath(
-        sourcePath = rawPath,
-        mediaType = selectedMediaType,
-        duration = selectedDuration,
-        caption = caption.trim(),
-        audience = selectedAudience
-      ) ?: return@Button
+                val newItem = TemporaryContentManager.addContentFromFilePath(
+                  sourcePath = rawPath,
+                  mediaType = selectedMediaType,
+                  duration = selectedDuration,
+                  caption = caption.trim(),
+                  audience = selectedAudience
+                ) ?: return@Button
 
-      isUploading = true
-      coroutineScope.launch {
+                isUploading = true
+                coroutineScope.launch {
                   val mediaFile = File(newItem.filePath)
                   val success = StorySyncManager.publishAndBroadcastStoryWithProgress(
                     file = mediaFile,
@@ -661,7 +661,7 @@ private fun AddTemporaryContentDialog(
                   }
                 }
               },
-              enabled = selectedBytes != null,
+              enabled = selectedFilePath != null,
               shape = CircleShape,
               colors = ButtonDefaults.buttonColors(
                 backgroundColor = primary,
@@ -677,7 +677,6 @@ private fun AddTemporaryContentDialog(
     }
   }
 }
-
 // =====================================================================
 // 4. ПОЛНОЭКРАННЫЙ ПРОСМОТРЩИК TEMPORARY CONTENT (MATERIAL 3 EXPRESSIVE)
 // =====================================================================
