@@ -80,8 +80,8 @@ fun TemporaryContentProfileSection() {
         if (myStories.size >= 4) {
             RichHaptics.perform(HapticPattern.WARNING)
             AlertManager.shared.showAlertMsg(
-                "Лимит исчерпан",
-                "Вы можете публиковать максимум 4 элемента Temporary Content одновременно."
+                "Limit reached",
+                "You can publish a maximum of 4 Temporary Content items at the same time."
             )
         } else {
             RichHaptics.perform(HapticPattern.CLICK)
@@ -896,8 +896,8 @@ fun AllStoriesFeedView(close: () -> Unit) {
         if (myStories.size >= 4) {
             RichHaptics.perform(HapticPattern.WARNING)
             AlertManager.shared.showAlertMsg(
-                "Лимит исчерпан",
-                "Вы можете публиковать максимум 4 элемента Temporary Content одновременно."
+                "Limit reached",
+                "You can publish a maximum of 4 Temporary Content items at the same time."
             )
         } else {
             RichHaptics.perform(HapticPattern.CLICK)
