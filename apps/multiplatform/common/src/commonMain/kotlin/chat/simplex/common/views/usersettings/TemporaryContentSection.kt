@@ -44,7 +44,8 @@ val LocalStoryVideoPlayer = compositionLocalOf<(@Composable (filePath: String, m
 val LocalStoryImageViewer = compositionLocalOf<(@Composable (filePath: String, modifier: Modifier) -> Unit)?> { null }
 
 object TemporaryContentPickerBridge {
-    var pickMedia: ((TemporaryMediaType, (ByteArray?) -> Unit) -> Unit)? = null
+  // Меняем ByteArray на String
+  var pickMedia: ((TemporaryMediaType, (String?) -> Unit) -> Unit)? = null
 }
 
 // =====================================================================
@@ -354,7 +355,7 @@ private fun AddTemporaryContentDialog(
   var selectedDuration by remember { mutableStateOf(TemporaryDuration.HOURS_24) }
   var selectedMediaType by remember { mutableStateOf(TemporaryMediaType.PHOTO) }
   var selectedAudience by remember { mutableStateOf(TemporaryAudience.CONTACTS) }
-  var selectedBytes by remember { mutableStateOf<ByteArray?>(null) }
+ var selectedFilePath by remember { mutableStateOf<String?>(null) }
   var caption by remember { mutableStateOf("") }
 
   var isUploading by remember { mutableStateOf(false) }
@@ -449,9 +450,9 @@ private fun AddTemporaryContentDialog(
             .clip(RoundedCornerShape(18.dp))
             .clickable(enabled = !isUploading) {
               RichHaptics.perform(HapticPattern.CLICK)
-              TemporaryContentPickerBridge.pickMedia?.invoke(selectedMediaType) { bytes ->
-                selectedBytes = bytes
-              }
+             TemporaryContentPickerBridge.pickMedia?.invoke(selectedMediaType) { path ->
+      selectedFilePath = path
+  }
             }
         ) {
           Row(
@@ -468,12 +469,12 @@ private fun AddTemporaryContentDialog(
               modifier = Modifier.size(22.dp)
             )
             Spacer(Modifier.width(10.dp))
-            Text(
-              text = if (selectedBytes != null) {
-                "Media selected (${selectedBytes!!.size / 1024} KB)"
-              } else {
-                "Tap to choose ${if (selectedMediaType == TemporaryMediaType.PHOTO) "Photo" else "Video"}"
-              },
+           Text(
+      text = if (selectedFilePath != null) {
+          "Media successfully selected"
+      } else {
+          "Tap to choose ${if (selectedMediaType == TemporaryMediaType.PHOTO) "Photo" else "Video"}"
+      },
               fontSize = 14.sp,
               fontWeight = FontWeight.SemiBold,
               color = primary
@@ -624,20 +625,21 @@ private fun AddTemporaryContentDialog(
             }
             Spacer(Modifier.width(8.dp))
             Button(
-              onClick = {
-                val rawBytes = selectedBytes ?: return@Button
-                RichHaptics.perform(HapticPattern.CLICK)
+    onClick = {
+      val rawPath = selectedFilePath ?: return@Button
+      RichHaptics.perform(HapticPattern.CLICK)
 
-                val newItem = TemporaryContentManager.addContentFromBytes(
-                  bytes = rawBytes,
-                  mediaType = selectedMediaType,
-                  duration = selectedDuration,
-                  caption = caption.trim(),
-                  audience = selectedAudience
-                ) ?: return@Button
+      // Используем новый метод для загрузки по пути
+      val newItem = TemporaryContentManager.addContentFromFilePath(
+        sourcePath = rawPath,
+        mediaType = selectedMediaType,
+        duration = selectedDuration,
+        caption = caption.trim(),
+        audience = selectedAudience
+      ) ?: return@Button
 
-                isUploading = true
-                coroutineScope.launch {
+      isUploading = true
+      coroutineScope.launch {
                   val mediaFile = File(newItem.filePath)
                   val success = StorySyncManager.publishAndBroadcastStoryWithProgress(
                     file = mediaFile,
