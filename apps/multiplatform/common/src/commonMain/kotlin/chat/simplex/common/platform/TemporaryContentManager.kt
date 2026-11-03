@@ -263,12 +263,11 @@ object TemporaryContentManager {
       Log.e(TAG, "loadMetadataFromDisk error: ${e.message}")
     }
   }
-}
 
-// ДОБАВИТЬ ЭТОТ МЕТОД ВНИЗУ TemporaryContentManager:
   // Принудительно очищает оперативную память и читает диск текущего профиля
   fun reload() {
     _items.value = emptyList()
     loadMetadataFromDisk()
     purgeExpired()
   }
+} // <--- САМАЯ ПОСЛЕДНЯЯ СКОБКА ФАЙЛА ДОЛЖНА БЫТЬ ЗДЕСЬ
