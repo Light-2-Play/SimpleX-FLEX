@@ -1438,36 +1438,86 @@ fun BoxScope.ChatInfoToolbar(
    androidx.compose.ui.graphics.lerp(MaterialTheme.colors.surface, MaterialTheme.colors.primary, 0.11f)
  }
 
- // Если открыт поиск — возвращаемся к DefaultAppBar (так как там поле ввода)
- if (showSearch.value) {
+// Если открыт поиск — НОВЫЙ ДИЗАЙН ПЛАВАЮЩЕЙ КАПСУЛЫ (M3 Expressive SearchBar)
+if (showSearch.value) {
     val searchTextColor = androidx.compose.ui.graphics.lerp(
-      MaterialTheme.colors.onSurface,
-      MaterialTheme.colors.primary,
-      0.15f
+        MaterialTheme.colors.onSurface,
+        MaterialTheme.colors.primary,
+        0.15f
     )
     val searchPlaceholderColor = searchTextColor.copy(alpha = 0.55f)
 
-    MaterialTheme(
-      colors = MaterialTheme.colors.copy(
-        onSurface = searchTextColor,
-        onBackground = searchTextColor,
-        secondary = searchPlaceholderColor
-      )
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 8.dp)
+            .then(if (oneHandUI.value && chatBottomBar.value) Modifier.navigationBarsPadding() else Modifier.statusBarsPadding())
     ) {
-      DefaultAppBar(
-        navigationButton = { NavigationButtonBack(onBackClicked) },
-        title = { ChatInfoToolbarTitle(chatInfo) },
-        onTitleClick = if (chatInfo is ChatInfo.Local) null else info,
-        showSearch = true,
-        searchAlwaysVisible = contentFilter.value != null,
-        onTop = !oneHandUI.value || !chatBottomBar.value,
-        searchPlaceholder = searchPlaceholder,
-        onSearchValueChanged = onSearchValueChanged,
-        searchTrailingContent = searchTrailingContent,
-        buttons = { barButtons.forEach { it() } }
-      )
+        Surface(
+            modifier = Modifier.fillMaxWidth().height(56.dp), // Стандартная высота M3 SearchBar
+            shape = RoundedCornerShape(percent = 50), // Полностью закругленные углы (Капсула)
+            color = islandContainerColor,
+            elevation = 2.dp
+        ) {
+            Row(
+                modifier = Modifier.fillMaxSize(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // Кнопка "Назад" слева
+                IconButton(
+                    onClick = onBackClicked,
+                    modifier = Modifier.padding(start = 4.dp)
+                ) {
+                    Icon(
+                        painter = painterResource(MR.images.ic_arrow_back), // Убедитесь, что у вас есть иконка "назад"
+                        contentDescription = "Back",
+                        tint = MaterialTheme.colors.primary
+                    )
+                }
+
+                // Поле ввода текста
+                Box(
+                    modifier = Modifier.weight(1f).padding(horizontal = 8.dp),
+                    contentAlignment = Alignment.CenterStart
+                ) {
+                    BasicTextField(
+                        value = searchValue.value,
+                        onValueChange = { onSearchValueChanged(it) },
+                        textStyle = MaterialTheme.typography.body1.copy(
+                            color = searchTextColor,
+                            fontSize = 16.sp
+                        ),
+                        singleLine = true,
+                        cursorBrush = SolidColor(MaterialTheme.colors.primary),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    // Плейсхолдер, если текст пустой
+                    if (searchValue.value.isEmpty()) {
+                        Text(
+                            text = searchPlaceholder ?: "Search images",
+                            color = searchPlaceholderColor,
+                            fontSize = 16.sp
+                        )
+                    }
+                }
+
+                // Кнопка "Очистить" (появляется только если есть текст)
+                if (searchValue.value.isNotEmpty()) {
+                    IconButton(onClick = { onSearchValueChanged("") }) {
+                        Icon(
+                            painter = painterResource(MR.images.ic_close),
+                            contentDescription = "Clear",
+                            tint = MaterialTheme.colors.primary
+                        )
+                    }
+                }
+
+                // Дополнительная кнопка справа (например, фильтр картинок)
+                searchTrailingContent?.invoke()
+            }
+        }
     }
- } else {
+} else {
    // НАШ НОВЫЙ ПЛАВАЮЩИЙ ДИЗАЙН ДЛЯ ВЕРХНЕГО/НИЖНЕГО РАСПОЛОЖЕНИЯ
    Box(
      modifier = Modifier
