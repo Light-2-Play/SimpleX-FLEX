@@ -1432,14 +1432,14 @@ fun BoxScope.ChatInfoToolbar(
   }} else null
 
  // НОВЫЙ ДИЗАЙН ПЛАВАЮЩЕЙ ПАНЕЛИ (M3 Tonal Container) ДЛЯ ВСЕХ СЛУЧАЕВ
- val islandContainerColor = if (MaterialTheme.colors.isLight) {
-   androidx.compose.ui.graphics.lerp(MaterialTheme.colors.surface, MaterialTheme.colors.primary, 0.07f)
- } else {
-   androidx.compose.ui.graphics.lerp(MaterialTheme.colors.surface, MaterialTheme.colors.primary, 0.11f)
- }
+  val islandContainerColor = if (MaterialTheme.colors.isLight) {
+    androidx.compose.ui.graphics.lerp(MaterialTheme.colors.surface, MaterialTheme.colors.primary, 0.07f)
+  } else {
+    androidx.compose.ui.graphics.lerp(MaterialTheme.colors.surface, MaterialTheme.colors.primary, 0.11f)
+  }
 
- // Если открыт поиск — возвращаемся к DefaultAppBar (так как там поле ввода)
- if (showSearch.value) {
+  if (showSearch.value) {
+    // --- ШАГ 1: НОВЫЙ ДИЗАЙН ПЛАВАЮЩЕЙ КАПСУЛЫ ДЛЯ ПОИСКА (M3 Expressive SearchBar) ---
     val searchTextColor = androidx.compose.ui.graphics.lerp(
       MaterialTheme.colors.onSurface,
       MaterialTheme.colors.primary,
@@ -1447,88 +1447,135 @@ fun BoxScope.ChatInfoToolbar(
     )
     val searchPlaceholderColor = searchTextColor.copy(alpha = 0.55f)
 
-    MaterialTheme(
-      colors = MaterialTheme.colors.copy(
-        onSurface = searchTextColor,
-        onBackground = searchTextColor,
-        secondary = searchPlaceholderColor
-      )
+    Box(
+      modifier = Modifier
+        .fillMaxWidth()
+        .padding(horizontal = 8.dp, vertical = 6.dp)
+        .then(if (oneHandUI.value && chatBottomBar.value) Modifier.navigationBarsPadding() else Modifier.statusBarsPadding())
     ) {
-      DefaultAppBar(
-        navigationButton = { NavigationButtonBack(onBackClicked) },
-        title = { ChatInfoToolbarTitle(chatInfo) },
-        onTitleClick = if (chatInfo is ChatInfo.Local) null else info,
-        showSearch = true,
-        searchAlwaysVisible = contentFilter.value != null,
-        onTop = !oneHandUI.value || !chatBottomBar.value,
-        searchPlaceholder = searchPlaceholder,
-        onSearchValueChanged = onSearchValueChanged,
-        searchTrailingContent = searchTrailingContent,
-        buttons = { barButtons.forEach { it() } }
-      )
+      Surface(
+        modifier = Modifier.fillMaxWidth().height(52.dp),
+        shape = RoundedCornerShape(percent = 50),
+        color = islandContainerColor,
+        elevation = 0.dp
+      ) {
+        Row(
+          modifier = Modifier.fillMaxSize().padding(horizontal = 4.dp),
+          verticalAlignment = Alignment.CenterVertically
+        ) {
+          // Кнопка "Назад" слева
+          IconButton(onClick = onBackClicked) {
+            Icon(
+              painter = painterResource(MR.images.ic_arrow_back),
+              contentDescription = "Back",
+              tint = MaterialTheme.colors.primary
+            )
+          }
+
+          // Поле ввода текста и плейсхолдер
+          Box(
+            modifier = Modifier.weight(1f).padding(horizontal = 4.dp),
+            contentAlignment = Alignment.CenterStart
+          ) {
+            if (searchValue.value.isEmpty()) {
+              Text(
+                text = searchPlaceholder ?: generalGetString(MR.strings.search_verb),
+                color = searchPlaceholderColor,
+                fontSize = 16.sp,
+                fontWeight = FontWeight.Medium
+              )
+            }
+            androidx.compose.foundation.text.BasicTextField(
+              value = searchValue.value,
+              onValueChange = { onSearchValueChanged(it) },
+              textStyle = MaterialTheme.typography.body1.copy(
+                color = searchTextColor,
+                fontSize = 16.sp,
+                fontWeight = FontWeight.Medium
+              ),
+              singleLine = true,
+              cursorBrush = SolidColor(MaterialTheme.colors.primary),
+              modifier = Modifier.fillMaxWidth()
+            )
+          }
+
+          // Кнопка очистки ИЛИ иконка фильтра справа
+          if (searchValue.value.isNotEmpty()) {
+            IconButton(onClick = { onSearchValueChanged("") }) {
+              Icon(
+                painter = painterResource(MR.images.ic_close),
+                contentDescription = "Clear",
+                tint = MaterialTheme.colors.primary
+              )
+            }
+          } else {
+            searchTrailingContent?.invoke()
+          }
+        }
+      }
     }
- } else {
-   // НАШ НОВЫЙ ПЛАВАЮЩИЙ ДИЗАЙН ДЛЯ ВЕРХНЕГО/НИЖНЕГО РАСПОЛОЖЕНИЯ
-   Box(
-     modifier = Modifier
-       .fillMaxWidth()
-       .padding(horizontal = 8.dp, vertical = 6.dp)
-       .then(if (oneHandUI.value && chatBottomBar.value) Modifier.navigationBarsPadding() else Modifier.statusBarsPadding())
-   ) {
-     Row(
-       modifier = Modifier.fillMaxWidth(),
-       horizontalArrangement = Arrangement.spacedBy(8.dp),
-       verticalAlignment = Alignment.CenterVertically
-     ) {
-       // 1. Остров «Назад»
-       if (appPlatform.isAndroid) {
-         Surface(
-           modifier = Modifier.size(48.dp),
-           shape = RoundedCornerShape(percent = 50),
-           color = islandContainerColor,
-           elevation = 0.dp
-         ) {
-           Box(contentAlignment = Alignment.Center) {
-             NavigationButtonBack(onBackClicked)
-           }
-         }
-       }
+  } else {
+    // НАШ НОВЫЙ ПЛАВАЮЩИЙ ДИЗАЙН ДЛЯ ВЕРХНЕГО/НИЖНЕГО РАСПОЛОЖЕНИЯ
+    Box(
+      modifier = Modifier
+        .fillMaxWidth()
+        .padding(horizontal = 8.dp, vertical = 6.dp)
+        .then(if (oneHandUI.value && chatBottomBar.value) Modifier.navigationBarsPadding() else Modifier.statusBarsPadding())
+    ) {
+      Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically
+      ) {
+        // 1. Остров «Назад»
+        if (appPlatform.isAndroid) {
+          Surface(
+            modifier = Modifier.size(48.dp),
+            shape = RoundedCornerShape(percent = 50),
+            color = islandContainerColor,
+            elevation = 0.dp
+          ) {
+            Box(contentAlignment = Alignment.Center) {
+              NavigationButtonBack(onBackClicked)
+            }
+          }
+        }
 
-       // 2. Остров «Информация о чате»
-       Surface(
-         modifier = Modifier
-           .weight(1f)
-           .height(48.dp),
-         shape = RoundedCornerShape(24.dp),
-         color = islandContainerColor,
-         elevation = 0.dp
-       ) {
-         Box(
-           modifier = Modifier
-             .fillMaxSize()
-             .then(if (chatInfo !is ChatInfo.Local) Modifier.clickable(onClick = info) else Modifier),
-           contentAlignment = Alignment.Center
-         ) {
-           ChatInfoToolbarTitle(chatInfo)
-         }
-       }
+        // 2. Остров «Информация о чате»
+        Surface(
+          modifier = Modifier
+            .weight(1f)
+            .height(48.dp),
+          shape = RoundedCornerShape(24.dp),
+          color = islandContainerColor,
+          elevation = 0.dp
+        ) {
+          Box(
+            modifier = Modifier
+              .fillMaxSize()
+              .then(if (chatInfo !is ChatInfo.Local) Modifier.clickable(onClick = info) else Modifier),
+            contentAlignment = Alignment.Center
+          ) {
+            ChatInfoToolbarTitle(chatInfo)
+          }
+        }
 
-       // 3. Острова кнопок («Поиск», «Звонок», «Меню»)
-       barButtons.forEach { actionButton ->
-         Surface(
-           modifier = Modifier.size(48.dp),
-           shape = RoundedCornerShape(percent = 50),
-           color = islandContainerColor,
-           elevation = 0.dp
-         ) {
-           Box(contentAlignment = Alignment.Center) {
-             Row { actionButton() }
-           }
-         }
-       }
-     }
-   }
- }
+        // 3. Острова кнопок («Поиск», «Звонок», «Меню»)
+        barButtons.forEach { actionButton ->
+          Surface(
+            modifier = Modifier.size(48.dp),
+            shape = RoundedCornerShape(percent = 50),
+            color = islandContainerColor,
+            elevation = 0.dp
+          ) {
+            Box(contentAlignment = Alignment.Center) {
+              Row { actionButton() }
+            }
+          }
+        }
+      }
+    }
+  }
 
   // Динамический тональный контейнер для выпадающих меню (M3 Menu)
   val menuContainerColor = if (MaterialTheme.colors.isLight) {
