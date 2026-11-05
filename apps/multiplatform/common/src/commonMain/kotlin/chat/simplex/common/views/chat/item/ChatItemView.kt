@@ -392,7 +392,7 @@ fun ChatItemView(
                 }
               }
 
-           @Composable
+         @Composable
               fun MsgReactionsMenu() {
                 val rs = MsgReaction.supported.mapNotNull { r ->
                   if (null == cItem.reactions.find { it.userReacted && it.reaction.text == r.text }) {
@@ -402,17 +402,25 @@ fun ChatItemView(
                   }
                 }
                 if (rs.isNotEmpty()) {
-                  Row(modifier = Modifier.padding(horizontal = DEFAULT_PADDING).horizontalScroll(rememberScrollState()), verticalAlignment = Alignment.CenterVertically) {
-                    rs.forEach() { r ->
+                  // M3 DESIGN: SpaceEvenly для аккуратного распределения эмодзи
+                  Row(
+                    modifier = Modifier
+                      .fillMaxWidth()
+                      .padding(horizontal = 8.dp, vertical = 6.dp)
+                      .horizontalScroll(rememberScrollState()), 
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceEvenly
+                  ) {
+                    rs.forEach { r ->
                       Box(
-                        Modifier.size(36.dp).clip(CircleShape).clickable {
+                        Modifier.size(40.dp).clip(CircleShape).clickable {
                           RichHaptics.perform(HapticPattern.CLICK)
                           setReaction(cInfo, cItem, true, r)
                           showMenu.value = false
                         },
                         contentAlignment = Alignment.Center
                       ) {
-                        ReactionIcon(r.text, 12.sp)
+                        ReactionIcon(r.text, 18.sp)
                       }
                     }
                   }
@@ -433,170 +441,205 @@ fun ChatItemView(
               @Composable
               fun MsgContentItemDropdownMenu() {
                 val saveFileLauncher = rememberSaveFileLauncher(ciFile = cItem.file)
-                when {
-                  cItem.isReport && cItem.meta.itemDeleted == null && cInfo is ChatInfo.Group -> {
-                    DefaultDropdownMenu(showMenu) {
-                      if (cItem.chatDir !is CIDirection.GroupSnd && cInfo.groupInfo.membership.memberRole >= GroupMemberRole.Moderator) {
-                        ArchiveReportItemAction(cItem.id, cInfo.groupInfo.membership.memberActive, showMenu, archiveReports)
+                
+                // M3 DESIGN: Настраиваем плавающий и закругленный вид меню
+                val menuContainerColor = if (MaterialTheme.colors.isLight) {
+                  androidx.compose.ui.graphics.lerp(MaterialTheme.colors.surface, MaterialTheme.colors.primary, 0.08f)
+                } else {
+                  androidx.compose.ui.graphics.lerp(MaterialTheme.colors.surface, MaterialTheme.colors.primary, 0.12f)
+                }
+                
+                MaterialTheme(
+                  colors = MaterialTheme.colors.copy(surface = menuContainerColor),
+                  shapes = MaterialTheme.shapes.copy(medium = RoundedCornerShape(20.dp))
+                ) {
+                  when {
+                    cItem.isReport && cItem.meta.itemDeleted == null && cInfo is ChatInfo.Group -> {
+                      DefaultDropdownMenu(showMenu, modifier = Modifier.widthIn(min = 230.dp)) {
+                        if (cItem.chatDir !is CIDirection.GroupSnd && cInfo.groupInfo.membership.memberRole >= GroupMemberRole.Moderator) {
+                          ArchiveReportItemAction(cItem.id, cInfo.groupInfo.membership.memberActive, showMenu, archiveReports)
+                        }
+                        DeleteItemAction(chatsCtx, cInfo, cItem, revealed, showMenu, questionText = deleteMessageQuestionText(), deleteMessage, deleteMessages, buttonText = stringResource(MR.strings.delete_report))
+                        Divider(Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colors.onSurface.copy(alpha = 0.1f))
+                        SelectItemAction(showMenu, selectChatItem)
                       }
-                      DeleteItemAction(chatsCtx, cInfo, cItem, revealed, showMenu, questionText = deleteMessageQuestionText(), deleteMessage, deleteMessages, buttonText = stringResource(MR.strings.delete_report))
-                      Divider()
-                      SelectItemAction(showMenu, selectChatItem)
                     }
-                  }
-                  cItem.content.msgContent != null && cItem.id >= 0 && !cItem.isReport -> {
-                    DefaultDropdownMenu(showMenu) {
-                      if (cInfo.featureEnabled(ChatFeature.Reactions) && cItem.allowAddReaction) {
-                        MsgReactionsMenu()
-                      }
-                      if (cItem.meta.itemDeleted == null && !live && !cItem.localNote && cInfo.sendMsgEnabled) {
-                        ItemAction(stringResource(MR.strings.reply_verb), painterResource(MR.images.ic_reply), onClick = {
-                          RichHaptics.perform(HapticPattern.CLICK)
-                          if (composeState.value.editing) {
-                            composeState.value = ComposeState(contextItem = ComposeContextItem.QuotedItem(cItem), useLinkPreviews = useLinkPreviews)
-                          } else {
-                            composeState.value = composeState.value.copy(contextItem = ComposeContextItem.QuotedItem(cItem))
-                          }
-                          showMenu.value = false
-                        })
-                      }
-                      val clipboard = LocalClipboardManager.current
-                      val cachedRemoteReqs = remember { CIFile.cachedRemoteFileRequests }
-                      val copyAndShareAllowed = when {
-                        cItem.content.text.isNotEmpty() -> true
-                        cItem.file?.forwardingAllowed() == true -> true
-                        else -> false
-                      }
-
-                      if (copyAndShareAllowed) {
-                        ItemAction(stringResource(MR.strings.share_verb), painterResource(MR.images.ic_share), onClick = {
-                          RichHaptics.perform(HapticPattern.CLICK)
-                          var fileSource = getLoadedFileSource(cItem.file)
-                          val shareIfExists = {
-                            when (val f = fileSource) {
-                              null -> clipboard.shareText(cItem.content.text)
-                              else -> shareFile(cItem.text, f)
+                    cItem.content.msgContent != null && cItem.id >= 0 && !cItem.isReport -> {
+                      DefaultDropdownMenu(showMenu, modifier = Modifier.widthIn(min = 230.dp)) {
+                        
+                        // ПАНЕЛЬ ЭМОДЗИ РЕАКЦИЙ
+                        if (cInfo.featureEnabled(ChatFeature.Reactions) && cItem.allowAddReaction) {
+                          MsgReactionsMenu()
+                          Divider(Modifier.padding(horizontal = 16.dp, vertical = 4.dp), color = MaterialTheme.colors.onSurface.copy(alpha = 0.1f))
+                        }
+                        
+                        // Reply
+                        if (cItem.meta.itemDeleted == null && !live && !cItem.localNote && cInfo.sendMsgEnabled) {
+                          ItemAction(stringResource(MR.strings.reply_verb), painterResource(MR.images.ic_reply), onClick = {
+                            RichHaptics.perform(HapticPattern.CLICK)
+                            if (composeState.value.editing) {
+                              composeState.value = ComposeState(contextItem = ComposeContextItem.QuotedItem(cItem), useLinkPreviews = useLinkPreviews)
+                            } else {
+                              composeState.value = composeState.value.copy(contextItem = ComposeContextItem.QuotedItem(cItem))
                             }
                             showMenu.value = false
-                          }
-                          if (chatModel.connectedToRemote() && fileSource == null) {
-                            withLongRunningApi(slow = 600_000) {
-                              cItem.file?.loadRemoteFile(true)
-                              fileSource = getLoadedFileSource(cItem.file)
-                              shareIfExists()
+                          })
+                        }
+                        
+                        // Share & Copy
+                        val clipboard = LocalClipboardManager.current
+                        val cachedRemoteReqs = remember { CIFile.cachedRemoteFileRequests }
+                        val copyAndShareAllowed = when {
+                          cItem.content.text.isNotEmpty() -> true
+                          cItem.file?.forwardingAllowed() == true -> true
+                          else -> false
+                        }
+
+                        if (copyAndShareAllowed) {
+                          ItemAction(stringResource(MR.strings.share_verb), painterResource(MR.images.ic_share), onClick = {
+                            RichHaptics.perform(HapticPattern.CLICK)
+                            var fileSource = getLoadedFileSource(cItem.file)
+                            val shareIfExists = {
+                              when (val f = fileSource) {
+                                null -> clipboard.shareText(cItem.content.text)
+                                else -> shareFile(cItem.text, f)
+                              }
+                              showMenu.value = false
                             }
-                          } else shareIfExists()
-                        })
-                      }
-                      if (copyAndShareAllowed) {
-                        ItemAction(stringResource(MR.strings.copy_verb), painterResource(MR.images.ic_content_copy), onClick = {
-                          RichHaptics.perform(HapticPattern.SUCCESS)
-                          copyItemToClipboard(cItem, clipboard)
-                          showMenu.value = false
-                        })
-                      }
-                      if (cItem.file != null && (getLoadedFilePath(cItem.file) != null || (chatModel.connectedToRemote() && cachedRemoteReqs[cItem.file.fileSource] != false && cItem.file.loaded))) {
-                        SaveContentItemAction(cItem, saveFileLauncher, showMenu)
-                      } else if (cItem.file != null && cItem.file.fileStatus is CIFileStatus.RcvInvitation && fileSizeValid(cItem.file, ciSenderProfile(cItem, chat.chatInfo))) {
-                        ItemAction(stringResource(MR.strings.download_file), painterResource(MR.images.ic_arrow_downward), onClick = {
-                          RichHaptics.perform(HapticPattern.CLICK)
-                          withBGApi {
-                            val user = chatModel.currentUser.value
-                            if (user != null) {
-                              controller.receiveFile(rhId, user, cItem.file.fileId)
+                            if (chatModel.connectedToRemote() && fileSource == null) {
+                              withLongRunningApi(slow = 600_000) {
+                                cItem.file?.loadRemoteFile(true)
+                                fileSource = getLoadedFileSource(cItem.file)
+                                shareIfExists()
+                              }
+                            } else shareIfExists()
+                          })
+                        }
+                        if (copyAndShareAllowed) {
+                          ItemAction(stringResource(MR.strings.copy_verb), painterResource(MR.images.ic_content_copy), onClick = {
+                            RichHaptics.perform(HapticPattern.SUCCESS)
+                            copyItemToClipboard(cItem, clipboard)
+                            showMenu.value = false
+                          })
+                        }
+                        
+                        // Files / Edits
+                        if (cItem.file != null && (getLoadedFilePath(cItem.file) != null || (chatModel.connectedToRemote() && cachedRemoteReqs[cItem.file.fileSource] != false && cItem.file.loaded))) {
+                          SaveContentItemAction(cItem, saveFileLauncher, showMenu)
+                        } else if (cItem.file != null && cItem.file.fileStatus is CIFileStatus.RcvInvitation && fileSizeValid(cItem.file, ciSenderProfile(cItem, chat.chatInfo))) {
+                          ItemAction(stringResource(MR.strings.download_file), painterResource(MR.images.ic_arrow_downward), onClick = {
+                            RichHaptics.perform(HapticPattern.CLICK)
+                            withBGApi {
+                              val user = chatModel.currentUser.value
+                              if (user != null) {
+                                controller.receiveFile(rhId, user, cItem.file.fileId)
+                              }
                             }
+                            showMenu.value = false
+                          })
+                        }
+                        
+                        if (cItem.meta.editable && cItem.content.msgContent !is MsgContent.MCVoice && !live) {
+                          ItemAction(stringResource(MR.strings.edit_verb), painterResource(MR.images.ic_edit_filled), onClick = {
+                            RichHaptics.perform(HapticPattern.CLICK)
+                            composeState.value = ComposeState(editingItem = cItem, useLinkPreviews = useLinkPreviews)
+                            showMenu.value = false
+                          })
+                        }
+                        
+                        // Forward
+                        if (cItem.meta.itemDeleted == null &&
+                          (cItem.file == null || cItem.file.forwardingAllowed()) &&
+                          !cItem.isLiveDummy && !live
+                        ) {
+                          ItemAction(stringResource(MR.strings.forward_chat_item), painterResource(MR.images.ic_forward), onClick = {
+                            RichHaptics.perform(HapticPattern.CLICK)
+                            forwardItem(cInfo, cItem)
+                            showMenu.value = false
+                          })
+                        }
+                        
+                        // Info (Details)
+                        ItemInfoAction(cInfo, cItem, showItemDetails, showMenu)
+                        
+                        if (revealed.value) {
+                          HideItemAction(revealed, showMenu, reveal)
+                        }
+                        
+                        if (cItem.meta.itemDeleted == null && cItem.file != null && cItem.file.cancelAction != null && !cItem.localNote) {
+                          CancelFileItemAction(cItem.file.fileId, showMenu, cancelFile = cancelFile, cancelAction = cItem.file.cancelAction)
+                        }
+                        
+                        // DELETE BUTTON (Highlighted Red)
+                        if (!(live && cItem.meta.isLive) && !preview) {
+                          DeleteItemAction(chatsCtx, cInfo, cItem, revealed, showMenu, questionText = deleteMessageQuestionText(), deleteMessage, deleteMessages)
+                        }
+                        
+                        // Moderate / Report
+                        if (cItem.chatDir !is CIDirection.GroupSnd) {
+                          val groupInfo = cItem.memberToModerate(cInfo)?.first
+                          if (groupInfo != null) {
+                            ModerateItemAction(cItem, questionText = moderateMessageQuestionText(cInfo.featureEnabled(ChatFeature.FullDelete), 1), showMenu, deleteMessage)
+                          } else if (cItem.meta.itemDeleted == null && cInfo is ChatInfo.Group && cInfo.groupInfo.groupFeatureEnabled(GroupFeature.Reports) && cInfo.groupInfo.membership.memberRole == GroupMemberRole.Member && !live) {
+                            ReportItemAction(cItem, composeState, showMenu)
                           }
-                          showMenu.value = false
-                        })
-                      }
-                      if (cItem.meta.editable && cItem.content.msgContent !is MsgContent.MCVoice && !live) {
-                        ItemAction(stringResource(MR.strings.edit_verb), painterResource(MR.images.ic_edit_filled), onClick = {
-                          RichHaptics.perform(HapticPattern.CLICK)
-                          composeState.value = ComposeState(editingItem = cItem, useLinkPreviews = useLinkPreviews)
-                          showMenu.value = false
-                        })
-                      }
-                      if (cItem.meta.itemDeleted == null &&
-                        (cItem.file == null || cItem.file.forwardingAllowed()) &&
-                        !cItem.isLiveDummy && !live
-                      ) {
-                        ItemAction(stringResource(MR.strings.forward_chat_item), painterResource(MR.images.ic_forward), onClick = {
-                          RichHaptics.perform(HapticPattern.CLICK)
-                          forwardItem(cInfo, cItem)
-                          showMenu.value = false
-                        })
-                      }
-                      ItemInfoAction(cInfo, cItem, showItemDetails, showMenu)
-                      if (revealed.value) {
-                        HideItemAction(revealed, showMenu, reveal)
-                      }
-                      if (cItem.meta.itemDeleted == null && cItem.file != null && cItem.file.cancelAction != null && !cItem.localNote) {
-                        CancelFileItemAction(cItem.file.fileId, showMenu, cancelFile = cancelFile, cancelAction = cItem.file.cancelAction)
-                      }
-                      if (!(live && cItem.meta.isLive) && !preview) {
-                        DeleteItemAction(chatsCtx, cInfo, cItem, revealed, showMenu, questionText = deleteMessageQuestionText(), deleteMessage, deleteMessages)
-                      }
-                      if (cItem.chatDir !is CIDirection.GroupSnd) {
-                        val groupInfo = cItem.memberToModerate(cInfo)?.first
-                        if (groupInfo != null) {
-                          ModerateItemAction(cItem, questionText = moderateMessageQuestionText(cInfo.featureEnabled(ChatFeature.FullDelete), 1), showMenu, deleteMessage)
-                        } else if (cItem.meta.itemDeleted == null && cInfo is ChatInfo.Group && cInfo.groupInfo.groupFeatureEnabled(GroupFeature.Reports) && cInfo.groupInfo.membership.memberRole == GroupMemberRole.Member && !live) {
-                          ReportItemAction(cItem, composeState, showMenu)
+                        }
+                        
+                        // Select Action
+                        if (cItem.canBeDeletedForSelf) {
+                          Divider(Modifier.padding(horizontal = 16.dp, vertical = 4.dp), color = MaterialTheme.colors.onSurface.copy(alpha = 0.1f))
+                          SelectItemAction(showMenu, selectChatItem)
                         }
                       }
-                      if (cItem.canBeDeletedForSelf) {
-                        Divider()
-                        SelectItemAction(showMenu, selectChatItem)
+                    }
+                    cItem.meta.itemDeleted != null -> {
+                      DefaultDropdownMenu(showMenu, modifier = Modifier.widthIn(min = 230.dp)) {
+                        if (revealed.value) {
+                          HideItemAction(revealed, showMenu, reveal)
+                        } else if (!cItem.isDeletedContent) {
+                          RevealItemAction(revealed, showMenu, reveal)
+                        } else if (range.value != null) {
+                          ExpandItemAction(revealed, showMenu, reveal)
+                        }
+                        ItemInfoAction(cInfo, cItem, showItemDetails, showMenu)
+                        DeleteItemAction(chatsCtx, cInfo, cItem, revealed, showMenu, questionText = deleteMessageQuestionText(), deleteMessage, deleteMessages)
+                        if (cItem.canBeDeletedForSelf) {
+                          Divider(Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colors.onSurface.copy(alpha = 0.1f))
+                          SelectItemAction(showMenu, selectChatItem)
+                        }
                       }
                     }
-                  }
-                  cItem.meta.itemDeleted != null -> {
-                    DefaultDropdownMenu(showMenu) {
-                      if (revealed.value) {
-                        HideItemAction(revealed, showMenu, reveal)
-                      } else if (!cItem.isDeletedContent) {
-                        RevealItemAction(revealed, showMenu, reveal)
-                      } else if (range.value != null) {
-                        ExpandItemAction(revealed, showMenu, reveal)
-                      }
-                      ItemInfoAction(cInfo, cItem, showItemDetails, showMenu)
-                      DeleteItemAction(chatsCtx, cInfo, cItem, revealed, showMenu, questionText = deleteMessageQuestionText(), deleteMessage, deleteMessages)
-                      if (cItem.canBeDeletedForSelf) {
-                        Divider()
-                        SelectItemAction(showMenu, selectChatItem)
+                    cItem.isDeletedContent -> {
+                      DefaultDropdownMenu(showMenu, modifier = Modifier.widthIn(min = 230.dp)) {
+                        ItemInfoAction(cInfo, cItem, showItemDetails, showMenu)
+                        DeleteItemAction(chatsCtx, cInfo, cItem, revealed, showMenu, questionText = deleteMessageQuestionText(), deleteMessage, deleteMessages)
+                        if (cItem.canBeDeletedForSelf) {
+                          Divider(Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colors.onSurface.copy(alpha = 0.1f))
+                          SelectItemAction(showMenu, selectChatItem)
+                        }
                       }
                     }
-                  }
-                  cItem.isDeletedContent -> {
-                    DefaultDropdownMenu(showMenu) {
-                      ItemInfoAction(cInfo, cItem, showItemDetails, showMenu)
-                      DeleteItemAction(chatsCtx, cInfo, cItem, revealed, showMenu, questionText = deleteMessageQuestionText(), deleteMessage, deleteMessages)
-                      if (cItem.canBeDeletedForSelf) {
-                        Divider()
-                        SelectItemAction(showMenu, selectChatItem)
+                    cItem.mergeCategory != null && ((range.value?.count() ?: 0) > 1 || revealed.value) -> {
+                      DefaultDropdownMenu(showMenu, modifier = Modifier.widthIn(min = 230.dp)) {
+                        if (revealed.value) {
+                          ShrinkItemAction(revealed, showMenu, reveal)
+                        } else {
+                          ExpandItemAction(revealed, showMenu, reveal)
+                        }
+                        DeleteItemAction(chatsCtx, cInfo, cItem, revealed, showMenu, questionText = deleteMessageQuestionText(), deleteMessage, deleteMessages)
+                        if (cItem.canBeDeletedForSelf) {
+                          Divider(Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colors.onSurface.copy(alpha = 0.1f))
+                          SelectItemAction(showMenu, selectChatItem)
+                        }
                       }
                     }
-                  }
-                  cItem.mergeCategory != null && ((range.value?.count() ?: 0) > 1 || revealed.value) -> {
-                    DefaultDropdownMenu(showMenu) {
-                      if (revealed.value) {
-                        ShrinkItemAction(revealed, showMenu, reveal)
-                      } else {
-                        ExpandItemAction(revealed, showMenu, reveal)
-                      }
-                      DeleteItemAction(chatsCtx, cInfo, cItem, revealed, showMenu, questionText = deleteMessageQuestionText(), deleteMessage, deleteMessages)
-                      if (cItem.canBeDeletedForSelf) {
-                        Divider()
-                        SelectItemAction(showMenu, selectChatItem)
-                      }
-                    }
-                  }
-                  else -> {
-                    DefaultDropdownMenu(showMenu) {
-                      DeleteItemAction(chatsCtx, cInfo, cItem, revealed, showMenu, questionText = deleteMessageQuestionText(), deleteMessage, deleteMessages)
-                      if (selectedChatItems.value == null) {
-                        Divider()
-                        SelectItemAction(showMenu, selectChatItem)
+                    else -> {
+                      DefaultDropdownMenu(showMenu, modifier = Modifier.widthIn(min = 230.dp)) {
+                        DeleteItemAction(chatsCtx, cInfo, cItem, revealed, showMenu, questionText = deleteMessageQuestionText(), deleteMessage, deleteMessages)
+                        if (selectedChatItems.value == null) {
+                          Divider(Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colors.onSurface.copy(alpha = 0.1f))
+                          SelectItemAction(showMenu, selectChatItem)
+                        }
                       }
                     }
                   }
