@@ -1472,7 +1472,7 @@ fun BoxScope.ChatInfoToolbar(
           // Кнопка "Назад" слева
           IconButton(onClick = onBackClicked) {
             Icon(
-              painter = painterResource(MR.images.ic_arrow_left), // Используем ic_arrow_left, так как ic_arrow_back нет
+              imageVector = androidx.compose.material.icons.Icons.Default.ArrowBack, // Надежная встроенная иконка
               contentDescription = "Back",
               tint = MaterialTheme.colors.primary
             )
