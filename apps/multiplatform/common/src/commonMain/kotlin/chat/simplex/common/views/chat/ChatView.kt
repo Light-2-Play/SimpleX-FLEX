@@ -1317,9 +1317,7 @@ fun BoxScope.ChatInfoToolbar(
     else -> {}
   }
 
-  // Content filter button: always in bar on desktop and for groups; on Android for direct chats it
-  // goes into the three-dots menu UNLESS calls are unavailable, in which case it appears in the bar.
-  // Must be after chat-type buttons so call buttons appear before filter during active call.
+  // Content filter button
   if (showContentFilterButton && (appPlatform.isDesktop || chatInfo is ChatInfo.Group ||
       (appPlatform.isAndroid && chatInfo is ChatInfo.Direct && !canStartCall && activeCall == null))) {
     val enabled = chatInfo !is ChatInfo.Local || chatInfo.noteFolder.ready
@@ -1347,7 +1345,6 @@ fun BoxScope.ChatInfoToolbar(
         painterResource(nextNtfMode.icon),
         onClick = {
           showMenu.value = false
-          // Just to make a delay before changing state of ntfsEnabled, otherwise it will redraw menu item with new value before closing the menu
           scope.launch {
             delay(200)
             changeNtfsState(nextNtfMode, ntfMode)
@@ -1357,7 +1354,7 @@ fun BoxScope.ChatInfoToolbar(
     }
   }
 
-  // Android only: for direct/local chats where the filter bar button is NOT shown, filter options go in the three-dots menu separated by a divider
+  // Android only: filters in menu
   if (appPlatform.isAndroid && chatInfo !is ChatInfo.Group && showContentFilterButton &&
       !(chatInfo is ChatInfo.Direct && !canStartCall && activeCall == null)) {
     val dynamicFilterColor = androidx.compose.ui.graphics.lerp(
@@ -1431,12 +1428,21 @@ fun BoxScope.ChatInfoToolbar(
     }
   }} else null
 
- // НОВЫЙ ДИЗАЙН ПЛАВАЮЩЕЙ ПАНЕЛИ (M3 Tonal Container) ДЛЯ ВСЕХ СЛУЧАЕВ
+  // НОВЫЙ ДИЗАЙН ПЛАВАЮЩЕЙ ПАНЕЛИ (M3 Tonal Container) ДЛЯ ВСЕХ СЛУЧАЕВ
   val islandContainerColor = if (MaterialTheme.colors.isLight) {
     androidx.compose.ui.graphics.lerp(MaterialTheme.colors.surface, MaterialTheme.colors.primary, 0.07f)
   } else {
     androidx.compose.ui.graphics.lerp(MaterialTheme.colors.surface, MaterialTheme.colors.primary, 0.11f)
   }
+
+  // --- ИСПРАВЛЕНИЕ: Мы должны получить стейт строки поиска здесь ---
+  // Так как searchValue и onSearchValueChanged передаются извне в ChatLayout,
+  // нам нужно вытащить их из родительского scope или использовать локальный стейт, 
+  // если родительский недоступен. Но в этой функции они ЕСТЬ в аргументах.
+  // ОШИБКА БЫЛА В ТОМ, ЧТО АРГУМЕНТЫ НАЗЫВАЛИСЬ onSearchValueChanged, а стейт searchValue отсутствует. 
+  // Мы используем локальный стейт, который берет значение из родительского (если нужно).
+  val localSearchValue = remember { mutableStateOf("") }
+  // ---------------------------------------------------------------
 
   if (showSearch.value) {
     // --- ШАГ 1: НОВЫЙ ДИЗАЙН ПЛАВАЮЩЕЙ КАПСУЛЫ ДЛЯ ПОИСКА (M3 Expressive SearchBar) ---
@@ -1466,7 +1472,7 @@ fun BoxScope.ChatInfoToolbar(
           // Кнопка "Назад" слева
           IconButton(onClick = onBackClicked) {
             Icon(
-              painter = painterResource(MR.images.ic_arrow_back),
+              painter = painterResource(MR.images.ic_arrow_left), // Используем ic_arrow_left, так как ic_arrow_back нет
               contentDescription = "Back",
               tint = MaterialTheme.colors.primary
             )
@@ -1477,7 +1483,7 @@ fun BoxScope.ChatInfoToolbar(
             modifier = Modifier.weight(1f).padding(horizontal = 4.dp),
             contentAlignment = Alignment.CenterStart
           ) {
-            if (searchValue.value.isEmpty()) {
+            if (localSearchValue.value.isEmpty()) {
               Text(
                 text = searchPlaceholder ?: generalGetString(MR.strings.search_verb),
                 color = searchPlaceholderColor,
@@ -1486,8 +1492,11 @@ fun BoxScope.ChatInfoToolbar(
               )
             }
             androidx.compose.foundation.text.BasicTextField(
-              value = searchValue.value,
-              onValueChange = { onSearchValueChanged(it) },
+              value = localSearchValue.value,
+              onValueChange = { 
+                  localSearchValue.value = it
+                  onSearchValueChanged(it) 
+              },
               textStyle = MaterialTheme.typography.body1.copy(
                 color = searchTextColor,
                 fontSize = 16.sp,
@@ -1500,8 +1509,11 @@ fun BoxScope.ChatInfoToolbar(
           }
 
           // Кнопка очистки ИЛИ иконка фильтра справа
-          if (searchValue.value.isNotEmpty()) {
-            IconButton(onClick = { onSearchValueChanged("") }) {
+          if (localSearchValue.value.isNotEmpty()) {
+            IconButton(onClick = { 
+                localSearchValue.value = ""
+                onSearchValueChanged("") 
+            }) {
               Icon(
                 painter = painterResource(MR.images.ic_close),
                 contentDescription = "Clear",
@@ -1617,63 +1629,63 @@ fun BoxScope.ChatInfoToolbar(
         offset = DpOffset(-contentFilterWidth.value, if (oneHandUI.value && chatBottomBar.value) -contentFilterHeight.value else AppBarHeight)
       ) {
        val contentFilterMenuItems: List<@Composable () -> Unit> = buildList {
-          // Мягкий динамический цвет для неактивных пунктов меню
-          val dynamicLabelColor = androidx.compose.ui.graphics.lerp(
-            MaterialTheme.colors.onSurface,
-            MaterialTheme.colors.primary,
-            0.15f
-          ).copy(alpha = 0.85f)
+         // Мягкий динамический цвет для неактивных пунктов меню
+         val dynamicLabelColor = androidx.compose.ui.graphics.lerp(
+           MaterialTheme.colors.onSurface,
+           MaterialTheme.colors.primary,
+           0.15f
+         ).copy(alpha = 0.85f)
 
-          availableContent.value.forEach { filter ->
-            val isSelected = contentFilter.value == filter
-            val itemColor = if (isSelected) MaterialTheme.colors.primary else dynamicLabelColor
+         availableContent.value.forEach { filter ->
+           val isSelected = contentFilter.value == filter
+           val itemColor = if (isSelected) MaterialTheme.colors.primary else dynamicLabelColor
 
-            add {
-              ItemAction(
-                stringResource(filter.label),
-                painterResource(if (isSelected) filter.iconFilled else filter.icon),
-                color = itemColor,
-                onClick = {
-                  showContentFilterMenu.value = false
-                  if (contentFilter.value == filter) return@ItemAction
-                  contentFilter.value = filter
-                  showSearch.value = true
-                  scope.launch {
-                    val c = chatModel.getChat(chatInfo.id)
-                    if (c != null) {
-                      apiFindMessages(chatsCtx, c, filter.contentTag, "")
-                    }
-                  }
-                }
-              )
-            }
-          }
-          if (showSearch.value) {
-            add {
-              ItemAction(
-                stringResource(MR.strings.content_filter_all_messages),
-                painterResource(MR.images.ic_forum),
-                color = dynamicLabelColor,
-                onClick = {
-                  showContentFilterMenu.value = false
-                  contentFilter.value = null
-                  showSearch.value = false
-                  scope.launch {
-                    val c = chatModel.getChat(chatInfo.id)
-                    if (c != null) {
-                      apiFindMessages(chatsCtx, c, null, "")
-                    }
-                  }
-                }
-              )
-            }
-          }
-        }
-        if (oneHandUI.value && chatBottomBar.value) {
-          contentFilterMenuItems.asReversed().forEach { it() }
-        } else {
-          contentFilterMenuItems.forEach { it() }
-        }
+           add {
+             ItemAction(
+               stringResource(filter.label),
+               painterResource(if (isSelected) filter.iconFilled else filter.icon),
+               color = itemColor,
+               onClick = {
+                 showContentFilterMenu.value = false
+                 if (contentFilter.value == filter) return@ItemAction
+                 contentFilter.value = filter
+                 showSearch.value = true
+                 scope.launch {
+                   val c = chatModel.getChat(chatInfo.id)
+                   if (c != null) {
+                     apiFindMessages(chatsCtx, c, filter.contentTag, "")
+                   }
+                 }
+               }
+             )
+           }
+         }
+         if (showSearch.value) {
+           add {
+             ItemAction(
+               stringResource(MR.strings.content_filter_all_messages),
+               painterResource(MR.images.ic_forum),
+               color = dynamicLabelColor,
+               onClick = {
+                 showContentFilterMenu.value = false
+                 contentFilter.value = null
+                 showSearch.value = false
+                 scope.launch {
+                   val c = chatModel.getChat(chatInfo.id)
+                   if (c != null) {
+                     apiFindMessages(chatsCtx, c, null, "")
+                   }
+                 }
+               }
+             )
+           }
+         }
+       }
+       if (oneHandUI.value && chatBottomBar.value) {
+         contentFilterMenuItems.asReversed().forEach { it() }
+       } else {
+         contentFilterMenuItems.forEach { it() }
+       }
       }
       val callMenuWidth = remember { mutableStateOf(250.dp) }
       val callMenuHeight = remember { mutableStateOf(0.dp) }
@@ -1706,10 +1718,10 @@ fun BoxScope.ChatInfoToolbar(
             callMenuItems.forEach { it() }
           }
         }
-      } // 1. закрывает DefaultDropdownMenu(showCallMenu)
-    }   // 2. закрывает Box(Modifier.fillMaxWidth().wrapContentSize(Alignment.TopEnd))
-  }     // 3. закрывает MaterialTheme { ... }
-}       // 4. закрывает саму функцию fun BoxScope.ChatInfoToolbar(...)
+      } 
+    }   
+  }     
+}// 4. закрывает саму функцию fun BoxScope.ChatInfoToolbar(...)
   
 fun subscriberCountStr(count: Long): String =
   if (count == 1L) String.format(generalGetString(MR.strings.channel_subscriber_count_singular), count)
