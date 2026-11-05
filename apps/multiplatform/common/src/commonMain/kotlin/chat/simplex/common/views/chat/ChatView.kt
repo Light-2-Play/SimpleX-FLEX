@@ -1470,14 +1470,7 @@ fun BoxScope.ChatInfoToolbar(
           verticalAlignment = Alignment.CenterVertically
         ) {
           // Кнопка "Назад" слева
-          IconButton(onClick = onBackClicked) {
-            Icon(
-              imageVector = androidx.compose.material.icons.Icons.Default.ArrowBack, // Надежная встроенная иконка
-              contentDescription = "Back",
-              tint = MaterialTheme.colors.primary
-            )
-          }
-
+          NavigationButtonBack(onBackClicked)
           // Поле ввода текста и плейсхолдер
           Box(
             modifier = Modifier.weight(1f).padding(horizontal = 4.dp),
