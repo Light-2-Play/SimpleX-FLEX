@@ -10,12 +10,15 @@ import TextIconSpaced
 import androidx.compose.desktop.ui.tooling.preview.Preview
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.platform.*
 import dev.icerock.moko.resources.compose.painterResource
@@ -38,6 +41,8 @@ import chat.simplex.common.views.onboarding.WhatsNewView
 import chat.simplex.common.views.onboarding.crowdfundingAvailable
 import chat.simplex.common.views.usersettings.networkAndServers.NetworkAndServersView
 import chat.simplex.res.*
+import java.io.File
+import chat.simplex.common.platform.getAppFilePath // Добавлен импорт для кэша
 
 @Composable
 fun SettingsView(chatModel: ChatModel, setPerformLA: (Boolean) -> Unit, close: () -> Unit) {
@@ -98,8 +103,13 @@ fun SettingsLayout(
     hideKeyboard(view)
   }
   val notificationsMode = remember { chatModel.controller.appPrefs.notificationsMode.state }
+  val bottomPadding = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() + 90.dp
+
   ColumnWithScrollBar {
     AppBarTitle(stringResource(MR.strings.your_settings))
+
+    // Вход в FLEX Settings через нативный модальный стек
+    FlexSettingsEntryTile(onClick = showSettingsModal { FlexSettingsView() })
 
     SectionView {
       SettingsActionItem(painterResource(MR.images.ic_light_mode), stringResource(MR.strings.appearance_settings), showSettingsModal { AppearanceView(it) })
@@ -148,7 +158,7 @@ fun SettingsLayout(
         )
       }
     }
-    SectionBottomSpacer()
+    Spacer(Modifier.height(bottomPadding))
   }
 }
 
@@ -161,6 +171,8 @@ fun HelpAndSupportView(
   val uriHandler = LocalUriHandler.current
   val stopped = chatModel.chatRunning.value == false
   val userDisplayName = chatModel.currentUser.value?.displayName ?: ""
+  val bottomPadding = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() + 90.dp
+
   ColumnWithScrollBar {
     AppBarTitle(stringResource(MR.strings.help_and_support))
 
@@ -189,7 +201,7 @@ fun HelpAndSupportView(
       }
       StarOnGithubItem(uriHandler)
     }
-    SectionBottomSpacer()
+    Spacer(Modifier.height(bottomPadding))
   }
 }
 
@@ -199,12 +211,14 @@ expect fun AdvancedSettingsAppSection(
   withAuth: (title: String, desc: String, block: () -> Unit) -> Unit,
 )
 
-// Shutdown is only available on Android; on desktop the app is closed via the window.
 @Composable
 expect fun AppShutdownItem()
 
 @Composable private fun DatabaseItem(encrypted: Boolean, saved: Boolean, openDatabaseView: () -> Unit, stopped: Boolean) {
-  SectionItemView(openDatabaseView) {
+  SectionItemView({
+    RichHaptics.perform(HapticPattern.CLICK)
+    openDatabaseView()
+  }) {
     Row(
       Modifier.fillMaxWidth(),
       verticalAlignment = Alignment.CenterVertically,
@@ -214,10 +228,16 @@ expect fun AppShutdownItem()
         Icon(
           painterResource(MR.images.ic_database),
           contentDescription = stringResource(MR.strings.chat_data),
-          tint = if (encrypted && (appPlatform.isAndroid || !saved)) MaterialTheme.colors.secondary else WarningOrange,
+          tint = if (encrypted && (appPlatform.isAndroid || !saved)) MaterialTheme.colors.primary.copy(alpha = 0.85f) else WarningOrange,
+          modifier = Modifier.size(22.dp)
         )
         TextIconSpaced(false)
-        Text(stringResource(MR.strings.chat_data))
+        Text(
+          stringResource(MR.strings.chat_data),
+          color = MaterialTheme.colors.onSurface,
+          fontWeight = FontWeight.Medium,
+          fontSize = 15.5.sp
+        )
       }
       if (stopped) {
         Icon(
@@ -255,98 +275,86 @@ fun ChatLockItem(
     click = showSettingsModal { SimplexLockView(ChatModel, currentLAMode, setPerformLA) },
     icon = if (performLA.value) painterResource(MR.images.ic_lock_filled) else painterResource(MR.images.ic_lock),
     text = stringResource(MR.strings.chat_lock),
-    iconColor = if (performLA.value) SimplexGreen else MaterialTheme.colors.secondary
+    iconColor = if (performLA.value) SimplexGreen else MaterialTheme.colors.primary.copy(alpha = 0.85f)
   ) {
-    Text(if (performLA.value) remember { currentLAMode.state }.value.text else generalGetString(MR.strings.la_mode_off), color = MaterialTheme.colors.secondary)
+    Text(
+      if (performLA.value) remember { currentLAMode.state }.value.text else generalGetString(MR.strings.la_mode_off),
+      color = MaterialTheme.colors.secondary,
+      fontSize = 14.sp
+    )
   }
 }
 
 @Composable fun ContributeItem(uriHandler: UriHandler) {
-  SectionItemView({ uriHandler.openExternalLink("https://github.com/simplex-chat/simplex-chat#contribute") }) {
-    Icon(
-      painterResource(MR.images.ic_keyboard),
-      contentDescription = "GitHub",
-      tint = MaterialTheme.colors.secondary,
-    )
-    TextIconSpaced()
-    Text(generalGetString(MR.strings.contribute), color = MaterialTheme.colors.primary)
-  }
+  SettingsActionItem(
+    icon = painterResource(MR.images.ic_keyboard),
+    text = generalGetString(MR.strings.contribute),
+    click = { uriHandler.openExternalLink("https://github.com/simplex-chat/simplex-chat#contribute") },
+    textColor = MaterialTheme.colors.primary
+  )
 }
 
 @Composable fun RateAppItem(uriHandler: UriHandler) {
-  SectionItemView({
-    runCatching { uriHandler.openUriCatching("market://details?id=chat.simplex.app") }
-      .onFailure { uriHandler.openUriCatching("https://play.google.com/store/apps/details?id=chat.simplex.app") }
-  }
-  ) {
-    Icon(
-      painterResource(MR.images.ic_star),
-      contentDescription = "Google Play",
-      tint = MaterialTheme.colors.secondary,
-    )
-    TextIconSpaced()
-    Text(generalGetString(MR.strings.rate_the_app), color = MaterialTheme.colors.primary)
-  }
+  SettingsActionItem(
+    icon = painterResource(MR.images.ic_star),
+    text = generalGetString(MR.strings.rate_the_app),
+    click = {
+      runCatching { uriHandler.openUriCatching("market://details?id=chat.simplex.app") }
+        .onFailure { uriHandler.openUriCatching("https://play.google.com/store/apps/details?id=chat.simplex.app") }
+    },
+    textColor = MaterialTheme.colors.primary
+  )
 }
 
 @Composable fun StarOnGithubItem(uriHandler: UriHandler) {
-  SectionItemView({ uriHandler.openExternalLink("https://github.com/simplex-chat/simplex-chat") }) {
-    Icon(
-      painter = painterResource(MR.images.ic_github),
-      contentDescription = "GitHub",
-      tint = MaterialTheme.colors.secondary,
-    )
-    TextIconSpaced()
-    Text(generalGetString(MR.strings.star_on_github), color = MaterialTheme.colors.primary)
-  }
+  SettingsActionItem(
+    icon = painterResource(MR.images.ic_github),
+    text = generalGetString(MR.strings.star_on_github),
+    click = { uriHandler.openExternalLink("https://github.com/simplex-chat/simplex-chat") },
+    textColor = MaterialTheme.colors.primary
+  )
 }
 
 @Composable fun ChatConsoleItem(showTerminal: () -> Unit) {
-  SectionItemView(showTerminal) {
-    Icon(
-      painter = painterResource(MR.images.ic_outline_terminal),
-      contentDescription = stringResource(MR.strings.chat_console),
-      tint = MaterialTheme.colors.secondary,
-    )
-    TextIconSpaced()
-    Text(stringResource(MR.strings.chat_console))
-  }
+  SettingsActionItem(
+    icon = painterResource(MR.images.ic_outline_terminal),
+    text = stringResource(MR.strings.chat_console),
+    click = showTerminal
+  )
 }
 
 @Composable fun TerminalAlwaysVisibleItem(pref: SharedPreference<Boolean>, onChange: (Boolean) -> Unit) {
   SettingsActionItemWithContent(painterResource(MR.images.ic_engineering), stringResource(MR.strings.terminal_always_visible)) {
     DefaultSwitch(
       checked = remember { pref.state }.value,
-      onCheckedChange = onChange,
+      onCheckedChange = {
+        RichHaptics.perform(if (it) HapticPattern.TOGGLE_ON else HapticPattern.TOGGLE_OFF)
+        onChange(it)
+      },
     )
   }
 }
 
 @Composable fun InstallTerminalAppItem(uriHandler: UriHandler) {
-  SectionItemView({ uriHandler.openExternalLink("https://github.com/simplex-chat/simplex-chat") }) {
-    Icon(
-      painter = painterResource(MR.images.ic_github),
-      contentDescription = "GitHub",
-      tint = MaterialTheme.colors.secondary,
-    )
-    TextIconSpaced()
-    Text(generalGetString(MR.strings.install_simplex_chat_for_terminal), color = MaterialTheme.colors.primary)
-  }
+  SettingsActionItem(
+    icon = painterResource(MR.images.ic_github),
+    text = generalGetString(MR.strings.install_simplex_chat_for_terminal),
+    click = { uriHandler.openExternalLink("https://github.com/simplex-chat/simplex-chat") },
+    textColor = MaterialTheme.colors.primary
+  )
 }
 
 @Composable fun ResetHintsItem(unchangedHints: MutableState<Boolean>) {
-  SectionItemView({
-    resetHintPreferences()
-    unchangedHints.value = true
-  }, disabled = unchangedHints.value) {
-    Icon(
-      painter = painterResource(MR.images.ic_lightbulb),
-      contentDescription = "Lightbulb",
-      tint = MaterialTheme.colors.secondary,
-    )
-    TextIconSpaced()
-    Text(generalGetString(MR.strings.reset_all_hints), color = if (unchangedHints.value) MaterialTheme.colors.secondary else MaterialTheme.colors.primary)
-  }
+  SettingsActionItem(
+    icon = painterResource(MR.images.ic_lightbulb),
+    text = generalGetString(MR.strings.reset_all_hints),
+    click = {
+      resetHintPreferences()
+      unchangedHints.value = true
+    },
+    disabled = unchangedHints.value,
+    textColor = if (unchangedHints.value) MaterialTheme.colors.secondary else MaterialTheme.colors.primary
+  )
 }
 
 private fun resetHintPreferences() {
@@ -357,11 +365,33 @@ fun unchangedHintPreferences(): Boolean = appPreferences.hintPreferences.all { i
 
 @Composable
 fun AppVersionItem(showVersion: () -> Unit, versionInfo: Pair<String, Int?> = appVersionInfo) {
-  SectionItemView(showVersion) { AppVersionText(versionInfo) }
+  SectionItemView({
+    RichHaptics.perform(HapticPattern.CLICK)
+    showVersion()
+  }) {
+    Row(
+      Modifier.fillMaxWidth(),
+      verticalAlignment = Alignment.CenterVertically
+    ) {
+      Icon(
+        painterResource(MR.images.ic_info),
+        contentDescription = null,
+        tint = MaterialTheme.colors.primary.copy(alpha = 0.85f),
+        modifier = Modifier.size(22.dp)
+      )
+      TextIconSpaced(false)
+      AppVersionText(versionInfo)
+    }
+  }
 }
 
 @Composable fun AppVersionText(versionInfo: Pair<String, Int?> = appVersionInfo) {
-  Text(versionInfo.first + (if (versionInfo.second != null) " (" + versionInfo.second + ")" else ""))
+  Text(
+    versionInfo.first + (if (versionInfo.second != null) " (" + versionInfo.second + ")" else ""),
+    color = MaterialTheme.colors.onSurface,
+    fontWeight = FontWeight.Medium,
+    fontSize = 15.5.sp
+  )
 }
 
 @Composable fun ProfilePreview(profileOf: NamedChat, size: Dp = 60.dp, iconColor: Color = MaterialTheme.colors.secondaryVariant, textColor: Color = MaterialTheme.colors.onBackground, stopped: Boolean = false, badge: LocalBadge? = null) {
@@ -390,18 +420,59 @@ fun AppVersionItem(showVersion: () -> Unit, versionInfo: Pair<String, Int?> = ap
 }
 
 @Composable
-fun SettingsActionItem(icon: Painter, text: String, click: (() -> Unit)? = null, textColor: Color = Color.Unspecified, iconColor: Color = MaterialTheme.colors.secondary, disabled: Boolean = false, extraPadding: Boolean = false) {
-  SectionItemView(click, disabled = disabled, extraPadding = extraPadding) {
-    Icon(icon, text, tint = if (disabled) MaterialTheme.colors.secondary else iconColor)
+fun SettingsActionItem(
+  icon: Painter,
+  text: String,
+  click: (() -> Unit)? = null,
+  textColor: Color = Color.Unspecified,
+  iconColor: Color = MaterialTheme.colors.primary.copy(alpha = 0.85f),
+  disabled: Boolean = false,
+  extraPadding: Boolean = false
+) {
+  val onClick = if (click != null) {
+    {
+      RichHaptics.perform(HapticPattern.CLICK)
+      click()
+    }
+  } else null
+
+  SectionItemView(onClick, disabled = disabled, extraPadding = extraPadding) {
+    Icon(
+      icon,
+      contentDescription = text,
+      tint = if (disabled) MaterialTheme.colors.secondary else if (iconColor != MaterialTheme.colors.secondary) iconColor else MaterialTheme.colors.primary.copy(alpha = 0.85f),
+      modifier = Modifier.size(22.dp)
+    )
     TextIconSpaced(extraPadding)
-    Text(text, color = if (disabled) MaterialTheme.colors.secondary else textColor)
+    Text(
+      text,
+      color = if (disabled) MaterialTheme.colors.secondary else if (textColor != Color.Unspecified) textColor else MaterialTheme.colors.onSurface,
+      fontWeight = FontWeight.Medium,
+      fontSize = 15.5.sp
+    )
   }
 }
 
 @Composable
-fun SettingsActionItemWithContent(icon: Painter?, text: String? = null, click: (() -> Unit)? = null, iconColor: Color = MaterialTheme.colors.secondary, textColor: Color = MaterialTheme.colors.onBackground, disabled: Boolean = false, extraPadding: Boolean = false, content: @Composable RowScope.() -> Unit) {
+fun SettingsActionItemWithContent(
+  icon: Painter?,
+  text: String? = null,
+  click: (() -> Unit)? = null,
+  iconColor: Color = MaterialTheme.colors.primary.copy(alpha = 0.85f),
+  textColor: Color = MaterialTheme.colors.onSurface,
+  disabled: Boolean = false,
+  extraPadding: Boolean = false,
+  content: @Composable RowScope.() -> Unit
+) {
+  val onClick = if (click != null) {
+    {
+      RichHaptics.perform(HapticPattern.CLICK)
+      click()
+    }
+  } else null
+
   SectionItemView(
-    click,
+    onClick,
     extraPadding = extraPadding,
     padding = if (extraPadding && icon != null)
       PaddingValues(start = DEFAULT_PADDING * 1.7f, end = itemHPadding)
@@ -410,12 +481,23 @@ fun SettingsActionItemWithContent(icon: Painter?, text: String? = null, click: (
     disabled = disabled
   ) {
     if (icon != null) {
-      Icon(icon, text, Modifier, tint = if (disabled) MaterialTheme.colors.secondary else iconColor)
+      Icon(
+        icon,
+        text,
+        Modifier.size(22.dp),
+        tint = if (disabled) MaterialTheme.colors.secondary else if (iconColor != MaterialTheme.colors.secondary) iconColor else MaterialTheme.colors.primary.copy(alpha = 0.85f)
+      )
       TextIconSpaced(extraPadding)
     }
     if (text != null) {
       val padding = with(LocalDensity.current) { 6.sp.toDp() }
-      Text(text, Modifier.weight(1f).padding(vertical = padding), color = if (disabled) MaterialTheme.colors.secondary else textColor)
+      Text(
+        text,
+        Modifier.weight(1f).padding(vertical = padding),
+        color = if (disabled) MaterialTheme.colors.secondary else textColor,
+        fontWeight = FontWeight.Medium,
+        fontSize = 15.5.sp
+      )
       Spacer(Modifier.width(DEFAULT_PADDING))
       Row(Modifier.widthIn(max = (windowWidth() - DEFAULT_PADDING * 2) / 2)) {
         content()
@@ -433,11 +515,11 @@ fun SettingsPreferenceItem(
   icon: Painter?,
   text: String,
   pref: SharedPreference<Boolean>,
-  iconColor: Color = MaterialTheme.colors.secondary,
+  iconColor: Color = MaterialTheme.colors.primary.copy(alpha = 0.85f),
   enabled: Boolean = true,
   onChange: ((Boolean) -> Unit)? = null,
 ) {
-  SettingsActionItemWithContent(icon, text, iconColor = iconColor,) {
+  SettingsActionItemWithContent(icon, text, iconColor = iconColor) {
     SharedPreferenceToggle(pref, enabled, onChange)
   }
 }
@@ -452,7 +534,10 @@ fun PreferenceToggle(
   SettingsActionItemWithContent(null, text, disabled = disabled) {
     DefaultSwitch(
       checked = checked,
-      onCheckedChange = onChange,
+      onCheckedChange = {
+        RichHaptics.perform(if (it) HapticPattern.TOGGLE_ON else HapticPattern.TOGGLE_OFF)
+        onChange(it)
+      },
       enabled = !disabled
     )
   }
@@ -462,16 +547,22 @@ fun PreferenceToggle(
 fun PreferenceToggleWithIcon(
   text: String,
   icon: Painter? = null,
-  iconColor: Color? = MaterialTheme.colors.secondary,
+  iconColor: Color? = null,
   disabled: Boolean = false,
   checked: Boolean,
   extraPadding: Boolean = false,
   onChange: (Boolean) -> Unit = {},
 ) {
-  SettingsActionItemWithContent(icon, text, iconColor = iconColor ?: MaterialTheme.colors.secondary, extraPadding = extraPadding) {
+  SettingsActionItemWithContent(
+    icon = icon,
+    text = text,
+    iconColor = iconColor ?: MaterialTheme.colors.primary.copy(alpha = 0.85f),
+    extraPadding = extraPadding
+  ) {
     DefaultSwitch(
       checked = checked,
       onCheckedChange = {
+        RichHaptics.perform(if (it) HapticPattern.TOGGLE_ON else HapticPattern.TOGGLE_OFF)
         onChange(it)
       },
       enabled = !disabled
@@ -528,11 +619,7 @@ private fun runAuth(title: String, desc: String, onFinish: (success: Boolean) ->
   )
 }
 
-@Preview/*(
-  uiMode = Configuration.UI_MODE_NIGHT_YES,
-  showBackground = true,
-  name = "Dark Mode"
-)*/
+@Preview
 @Composable
 fun PreviewSettingsLayout() {
   SimpleXTheme {
@@ -550,4 +637,84 @@ fun PreviewSettingsLayout() {
       versionInfo = "7.1" to 172,
     )
   }
+}
+
+// 1. БЕЗОТКАЗНЫЙ КЭШ ДЛЯ USB PANIC
+object FlexLocalPrefs {
+    private var memoryCache = false
+    private var isLoaded = false
+
+    private fun getFile(): File {
+        // Обязательно создаем папку перед тем как пытаться сохранить файл!
+        val dir = File(getAppFilePath("flex_settings_dir"))
+        if (!dir.exists()) dir.mkdirs() 
+        return File(dir, "usb_panic_state.txt")
+    }
+
+    var usbPanic: Boolean
+        get() {
+            if (!isLoaded) {
+                try { 
+                    memoryCache = getFile().readText().trim() == "true" 
+                } catch (e: Exception) { 
+                    memoryCache = false 
+                }
+                isLoaded = true
+            }
+            return memoryCache
+        }
+        set(value) {
+            memoryCache = value // Запоминаем в оперативной памяти на случай сбоев ФС
+            try { getFile().writeText(value.toString()) } catch (e: Exception) {}
+        }
+}
+
+@Composable
+fun FlexSettingsView() {
+    // ТЕПЕРЬ НАСТРОЙКА БЕРЕТСЯ ИЗ НАШЕГО НОВОГО ДЕТЕКТОРА
+    val usbPanicEnabled = rememberSaveable { mutableStateOf(chat.simplex.common.platform.UsbPanicDetector.isEnabled()) }
+    val advancedHapticsEnabled = rememberSaveable { mutableStateOf(chat.simplex.common.platform.RichHaptics.isEnabled()) }
+
+    ColumnWithScrollBar {
+        AppBarTitle("FLEX Settings")
+
+        SectionView(title = "SECURITY") {
+            SettingsActionItemWithContent(
+                icon = painterResource(MR.images.ic_security),
+                text = "USB Panic",
+                iconColor = MaterialTheme.colors.primary.copy(alpha = 0.85f)
+            ) {
+                DefaultSwitch(
+                    checked = usbPanicEnabled.value,
+                    onCheckedChange = { newVal ->
+                        usbPanicEnabled.value = newVal
+                        // Мгновенное сохранение и активация щита!
+                        runCatching { chat.simplex.common.platform.UsbPanicDetector.setEnabled(newVal) }
+                        runCatching { chat.simplex.common.platform.RichHaptics.perform(if (newVal) chat.simplex.common.platform.HapticPattern.TOGGLE_ON else chat.simplex.common.platform.HapticPattern.TOGGLE_OFF) }
+                    }
+                )
+            }
+        }
+
+        SectionDividerSpaced()
+
+        SectionView(title = "INTERFACE & FEEDBACK") {
+            SettingsActionItemWithContent(
+                icon = painterResource(MR.images.ic_notifications),
+                text = "Advanced Haptics",
+                iconColor = WarningOrange
+            ) {
+                DefaultSwitch(
+                    checked = advancedHapticsEnabled.value,
+                    onCheckedChange = { newVal ->
+                        advancedHapticsEnabled.value = newVal
+                        runCatching { chat.simplex.common.platform.RichHaptics.setEnabled(newVal) }
+                        runCatching { chat.simplex.common.platform.RichHaptics.perform(if (newVal) chat.simplex.common.platform.HapticPattern.TOGGLE_ON else chat.simplex.common.platform.HapticPattern.TOGGLE_OFF) }
+                    }
+                )
+            }
+        }
+
+        SectionBottomSpacer()
+    }
 }

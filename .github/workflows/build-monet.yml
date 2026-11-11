@@ -1,0 +1,97 @@
+name: Build SimpleX Chat APK
+
+on:
+  push:
+    branches: [ Flex ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Accept Android SDK Licenses
+        run: yes | sdkmanager --licenses || true
+
+      # Скачиваем официальные APK и распаковываем Haskell core библиотеки
+      - name: Extract prebuilt Haskell core from official APK
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p /tmp/apk_extract
+          cd /tmp/apk_extract
+          
+          gh release download --repo simplex-chat/simplex-chat --pattern "*.apk" --clobber
+          
+          for apk in *.apk; do
+            echo "Распаковка библиотек из $apk..."
+            unzip -qo "$apk" "lib/*"
+          done
+          
+          mkdir -p $GITHUB_WORKSPACE/apps/multiplatform/android/src/main/jniLibs
+          cp -r lib/* $GITHUB_WORKSPACE/apps/multiplatform/android/src/main/jniLibs/
+          
+          find $GITHUB_WORKSPACE/apps/multiplatform/android/src/main/jniLibs -name "libapp-lib.so" -delete
+          
+          mkdir -p $GITHUB_WORKSPACE/apps/multiplatform/common/src/commonMain/cpp/android/libs
+          cp -r lib/* $GITHUB_WORKSPACE/apps/multiplatform/common/src/commonMain/cpp/android/libs/
+
+      - name: Make gradlew executable
+        run: chmod +x apps/multiplatform/gradlew
+
+      # Принудительная загрузка стабильного ядра Sing-Box для Android arm64
+      - name: Prepare sing-box core for Android
+        run: |
+          mkdir -p apps/multiplatform/android/src/main/jniLibs/arm64-v8a
+          TARGET_SO="$GITHUB_WORKSPACE/apps/multiplatform/android/src/main/jniLibs/arm64-v8a/libsingbox.so"
+
+          echo "Загрузка официального стабильного ядра Sing-Box v1.11.4..."
+          curl -Lo singbox.tar.gz https://github.com/SagerNet/sing-box/releases/download/v1.11.4/sing-box-1.11.4-android-arm64.tar.gz
+          tar -xzf singbox.tar.gz
+          cp sing-box-*/sing-box "$TARGET_SO"
+          chmod +x "$TARGET_SO"
+          ls -lh "$TARGET_SO"
+
+      - name: Build Debug APK
+        run: |
+          cd apps/multiplatform
+          ./gradlew assembleFossDebug --no-daemon
+
+      - name: Align and Sign Android APKs
+        run: |
+          echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > release.jks
+
+          APKSIGNER=$(find $ANDROID_HOME/build-tools -name apksigner | sort -V | tail -n 1)
+          ZIPALIGN=$(find $ANDROID_HOME/build-tools -name zipalign | sort -V | tail -n 1)
+
+          mkdir -p signed-apks
+
+          find apps/multiplatform/android/build/outputs/apk/foss/debug/ -name "*.apk" | while read -r apk; do
+            filename=$(basename "$apk")
+            echo "Processing $filename..."
+
+            $ZIPALIGN -f -p 4 "$apk" "aligned-$filename"
+
+            $APKSIGNER sign \
+              --ks release.jks \
+              --ks-key-alias "${{ secrets.KEY_ALIAS }}" \
+              --ks-pass "pass:${{ secrets.KEYSTORE_PASSWORD }}" \
+              --key-pass "pass:${{ secrets.KEYSTORE_PASSWORD }}" \
+              --out "signed-apks/${filename%.apk}-signed.apk" \
+              "aligned-$filename"
+          done
+
+      - name: Upload Signed APKs
+        uses: actions/upload-artifact@v4
+        with:
+          name: simplex-chat-monet-signed
+          path: signed-apks/*.apk

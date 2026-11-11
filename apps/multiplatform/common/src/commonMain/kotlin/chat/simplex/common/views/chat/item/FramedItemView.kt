@@ -378,21 +378,32 @@ fun FramedItemView(
                   FramedItemHeader(forwarded.text(chatInfo.chatType), true, painterResource(MR.images.ic_forward), pad = true)
                 }
               }
-            }
-            if (ci.file == null && ci.formattedText == null && !ci.meta.isLive && isShortEmoji(ci.content.text)) {
-              Box(if (terminal) Modifier.padding(start = CHAT_ITEM_TEXT_PADDING, top = cardTop, end = CHAT_ITEM_TEXT_PADDING).messageCard() else Modifier.padding(bubbleTextBoxPadding())) {
+is MsgContent.MCVoice -> {
                 Column(
-                  if (terminal) Modifier.messageLastLine() else Modifier.fillMaxWidth(),
-                  horizontalAlignment = Alignment.CenterHorizontally
+                  horizontalAlignment = if (ci.chatDir.sent) Alignment.End else Alignment.Start
                 ) {
-                  EmojiText(ci.content.text)
-                  if (!terminal) {
-                    Text(
-                      metaReserveCopy(ci.meta, chatTTL, encrypted = null, signedFileVerified = null, secondaryColor = MaterialTheme.colors.secondary, showViaProxy = showViaProxy, showTimestamp = showTimestamp),
-                      color = Color.Transparent,
-                      style = MaterialTheme.typography.body1.merge(chatTextStyle(MaterialTheme.typography.body1.fontSize))
-                    )
+                  CIVoiceView(mc.duration, ci.file, ci.meta.itemEdited, ci.chatDir.sent, hasText = true, ci, timedMessagesTTL = chatTTL, showViaProxy = showViaProxy, showTimestamp = showTimestamp, longClick = { onLinkLongClick("") }, receiveFile = receiveFile)
+                  if (mc.text != "") {
+                    CIMarkdownText(chatsCtx, ci, chat, chatTTL, linkMode, uriHandler, showViaProxy = showViaProxy, showTimestamp = showTimestamp)
                   }
+                  LocalVoiceTranscriptionWidget.current(ci)
+                }
+              }
+              
+              if (ci.file == null && ci.formattedText == null && !ci.meta.isLive && isShortEmoji(ci.content.text)) {
+                Box(if (terminal) Modifier.padding(start = CHAT_ITEM_TEXT_PADDING, top = cardTop, end = CHAT_ITEM_TEXT_PADDING).messageCard() else Modifier.padding(bubbleTextBoxPadding())) {
+                  Column(
+                    if (terminal) Modifier.messageLastLine() else Modifier.fillMaxWidth(),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                  ) {
+                    EmojiText(ci.content.text)
+                    if (!terminal) {
+                      Text(
+                        metaReserveCopy(ci.meta, chatTTL, encrypted = null, signedFileVerified = null, secondaryColor = MaterialTheme.colors.secondary, showViaProxy = showViaProxy, showTimestamp = showTimestamp),
+                        color = Color.Transparent,
+                        style = MaterialTheme.typography.body1.merge(chatTextStyle(MaterialTheme.typography.body1.fontSize))
+                      )
+                    }
                 }
               }
             } else {

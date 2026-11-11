@@ -9,6 +9,7 @@ import androidx.compose.foundation.lazy.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.*
+import androidx.compose.material.icons.Icons
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.*
@@ -55,6 +56,78 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.serialization.json.Json
 import kotlin.time.Duration.Companion.seconds
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.graphics.vector.path
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.dp
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.tween
+
+// Векторная иконка щита в щите с молнией (кэшируется в памяти)
+val ShieldIcon: ImageVector by lazy {
+  ImageVector.Builder(
+    name = "ShieldShieldBolt",
+    defaultWidth = 24.dp,
+    defaultHeight = 24.dp,
+    viewportWidth = 24f,
+    viewportHeight = 24f
+  ).apply {
+    // 1. Внешний щит (контур)
+    path(
+      stroke = SolidColor(Color.White),
+      strokeLineWidth = 1.5f,
+      strokeLineCap = StrokeCap.Round,
+      strokeLineJoin = StrokeJoin.Round
+    ) {
+      moveTo(12f, 2f)
+      lineTo(4f, 5.5f)
+      verticalLineTo(11f)
+      curveTo(4f, 16.3f, 7.4f, 21.2f, 12f, 22.4f)
+      curveTo(16.6f, 21.2f, 20f, 16.3f, 20f, 11f)
+      verticalLineTo(5.5f)
+      lineTo(12f, 2f)
+      close()
+    }
+
+    // 2. Внутренний щит (контур)
+    path(
+      stroke = SolidColor(Color.White),
+      strokeLineWidth = 1.2f,
+      strokeLineCap = StrokeCap.Round,
+      strokeLineJoin = StrokeJoin.Round
+    ) {
+      moveTo(12f, 5.5f)
+      lineTo(6.5f, 8f)
+      verticalLineTo(11.5f)
+      curveTo(6.5f, 15.2f, 8.8f, 18.7f, 12f, 19.7f)
+      curveTo(15.2f, 18.7f, 17.5f, 15.2f, 17.5f, 11.5f)
+      verticalLineTo(8f)
+      lineTo(12f, 5.5f)
+      close()
+    }
+
+    // 3. Молния по центру (заливка)
+    path(
+      fill = SolidColor(Color.White)
+    ) {
+      moveTo(12.3f, 8.5f)
+      lineTo(9.5f, 12.5f)
+      lineTo(11.7f, 12.5f)
+      lineTo(10.9f, 17.0f)
+      lineTo(15.0f, 11.5f)
+      lineTo(12.5f, 11.5f)
+      lineTo(13.7f, 8.5f)
+      close()
+    }
+  }.build()
+}
+
+// Мост для вызова диалога и передачи статуса подключения
+object ByeDpiBridge {
+  var showDialog: (() -> Unit)? = null
+  val isRunning = mutableStateOf(false)
+}
 
 enum class PresetTagKind { GROUP_REPORTS, FAVORITES, CONTACTS, GROUPS, CHANNELS, BUSINESS, NOTES }
 
@@ -128,8 +201,6 @@ private fun showNewChatSheet(oneHandUI: State<Boolean>) {
   chatModel.newChatSheetVisible.value = true
   ModalManager.start.showCustomModal { close ->
     val close = {
-      // It will set it faster than in onDispose. It's important to catch the actual state before
-      // closing modal for reacting with status bar changes in [App]
       chatModel.newChatSheetVisible.value = false
       close()
     }
@@ -243,7 +314,6 @@ fun ChatListView(chatModel: ChatModel, userPickerState: MutableStateFlow<Animate
     val showWhatsNew = shouldShowWhatsNew(chatModel)
     val showUpdatedConditions = chatModel.conditions.value.conditionsAction?.shouldShowNotice ?: false
     if (showWhatsNew || showUpdatedConditions) {
-      // Requested here, so that the country is known by the time the modal opens
       platform.androidLoadPlayStoreCountry()
       delay(1000L)
       noticesShown = true
@@ -542,7 +612,12 @@ private fun ConnectButton(text: String, onClick: () -> Unit) {
 }
 
 @Composable
-private fun ChatListToolbar(userPickerState: MutableStateFlow<AnimatedViewState>, listState: LazyListState, stopped: Boolean, setPerformLA: (Boolean) -> Unit) {
+private fun ChatListToolbar(
+  userPickerState: MutableStateFlow<AnimatedViewState>,
+  listState: LazyListState,
+  stopped: Boolean,
+  setPerformLA: (Boolean) -> Unit
+) {
   val serversSummary: MutableState<PresentedServersSummary?> = remember { mutableStateOf(null) }
   val barButtons = arrayListOf<@Composable RowScope.() -> Unit>()
   val updatingProgress = remember { chatModel.updatingProgress }.value
@@ -615,7 +690,7 @@ private fun ChatListToolbar(userPickerState: MutableStateFlow<AnimatedViewState>
           Box(
             contentAlignment = Alignment.Center,
             modifier = Modifier
-              .background(MaterialTheme.colors.primary, shape = CircleShape)
+              .background(MaterialTheme.colors.primary, shape = RoundedCornerShape(percent = 50))
               .size(33.dp * fontSizeSqrtMultiplier)
           ) {
             Icon(
@@ -633,61 +708,160 @@ private fun ChatListToolbar(userPickerState: MutableStateFlow<AnimatedViewState>
   val clipboard = LocalClipboardManager.current
   val scope = rememberCoroutineScope()
   val canScrollToZero = remember { derivedStateOf { listState.firstVisibleItemIndex != 0 || listState.firstVisibleItemScrollOffset != 0 } }
-  DefaultAppBar(
-    navigationButton = {
-      if (chatModel.users.isEmpty() && !chatModel.desktopNoUserNoRemote) {
-        NavigationButtonMenu {
-          ModalManager.start.showModalCloseable(cardScreen = true) { close ->
-            SettingsView(chatModel, setPerformLA, close)
+
+  val islandContainerColor = if (MaterialTheme.colors.isLight) {
+    lerp(MaterialTheme.colors.surface, MaterialTheme.colors.primary, 0.07f)
+  } else {
+    lerp(MaterialTheme.colors.surface, MaterialTheme.colors.primary, 0.11f)
+  }
+
+  Row(
+    modifier = Modifier
+      .fillMaxWidth()
+      .then(if (!oneHandUI.value) Modifier.statusBarsPadding() else Modifier.navigationBarsPadding())
+      .padding(horizontal = 10.dp, vertical = 6.dp),
+    horizontalArrangement = Arrangement.spacedBy(8.dp),
+    verticalAlignment = Alignment.CenterVertically
+  ) {
+    // 1. Остров: Профиль / Меню настроек
+    Surface(
+      modifier = Modifier.height(48.dp),
+      shape = RoundedCornerShape(percent = 50),
+      color = islandContainerColor,
+      elevation = 0.dp
+    ) {
+      Box(
+        modifier = Modifier.padding(horizontal = 2.dp),
+        contentAlignment = Alignment.Center
+      ) {
+        if (chatModel.users.isEmpty() && !chatModel.desktopNoUserNoRemote) {
+          NavigationButtonMenu {
+            ModalManager.start.showModalCloseable(cardScreen = true) { close ->
+              SettingsView(chatModel, setPerformLA, close)
+            }
+          }
+        } else {
+          val users by remember { derivedStateOf { chatModel.users.filter { u -> u.user.activeUser || !u.user.hidden } } }
+          val allRead = users
+            .filter { u -> !u.user.activeUser && !u.user.hidden }
+            .all { u -> u.unreadCount == 0 }
+          UserProfileButton(chatModel.currentUser.value?.profile?.image, allRead) {
+            userPickerState.value = AnimatedViewState.VISIBLE
           }
         }
-      } else {
-        val users by remember { derivedStateOf { chatModel.users.filter { u -> u.user.activeUser || !u.user.hidden } } }
-        val allRead = users
-          .filter { u -> !u.user.activeUser && !u.user.hidden }
-          .all { u -> u.unreadCount == 0 }
-        UserProfileButton(chatModel.currentUser.value?.profile?.image, allRead) {
-            userPickerState.value = AnimatedViewState.VISIBLE
-        }
       }
-    },
-    title = {
-      if (!shouldShowOnboarding()) {
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(DEFAULT_SPACE_AFTER_ICON)) {
-          Text(
-            stringResource(MR.strings.your_chats),
-            color = MaterialTheme.colors.onBackground,
-            fontWeight = FontWeight.SemiBold,
-          )
-          SubscriptionStatusIndicator(
-            click = {
-              ModalManager.start.closeModals()
-              val summary = serversSummary.value
-              ModalManager.start.showModalCloseable(
-                endButtons = {
-                  if (summary != null) {
-                    ShareButton {
-                      val json = Json {
-                        prettyPrint = true
+    }
+
+    // 2. Остров: Заголовок «Your chats» и индикатор серверов
+    Surface(
+      modifier = Modifier
+        .weight(1f)
+        .height(48.dp),
+      shape = RoundedCornerShape(24.dp),
+      color = islandContainerColor,
+      elevation = 0.dp
+    ) {
+      Box(
+        modifier = Modifier
+          .fillMaxSize()
+          .then(if (canScrollToZero.value) Modifier.clickable { scrollToBottom(scope, listState) } else Modifier),
+        contentAlignment = Alignment.Center
+      ) {
+        if (!shouldShowOnboarding()) {
+          Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(DEFAULT_SPACE_AFTER_ICON)
+          ) {
+            Text(
+              stringResource(MR.strings.your_chats),
+              color = MaterialTheme.colors.onSurface,
+              fontWeight = FontWeight.SemiBold,
+            )
+            SubscriptionStatusIndicator(
+              click = {
+                ModalManager.start.closeModals()
+                val summary = serversSummary.value
+                ModalManager.start.showModalCloseable(
+                  endButtons = {
+                    if (summary != null) {
+                      ShareButton {
+                        val json = Json {
+                          prettyPrint = true
+                        }
+                        val text = json.encodeToString(PresentedServersSummary.serializer(), summary)
+                        clipboard.shareText(text)
                       }
-                      val text = json.encodeToString(PresentedServersSummary.serializer(), summary)
-                      clipboard.shareText(text)
                     }
                   }
-                }
-              ) { ServersSummaryView(chatModel.currentRemoteHost.value, serversSummary) }
-            }
-          )
+                ) { ServersSummaryView(chatModel.currentRemoteHost.value, serversSummary) }
+              }
+            )
+          }
         }
       }
-    },
-    onTitleClick = if (canScrollToZero.value) { { scrollToBottom(scope, listState) } } else null,
-    onTop = !oneHandUI.value,
-    onSearchValueChanged = {},
-    buttons = { barButtons.forEach { it() } }
-  )
-}
+    }
 
+    // 3. Остров: Иконка щита (ByeDPI/VLESS), кнопка Temporary Content и действия
+    Surface(
+      modifier = Modifier.height(48.dp),
+      shape = RoundedCornerShape(percent = 50),
+      color = islandContainerColor,
+      elevation = 0.dp
+    ) {
+      Row(
+        modifier = Modifier.padding(horizontal = 4.dp),
+        verticalAlignment = Alignment.CenterVertically
+      ) {
+        val isVpnActive = ByeDpiBridge.isRunning.value
+        val vpnTint by animateColorAsState(
+          targetValue = if (isVpnActive) {
+            MaterialTheme.colors.primary
+          } else {
+            MaterialTheme.colors.onSurface.copy(alpha = 0.65f)
+          },
+          animationSpec = tween(durationMillis = 250)
+        )
+
+        IconButton(
+          onClick = {
+            ByeDpiBridge.showDialog?.invoke()
+          }
+        ) {
+          Icon(
+            imageVector = ShieldIcon,
+            contentDescription = "VLESS Proxy Settings",
+            tint = vpnTint
+          )
+        }
+
+        // =====================================================================
+        // КНОПКА TEMPORARY CONTENT (STORIES FEED)
+        // =====================================================================
+        val allStories by TemporaryContentManager.items.collectAsState()
+        val hasActiveStories = allStories.isNotEmpty()
+
+        IconButton(
+          onClick = {
+            RichHaptics.perform(HapticPattern.CLICK)
+            ModalManager.start.showModal {
+              AllStoriesFeedView(close = { ModalManager.start.closeModal() })
+            }
+          }
+        ) {
+          Icon(
+            painter = painterResource(MR.images.ic_timer),
+            contentDescription = "Temporary Content",
+            tint = if (hasActiveStories) MaterialTheme.colors.primary else MaterialTheme.colors.onSurface.copy(alpha = 0.65f)
+          )
+        }
+        // =====================================================================
+
+        barButtons.forEach { it() }
+      }
+    }
+  }
+}
+    
 @Composable
 fun SubscriptionStatusIndicator(click: (() -> Unit)) {
   var subs by remember { mutableStateOf(SMPServerSubs.newSMPServerSubs) }
@@ -750,7 +924,6 @@ fun UserProfileButton(image: String?, allRead: Boolean, onButtonClicked: () -> U
     }
   }
 }
-
 
 @Composable
 private fun BoxScope.unreadBadge(text: String? = "") {
@@ -838,50 +1011,85 @@ private fun openAppLink(rhId: Long?, uri: String) {
 }
 
 @Composable
-private fun ChatListSearchBar(listState: LazyListState, searchText: MutableState<TextFieldValue>, searchShowingSimplexLink: MutableState<Boolean>, searchChatFilteredBySimplexLink: MutableState<Set<String>>, connectNameCandidate: MutableState<String?>) {
-  Box {
-    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-      val focusRequester = remember { FocusRequester() }
-      var focused by remember { mutableStateOf(false) }
-      Icon(
-        painterResource(MR.images.ic_search),
-        contentDescription = null,
-        Modifier.padding(start = DEFAULT_PADDING, end = DEFAULT_PADDING_HALF).size(22.dp * fontSizeSqrtMultiplier),
-        tint = MaterialTheme.colors.secondary
+private fun ChatListSearchBar(
+  listState: LazyListState,
+  searchText: MutableState<TextFieldValue>,
+  searchShowingSimplexLink: MutableState<Boolean>,
+  searchChatFilteredBySimplexLink: MutableState<Set<String>>,
+  connectNameCandidate: MutableState<String?>
+) {
+  val isLight = MaterialTheme.colors.isLight
+  val searchContainerColor = lerp(
+    MaterialTheme.colors.surface,
+    MaterialTheme.colors.primary,
+    if (isLight) 0.07f else 0.11f
+  )
+  val dynamicTextColor = lerp(
+    MaterialTheme.colors.onSurface,
+    MaterialTheme.colors.primary,
+    0.15f
+  )
+
+  Surface(
+    modifier = Modifier
+      .fillMaxWidth()
+      .padding(horizontal = 10.dp, vertical = 4.dp),
+    shape = RoundedCornerShape(28.dp),
+    color = searchContainerColor,
+    elevation = 0.dp
+  ) {
+    MaterialTheme(
+      colors = MaterialTheme.colors.copy(
+        onSurface = dynamicTextColor,
+        onBackground = dynamicTextColor,
+        secondary = dynamicTextColor.copy(alpha = 0.6f)
       )
-      SearchTextField(
-        Modifier.weight(1f).onFocusChanged { focused = it.hasFocus }.focusRequester(focusRequester),
-        placeholder = stringResource(MR.strings.search_or_paste_simplex_link),
-        alwaysVisible = true,
-        searchText = searchText,
-        enabled = !remember { searchShowingSimplexLink }.value,
-        trailingContent = null,
-        // the clear button must line up with the filter icon it replaces, so no reduction here
-        reducedCloseButtonPadding = 0.dp,
+    ) {
+      Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp)
       ) {
-        searchText.value = searchText.value.copy(it)
-      }
-      val hasText = remember { derivedStateOf { searchText.value.text.isNotEmpty() } }
-      if (hasText.value) {
-        val hideSearchOnBack: () -> Unit = { searchText.value = TextFieldValue() }
-        BackHandler(onBack = hideSearchOnBack)
-        KeyChangeEffect(chatModel.currentRemoteHost.value) {
-          hideSearchOnBack()
+        val focusRequester = remember { FocusRequester() }
+        var focused by remember { mutableStateOf(false) }
+        Icon(
+          painterResource(MR.images.ic_search),
+          contentDescription = null,
+          Modifier.padding(start = DEFAULT_PADDING, end = DEFAULT_PADDING_HALF).size(22.dp * fontSizeSqrtMultiplier),
+          tint = MaterialTheme.colors.primary.copy(alpha = 0.8f)
+        )
+        SearchTextField(
+          Modifier.weight(1f).onFocusChanged { focused = it.hasFocus }.focusRequester(focusRequester),
+          placeholder = stringResource(MR.strings.search_or_paste_simplex_link),
+          alwaysVisible = true,
+          searchText = searchText,
+          enabled = !remember { searchShowingSimplexLink }.value,
+          trailingContent = null,
+          reducedCloseButtonPadding = 0.dp,
+        ) {
+          searchText.value = searchText.value.copy(it)
         }
-      } else {
-        val padding = if (appPlatform.isDesktop) 0.dp else 7.dp
-        if (chatModel.chats.value.isNotEmpty()) {
-          ToggleFilterEnabledButton()
+        val hasText = remember { derivedStateOf { searchText.value.text.isNotEmpty() } }
+        if (hasText.value) {
+          val hideSearchOnBack: () -> Unit = { searchText.value = TextFieldValue() }
+          BackHandler(onBack = hideSearchOnBack)
+          KeyChangeEffect(chatModel.currentRemoteHost.value) {
+            hideSearchOnBack()
+          }
+        } else {
+          val padding = if (appPlatform.isDesktop) 0.dp else 7.dp
+          if (chatModel.chats.value.isNotEmpty()) {
+            ToggleFilterEnabledButton()
+          }
+          Spacer(Modifier.width(padding))
         }
-        Spacer(Modifier.width(padding))
-      }
-      val focusManager = LocalFocusManager.current
-      val keyboardState = getKeyboardState()
-      LaunchedEffect(keyboardState.value) {
-        if (keyboardState.value == KeyboardState.Closed && focused) {
-          focusManager.clearFocus()
+        val focusManager = LocalFocusManager.current
+        val keyboardState = getKeyboardState()
+        LaunchedEffect(keyboardState.value) {
+          if (keyboardState.value == KeyboardState.Closed && focused) {
+            focusManager.clearFocus()
+          }
         }
-      }
+}
       val view = LocalMultiplatformView()
       LaunchedEffect(Unit) {
         snapshotFlow { searchText.value.text }
@@ -921,19 +1129,33 @@ private fun ChatListSearchBar(listState: LazyListState, searchText: MutableState
                   if (!chatModel.appOpenUrlConnecting.value) {
                     connectProgressManager.cancelConnectProgress()
                   }
-                  if (listState.layoutInfo.totalItemsCount > 0) {
-                    listState.scrollToItem(0)
-                  }
                 }
-                searchShowingSimplexLink.value = false
-                searchChatFilteredBySimplexLink.value = emptySet()
               }
             }
           }
       }
+                  }
+                  searchChatFilteredBySimplexLink.value = ids.toSet()
+                  if (ids.size == targets.size) connectNameCandidate.value = null
+                } else if (!searchShowingSimplexLink.value || it.isEmpty()) {
+                  if (it.isNotEmpty()) {
+                    focusRequester.requestFocus()
+                  } else {
+                    if (!chatModel.appOpenUrlConnecting.value) {
+                      connectProgressManager.cancelConnectProgress()
+                    }
+                    if (listState.layoutInfo.totalItemsCount > 0) {
+                      listState.scrollToItem(0)
+                    }
+                  }
+                  searchShowingSimplexLink.value = false
+                  searchChatFilteredBySimplexLink.value = emptySet()
+                }
+              }
+            }
+        }
+      }
     }
-    val oneHandUI = remember { appPrefs.oneHandUI.state }
-    Divider(Modifier.align(if (oneHandUI.value) Alignment.TopStart else Alignment.BottomStart))
   }
 }
 
@@ -1007,7 +1229,6 @@ private fun BoxScope.ChatList(searchText: MutableState<TextFieldValue>, listStat
   val supporterBannerTapped = remember { appPrefs.supporterBannerTapped.state }
   val getStakeBannerTapped = remember { appPrefs.getStakeBannerTapped.state }
   val getStakeBannerDismissed = remember { appPrefs.getStakeBannerDismissed.state }
-  // read here rather than in the LazyColumn: it launches an effect, so it needs a composable scope
   val crowdfunding = crowdfundingAvailable()
   val activeFilter = remember { chatModel.activeChatTagFilter }
 
@@ -1033,15 +1254,20 @@ private fun BoxScope.ChatList(searchText: MutableState<TextFieldValue>, listStat
     onDispose { lazyListState = listState.firstVisibleItemIndex to listState.firstVisibleItemScrollOffset }
   }
   val allChats = remember { chatModel.chats }
-  // In some not always reproducible situations this code produce IndexOutOfBoundsException on Compose's side
-  // which is related to [derivedStateOf]. Using safe alternative instead
-  // val chats by remember(search, showUnreadAndFavorites) { derivedStateOf { filteredChats(showUnreadAndFavorites, search, allChats.toList()) } }
   val searchShowingSimplexLink = remember { mutableStateOf(false) }
   val searchChatFilteredBySimplexLink = remember { mutableStateOf<Set<String>>(emptySet()) }
   val connectNameCandidate = remember { mutableStateOf<String?>(null) }
   val chats = filteredChats(searchShowingSimplexLink, searchChatFilteredBySimplexLink, searchText.value.text, allChats.value.toList(), activeFilter.value)
   val topPaddingToContent = topPaddingToContent(false)
   val blankSpaceSize = if (oneHandUI.value) WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() + AppBarHeight * fontSizeSqrtMultiplier else topPaddingToContent
+
+  val isLight = MaterialTheme.colors.isLight
+  val chatCardColor = lerp(
+    MaterialTheme.colors.surface,
+    MaterialTheme.colors.primary,
+    if (isLight) 0.06f else 0.09f
+  )
+
   LazyColumnWithScrollBar(
     if (!oneHandUI.value) Modifier.imePadding() else Modifier,
     listState,
@@ -1067,14 +1293,11 @@ private fun BoxScope.ChatList(searchText: MutableState<TextFieldValue>, listStat
             IntOffset(0, y)
           }
           .background(MaterialTheme.colors.background)
-        ) {
+      ) {
         if (oneHandUI.value) {
           Column(Modifier.consumeWindowInsets(WindowInsets.navigationBars).consumeWindowInsets(PaddingValues(bottom = AppBarHeight))) {
-            Divider()
-            // bottom toolbar: search bar below, so on desktop the connect row goes below the tags
             TagsOrConnectByName(searchText, connectNameCandidate) { candidate ->
               TagsView(searchText)
-              Divider()
               ConnectByNameRow(candidate, searchText, connectNameCandidate, close = null)
             }
             ChatListSearchBar(listState, searchText, searchShowingSimplexLink, searchChatFilteredBySimplexLink, connectNameCandidate)
@@ -1082,13 +1305,10 @@ private fun BoxScope.ChatList(searchText: MutableState<TextFieldValue>, listStat
           }
         } else {
           ChatListSearchBar(listState, searchText, searchShowingSimplexLink, searchChatFilteredBySimplexLink, connectNameCandidate)
-          // top toolbar: search bar above, so on desktop the connect row goes above the tags
           TagsOrConnectByName(searchText, connectNameCandidate) { candidate ->
             ConnectByNameRow(candidate, searchText, connectNameCandidate, close = null)
-            Divider()
             TagsView(searchText)
           }
-          Divider()
         }
       }
     }
@@ -1156,7 +1376,22 @@ private fun BoxScope.ChatList(searchText: MutableState<TextFieldValue>, listStat
       val nextChatSelected = remember(chat.id, chats) { derivedStateOf {
         chatModel.chatId.value != null && chats.getOrNull(index + 1)?.id == chatModel.chatId.value
       } }
-      ChatListNavLinkView(chat, nextChatSelected)
+      Box(
+        modifier = Modifier
+          .fillMaxWidth()
+          .padding(horizontal = 10.dp, vertical = 3.dp)
+          .clip(RoundedCornerShape(24.dp))
+          .background(chatCardColor)
+      ) {
+        MaterialTheme(
+          colors = MaterialTheme.colors.copy(
+            background = chatCardColor,
+            surface = chatCardColor
+          )
+        ) {
+          ChatListNavLinkView(chat, nextChatSelected)
+        }
+      }
     }
     if (!addressCreationCardShown.value) {
       item {
@@ -1190,21 +1425,13 @@ private fun BoxScope.ChatList(searchText: MutableState<TextFieldValue>, listStat
   }
 }
 
-// Default top-level part used to complete a bare name typed in the search field (search field only;
-// the message parser and the wire format are unchanged).
 private const val DEFAULT_NAME_TLD = "testing"
-// Shortest name that offers the button, so it is discoverable but does not flash on short prefixes.
 private const val MIN_NAME_LENGTH = 5
-// Wait this long after the last keystroke before the local name search runs.
 internal const val NAME_SEARCH_DEBOUNCE_MS = 300L
 
 private val nameLabelRegex = Regex("[a-zA-Z0-9]+(-[a-zA-Z0-9]+)*")
 private fun isNameLabel(s: String): Boolean = s.length in 1..63 && nameLabelRegex.matches(s)
 
-// On-device candidate for connecting by SimpleX name: the string sent to the core to resolve it.
-// Mirrors the domain grammar (nameLabelP/mkDomain in SimplexName.hs): an optional @/# prefix, then
-// dot-separated ASCII labels; a dotless word is completed with the default top-level part. Returns
-// the string to send (keeping @/# so the type is preserved), or null when the text is not a name.
 internal fun nameSearchCandidate(str: String): String? {
   val text = str.trim()
   val prefix = text.firstOrNull()?.takeIf { it == '@' || it == '#' }
@@ -1212,18 +1439,14 @@ internal fun nameSearchCandidate(str: String): String? {
   val labels = core.split(".")
   if (core.isEmpty() || labels.any { !isNameLabel(it) }) return null
   return when {
-    labels.size > 1 -> text                                            // already has a top-level part
+    labels.size > 1 -> text
     core.length >= MIN_NAME_LENGTH -> "${prefix ?: ""}$core.$DEFAULT_NAME_TLD"
     else -> null
   }
 }
 
-// The chat id a local (PRMNever) search resolved to — a contact, a business, or a channel — or null on a miss.
-// The core returns the correct type for @ vs # (getContactToConnect / type-filtered getGroupToConnect), so no
-// client-side type check is needed.
 internal suspend fun knownChatId(rhId: Long?, result: ConnectionPlanResult?): String? = when (val plan = result?.connectionPlan) {
   is ConnectionPlan.ContactAddress -> (plan.contactAddressPlan as? ContactAddressPlan.Known)?.contact?.let { contact ->
-    // a name-resolved chat may be prepared in the store but not yet listed, so add it (as the tap path does)
     if (chatModel.getContactChat(contact.contactId) == null) {
       chatModel.chatsContext.addChat(Chat(remoteHostId = rhId, chatInfo = ChatInfo.Direct(contact), chatItems = emptyList()))
     }
@@ -1242,9 +1465,6 @@ internal suspend fun knownChatId(rhId: Long?, result: ConnectionPlanResult?): St
   else -> null
 }
 
-// The list tags and the connect-by-name row share one slot. When there is no name, the tags show; on
-// mobile the row replaces the tags while shown. On desktop both show, arranged by the caller (which
-// knows whether the search bar is above or below), passed as desktopView.
 @Composable
 private fun TagsOrConnectByName(
   searchText: MutableState<TextFieldValue>,
@@ -1282,7 +1502,6 @@ internal fun ConnectByNameRow(name: String, searchText: MutableState<TextFieldVa
       .padding(vertical = DEFAULT_PADDING_HALF),
     verticalAlignment = Alignment.CenterVertically
   ) {
-    // icon and text aligned with the search bar's icon and text (same paddings and icon size)
     val icon = if (name.startsWith("@")) MR.images.ic_at else MR.images.ic_tag
     Icon(painterResource(icon), null, Modifier.padding(start = DEFAULT_PADDING, end = DEFAULT_PADDING_HALF).size(22.dp * fontSizeSqrtMultiplier), tint = MaterialTheme.colors.primary)
     Text(String.format(generalGetString(MR.strings.connect_plan_connect_to_name), name), color = MaterialTheme.colors.primary)
@@ -1295,21 +1514,21 @@ private fun NoChatsView(searchText: MutableState<TextFieldValue>) {
 
   if (searchText.value.text.isBlank()) {
     when (activeFilter) {
-      is ActiveFilter.PresetTag -> Text(generalGetString(MR.strings.no_filtered_chats), color = MaterialTheme.colors.secondary, textAlign = TextAlign.Center) // this should not happen
+      is ActiveFilter.PresetTag -> Text(generalGetString(MR.strings.no_filtered_chats), color = MaterialTheme.colors.secondary, textAlign = TextAlign.Center)
       is ActiveFilter.UserTag -> Text(String.format(generalGetString(MR.strings.no_chats_in_list), activeFilter.tag.chatTagText), color = MaterialTheme.colors.secondary, textAlign = TextAlign.Center)
       is ActiveFilter.Unread -> {
-          Row(
-            Modifier.clip(shape = CircleShape).clickable { chatModel.activeChatTagFilter.value = null }.padding(DEFAULT_PADDING_HALF),
-            horizontalArrangement = Arrangement.spacedBy(4.dp),
-            verticalAlignment = Alignment.CenterVertically
-          ) {
-            Icon(
-              painterResource(MR.images.ic_filter_list),
-              null,
-              tint = MaterialTheme.colors.secondary
-            )
-            Text(generalGetString(MR.strings.no_unread_chats), color = MaterialTheme.colors.secondary, textAlign = TextAlign.Center)
-          }
+        Row(
+          Modifier.clip(shape = CircleShape).clickable { chatModel.activeChatTagFilter.value = null }.padding(DEFAULT_PADDING_HALF),
+          horizontalArrangement = Arrangement.spacedBy(4.dp),
+          verticalAlignment = Alignment.CenterVertically
+        ) {
+          Icon(
+            painterResource(MR.images.ic_filter_list),
+            null,
+            tint = MaterialTheme.colors.secondary
+          )
+          Text(generalGetString(MR.strings.no_unread_chats), color = MaterialTheme.colors.secondary, textAlign = TextAlign.Center)
+        }
       }
       null -> {
         Text(generalGetString(MR.strings.no_chats), color = MaterialTheme.colors.secondary, textAlign = TextAlign.Center)
@@ -1379,7 +1598,10 @@ private fun TagsView(searchText: MutableState<TextFieldValue>) {
                   chatModel.activeChatTagFilter.value = ActiveFilter.UserTag(tag)
                 }
               },
-              onLongClick = { showMenu.value = true },
+              onLongClick = {
+                RichHaptics.perform(HapticPattern.HEAVY_CLICK)
+                showMenu.value = true
+              },
               interactionSource = interactionSource,
               indication = LocalIndication.current,
               enabled = !saving.value
@@ -1416,7 +1638,6 @@ private fun TagsView(searchText: MutableState<TextFieldValue>) {
               maxLines = 1,
               overflow = TextOverflow.Ellipsis
             )
-            // Visible text with styles
             val visibleText = buildAnnotatedString {
               append(tag.chatTagText)
               withStyle(SpanStyle(fontSize = 12.5.sp, color = MaterialTheme.colors.primary)) {
@@ -1470,12 +1691,23 @@ private fun ExpandedTagFilterView(tag: PresetTagKind) {
     else -> false
   }
   val (icon, menuIcon, text) = presetTagLabel(tag, active)
-  val color = if (active) MaterialTheme.colors.primary else MaterialTheme.colors.secondary
+  val isLight = MaterialTheme.colors.isLight
+  val chipBg = if (active) {
+    lerp(MaterialTheme.colors.surface, MaterialTheme.colors.primary, if (isLight) 0.18f else 0.25f)
+  } else {
+    lerp(MaterialTheme.colors.surface, MaterialTheme.colors.primary, if (isLight) 0.06f else 0.10f)
+  }
+  val contentColor = if (active) {
+    MaterialTheme.colors.primary
+  } else {
+    lerp(MaterialTheme.colors.onSurface, MaterialTheme.colors.primary, 0.15f).copy(alpha = 0.8f)
+  }
 
   Row(
     modifier = Modifier
       .sizeIn(minHeight = TAG_MIN_HEIGHT * fontSizeSqrtMultiplier)
-      .clip(shape = CircleShape)
+      .clip(shape = RoundedCornerShape(percent = 50))
+      .background(chipBg)
       .clickable {
         if (activeFilter.value == ActiveFilter.PresetTag(tag)) {
           chatModel.activeChatTagFilter.value = null
@@ -1483,8 +1715,7 @@ private fun ExpandedTagFilterView(tag: PresetTagKind) {
           chatModel.activeChatTagFilter.value = ActiveFilter.PresetTag(tag)
         }
       }
-      .padding(horizontal = 5.dp, vertical = 4.dp)
-    ,
+      .padding(horizontal = 12.dp, vertical = 4.dp),
     verticalAlignment = Alignment.CenterVertically,
     horizontalArrangement = Arrangement.Center
   ) {
@@ -1492,13 +1723,13 @@ private fun ExpandedTagFilterView(tag: PresetTagKind) {
       painterResource(menuIcon ?: icon),
       stringResource(text),
       Modifier.size(18.sp.toDp()),
-      tint = color
+      tint = contentColor
     )
     Spacer(Modifier.width(4.dp))
     Box {
       Text(
         stringResource(text),
-        color = if (active) MaterialTheme.colors.primary else MaterialTheme.colors.secondary,
+        color = contentColor,
         fontWeight = if (active) FontWeight.Medium else FontWeight.Normal,
         fontSize = 15.sp
       )
@@ -1512,7 +1743,6 @@ private fun ExpandedTagFilterView(tag: PresetTagKind) {
   }
 }
 
-
 @Composable
 private fun CollapsedTagsFilterView(searchText: MutableState<TextFieldValue>) {
   val activeFilter = remember { chatModel.activeChatTagFilter }
@@ -1524,10 +1754,24 @@ private fun CollapsedTagsFilterView(searchText: MutableState<TextFieldValue>) {
     else -> null
   }
 
-  Box(Modifier
-    .clip(shape = CircleShape)
-    .size(TAG_MIN_HEIGHT * fontSizeSqrtMultiplier)
-    .clickable { showMenu.value = true },
+  val isLight = MaterialTheme.colors.isLight
+  val chipBg = if (selectedPresetTag != null) {
+    lerp(MaterialTheme.colors.surface, MaterialTheme.colors.primary, if (isLight) 0.18f else 0.25f)
+  } else {
+    lerp(MaterialTheme.colors.surface, MaterialTheme.colors.primary, if (isLight) 0.06f else 0.10f)
+  }
+  val menuContainerColor = lerp(
+    MaterialTheme.colors.surface,
+    MaterialTheme.colors.primary,
+    if (isLight) 0.08f else 0.12f
+  )
+
+  Box(
+    Modifier
+      .clip(shape = RoundedCornerShape(percent = 50))
+      .background(chipBg)
+      .size(TAG_MIN_HEIGHT * fontSizeSqrtMultiplier)
+      .clickable { showMenu.value = true },
     contentAlignment = Alignment.Center
   ) {
     if (selectedPresetTag != null) {
@@ -1542,30 +1786,35 @@ private fun CollapsedTagsFilterView(searchText: MutableState<TextFieldValue>) {
       Icon(
         painterResource(MR.images.ic_menu),
         stringResource(MR.strings.chat_list_all),
-        tint = MaterialTheme.colors.secondary
+        tint = lerp(MaterialTheme.colors.onSurface, MaterialTheme.colors.primary, 0.15f).copy(alpha = 0.8f)
       )
     }
 
     val onCloseMenuAction = remember { mutableStateOf<(() -> Unit)>({}) }
 
-    DefaultDropdownMenu(showMenu = showMenu, onClosed = onCloseMenuAction) {
-      if (activeFilter.value != null || searchText.value.text.isNotBlank()) {
-        ItemAction(
-          stringResource(MR.strings.chat_list_all),
-          painterResource(MR.images.ic_menu),
-          onClick = {
-            onCloseMenuAction.value = {
-              searchText.value = TextFieldValue()
-              chatModel.activeChatTagFilter.value = null
-              onCloseMenuAction.value = {}
+    MaterialTheme(
+      colors = MaterialTheme.colors.copy(surface = menuContainerColor),
+      shapes = MaterialTheme.shapes.copy(medium = RoundedCornerShape(20.dp))
+    ) {
+      DefaultDropdownMenu(showMenu = showMenu, onClosed = onCloseMenuAction) {
+        if (activeFilter.value != null || searchText.value.text.isNotBlank()) {
+          ItemAction(
+            stringResource(MR.strings.chat_list_all),
+            painterResource(MR.images.ic_menu),
+            onClick = {
+              onCloseMenuAction.value = {
+                searchText.value = TextFieldValue()
+                chatModel.activeChatTagFilter.value = null
+                onCloseMenuAction.value = {}
+              }
+              showMenu.value = false
             }
-            showMenu.value = false
+          )
+        }
+        PresetTagKind.entries.forEach { tag ->
+          if ((presetTags[tag] ?: 0) > 0 && presetCanBeCollapsed(tag)) {
+            ItemPresetFilterAction(tag, tag == selectedPresetTag, showMenu, onCloseMenuAction)
           }
-        )
-      }
-      PresetTagKind.entries.forEach { tag ->
-        if ((presetTags[tag] ?: 0) > 0 && presetCanBeCollapsed(tag)) {
-          ItemPresetFilterAction(tag, tag == selectedPresetTag, showMenu, onCloseMenuAction)
         }
       }
     }

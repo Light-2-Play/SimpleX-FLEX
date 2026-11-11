@@ -8,22 +8,32 @@ import SectionTextFooter
 import SectionView
 import SectionViewWithButton
 import androidx.compose.desktop.ui.tooling.preview.Preview
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.ui.layout.ContentScale
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import dev.icerock.moko.resources.compose.painterResource
 import dev.icerock.moko.resources.compose.stringResource
-import androidx.compose.ui.unit.dp
+import boofcv.alg.fiducial.qrcode.QrCode
 import chat.simplex.common.model.*
 import chat.simplex.common.ui.theme.*
 import chat.simplex.common.views.helpers.*
@@ -36,6 +46,7 @@ import chat.simplex.common.BuildConfigCommon
 import chat.simplex.res.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import chat.simplex.common.views.helpers.SmartLinkQRCode
 
 @Composable
 fun UserAddressView(
@@ -45,7 +56,6 @@ fun UserAddressView(
   onboarding: Boolean = false,
   close: () -> Unit
 ) {
-  // TODO close when remote host changes
   val shareViaProfile = remember { mutableStateOf(shareViaProfile) }
   val progressIndicator = remember { mutableStateOf(false) }
   val user = remember { chatModel.currentUser }
@@ -140,7 +150,7 @@ fun UserAddressView(
       sendEmail = { userAddress ->
         uriHandler.sendEmail(
           generalGetString(MR.strings.email_invite_subject),
-          generalGetString(MR.strings.email_invite_body).format(simplexChatLink(userAddress.connLinkContact.connFullLink)) // TODO [short links] replace with short link
+          generalGetString(MR.strings.email_invite_body).format(simplexChatLink(userAddress.connLinkContact.connFullLink))
         )
       },
       setProfileAddress = ::setProfileAddress,
@@ -192,7 +202,7 @@ fun UserAddressView(
         Modifier
           .padding(horizontal = 2.dp)
           .size(30.dp),
-        color = MaterialTheme.colors.secondary,
+        color = MaterialTheme.colors.primary,
         strokeWidth = 3.dp
       )
     }
@@ -252,7 +262,6 @@ fun showAddShortLinkAlert(
             )
           }
         }
-        // Cancel
         SectionItemView({
           AlertManager.shared.hideAlert()
         }) {
@@ -283,6 +292,11 @@ private fun UserAddressLayout(
   deleteAddress: () -> Unit,
   saveAddressSettings: (AddressSettingsState, MutableState<AddressSettingsState>) -> Unit,
 ) {
+  val clipboardManager = LocalClipboardManager.current
+  val isLight = MaterialTheme.colors.isLight
+  val primary = MaterialTheme.colors.primary
+  val cardBg = lerp(MaterialTheme.colors.surface, primary, if (isLight) 0.06f else 0.09f)
+
   ColumnWithScrollBar {
     if (!onboarding) {
       AppBarTitle(stringResource(MR.strings.simplex_address), hostDevice(user?.remoteHostId))
@@ -322,6 +336,7 @@ private fun UserAddressLayout(
         }
       } else {
         val showShortLink = remember { mutableStateOf(true) }
+        val addressUri = userAddress.connLinkContact.simplexChatUri(short = showShortLink.value)
 
         if (onboarding) {
           Text(
@@ -329,44 +344,118 @@ private fun UserAddressLayout(
             Modifier.fillMaxWidth().padding(horizontal = DEFAULT_PADDING, vertical = DEFAULT_PADDING_HALF),
             style = MaterialTheme.typography.body1
           )
-          LinkTextView(userAddress.connLinkContact.simplexChatUri(short = showShortLink.value), true)
+          LinkTextView(addressUri, true)
           Text(
             stringResource(MR.strings.onboarding_or_use_qr_code),
             Modifier.fillMaxWidth().padding(horizontal = DEFAULT_PADDING, vertical = DEFAULT_PADDING_HALF),
             style = MaterialTheme.typography.body1
           )
-          SimpleXCreatedLinkQRCode(userAddress.connLinkContact, short = showShortLink.value)
+          
+          SmartLinkQRCode(
+            uri = addressUri,
+            modifier = Modifier.padding(16.dp)
+          )
+
         } else {
           val addressSettingsState = remember { mutableStateOf(AddressSettingsState(settings = userAddress.addressSettings)) }
           val savedAddressSettingsState = remember { mutableStateOf(addressSettingsState.value) }
 
-          SectionViewWithButton(
-            stringResource(MR.strings.for_social_media),
-            titleButton = if (userAddress.connLinkContact.connShortLink != null) {{ ToggleShortLinkButton(showShortLink) }} else null
+          // --- НОВЫЙ БЛОК С QR И КНОПКАМИ ---
+          Surface(
+            modifier = Modifier
+              .fillMaxWidth()
+              .padding(horizontal = 12.dp, vertical = 6.dp),
+            shape = RoundedCornerShape(32.dp),
+            color = cardBg,
+            elevation = 0.dp
           ) {
-            SimpleXCreatedLinkQRCode(userAddress.connLinkContact, short = showShortLink.value)
-            if (userAddress.shouldBeUpgraded) {
-              AddShortLinkButton(text = stringResource(MR.strings.add_short_link)) { showAddShortLinkAlert(null) }
-            }
-            ShareAddressButton {
-              if (userAddress.shouldBeUpgraded) {
-                showAddShortLinkAlert { share(userAddress.connLinkContact.simplexChatUri(short = showShortLink.value)) }
-              } else {
-                share(userAddress.connLinkContact.simplexChatUri(short = showShortLink.value))
+            Column(
+              modifier = Modifier
+                .fillMaxWidth()
+                .padding(18.dp),
+              horizontalAlignment = Alignment.CenterHorizontally,
+              verticalArrangement = Arrangement.spacedBy(14.dp)
+            ) {
+              Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+              ) {
+                Text(
+                  text = stringResource(MR.strings.for_social_media),
+                  style = MaterialTheme.typography.subtitle1,
+                  fontWeight = FontWeight.SemiBold,
+                  color = MaterialTheme.colors.onSurface
+                )
+                if (userAddress.connLinkContact.connShortLink != null) {
+                  ToggleShortLinkButton(showShortLink)
+                }
+              }
+
+              // Вызов нашего умного компонента SmartLinkQRCode
+              SmartLinkQRCode(
+                uri = addressUri,
+                modifier = Modifier.padding(vertical = 8.dp)
+              )
+
+              // Кнопки Share
+              Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+              ) {
+                Button(
+                  onClick = {
+                    if (userAddress.shouldBeUpgraded) {
+                      showAddShortLinkAlert { share(userAddress.connLinkContact.simplexChatUri(short = showShortLink.value)) }
+                    } else {
+                      share(userAddress.connLinkContact.simplexChatUri(short = showShortLink.value))
+                    }
+                  },
+                  modifier = Modifier.weight(1f).height(46.dp),
+                  shape = RoundedCornerShape(percent = 50),
+                  colors = ButtonDefaults.buttonColors(
+                    backgroundColor = MaterialTheme.colors.primary,
+                    contentColor = MaterialTheme.colors.onPrimary
+                  ),
+                  elevation = null
+                ) {
+                  Icon(painterResource(MR.images.ic_share), null, modifier = Modifier.size(18.dp))
+                  Spacer(Modifier.width(8.dp))
+                  Text(stringResource(MR.strings.share_verb), fontWeight = FontWeight.Medium)
+                }
+
+                Button(
+                  onClick = {
+                    val shareViaChat = {
+                      chatModel.sharedContent.value = SharedContent.MyAddress
+                      chatModel.chatId.value = null
+                      ModalManager.closeAllModalsEverywhere()
+                    }
+                    if (userAddress.shouldBeUpgraded) showAddShortLinkAlert { shareViaChat() } else shareViaChat()
+                  },
+                  modifier = Modifier.weight(1f).height(46.dp),
+                  shape = RoundedCornerShape(percent = 50),
+                  colors = ButtonDefaults.buttonColors(
+                    backgroundColor = lerp(MaterialTheme.colors.surface, primary, if (isLight) 0.14f else 0.20f),
+                    contentColor = MaterialTheme.colors.primary
+                  ),
+                  elevation = null
+                ) {
+                  Icon(painterResource(MR.images.ic_forward), null, modifier = Modifier.size(18.dp))
+                  Spacer(Modifier.width(8.dp))
+                  Text(stringResource(MR.strings.share_via_chat), fontWeight = FontWeight.Medium, maxLines = 1)
+                }
               }
             }
-            ShareViaChatButton {
-              val shareViaChat = {
-                chatModel.sharedContent.value = SharedContent.MyAddress
-                chatModel.chatId.value = null
-                ModalManager.closeAllModalsEverywhere()
-              }
-              if (userAddress.shouldBeUpgraded) showAddShortLinkAlert { shareViaChat() } else shareViaChat()
-            }
-            // ShareViaEmailButton { sendEmail(userAddress) }
-            BusinessAddressToggle(addressSettingsState) { saveAddressSettings(addressSettingsState.value, savedAddressSettingsState) }
-            AddressSettingsButton(user, userAddress, shareViaProfile, setProfileAddress, saveAddressSettings)
           }
+          // --- КОНЕЦ НОВОГО БЛОКА ---
+
+          if (userAddress.shouldBeUpgraded) {
+            AddShortLinkButton(text = stringResource(MR.strings.add_short_link)) { showAddShortLinkAlert(null) }
+          }
+          BusinessAddressToggle(addressSettingsState) { saveAddressSettings(addressSettingsState.value, savedAddressSettingsState) }
+          AddressSettingsButton(user, userAddress, shareViaProfile, setProfileAddress, saveAddressSettings)
+
           if (addressSettingsState.value.businessAddress) {
             SectionTextFooter(stringResource(MR.strings.add_your_team_members_to_conversations))
           }
@@ -441,17 +530,6 @@ private fun AddShortLinkButton(text: String, onClick: () -> Unit) {
   SettingsActionItem(
     painterResource(MR.images.ic_arrow_upward),
     text,
-    onClick,
-    iconColor = MaterialTheme.colors.primary,
-    textColor = MaterialTheme.colors.primary,
-  )
-}
-
-@Composable
-private fun ShareViaChatButton(onClick: () -> Unit) {
-  SettingsActionItem(
-    painterResource(MR.images.ic_forward),
-    stringResource(MR.strings.share_via_chat),
     onClick,
     iconColor = MaterialTheme.colors.primary,
     textColor = MaterialTheme.colors.primary,
@@ -545,7 +623,6 @@ private fun ModalData.UserAddressSettings(
   }
 
   LaunchedEffect(Unit) {
-    // Enables unsaved changes alert on this view.
     chatModel.centerPanelBackgroundClickHandler = {
       onClose(close = { ModalManager.start.closeModals() })
     }
@@ -767,13 +844,20 @@ private fun AcceptIncognitoToggle(addressSettingsState: MutableState<AddressSett
 @Composable
 private fun AutoReplyEditor(addressSettingsState: MutableState<AddressSettingsState>) {
   val autoReply = rememberSaveable { mutableStateOf(addressSettingsState.value.autoReply) }
-  TextEditor(
-    autoReply,
-    Modifier.height(100.dp),
-    placeholder = stringResource(MR.strings.enter_welcome_message_optional),
-    contentPadding = PaddingValues(),
-    shape = SectionCardShape
-  )
+  Box(
+    modifier = Modifier
+      .fillMaxWidth()
+      .padding(horizontal = 12.dp, vertical = 4.dp)
+      .clip(RoundedCornerShape(20.dp))
+  ) {
+    TextEditor(
+      autoReply,
+      Modifier.height(100.dp),
+      placeholder = stringResource(MR.strings.enter_welcome_message_optional),
+      contentPadding = PaddingValues(12.dp),
+      shape = RoundedCornerShape(20.dp)
+    )
+  }
   LaunchedEffect(autoReply.value) {
     if (autoReply.value != addressSettingsState.value.autoReply) {
       addressSettingsState.value = AddressSettingsState(
@@ -789,16 +873,30 @@ private fun AutoReplyEditor(addressSettingsState: MutableState<AddressSettingsSt
 
 @Composable
 private fun saveAddressSettingsButton(disabled: Boolean, onClick: () -> Unit) {
-  SectionItemView(onClick, disabled = disabled) {
-    Text(stringResource(MR.strings.save_verb), color = if (disabled) MaterialTheme.colors.secondary else MaterialTheme.colors.primary)
+  Button(
+    onClick = onClick,
+    enabled = !disabled,
+    modifier = Modifier
+      .fillMaxWidth()
+      .padding(horizontal = 14.dp, vertical = 6.dp)
+      .height(48.dp),
+    shape = RoundedCornerShape(percent = 50),
+    colors = ButtonDefaults.buttonColors(
+      backgroundColor = MaterialTheme.colors.primary,
+      contentColor = Color.White,
+      disabledBackgroundColor = MaterialTheme.colors.onSurface.copy(alpha = 0.12f),
+      disabledContentColor = MaterialTheme.colors.onSurface.copy(alpha = 0.38f)
+    ),
+    elevation = null
+  ) {
+    Text(
+      stringResource(MR.strings.save_verb),
+      fontWeight = FontWeight.SemiBold
+    )
   }
 }
 
-@Preview/*(
-  uiMode = Configuration.UI_MODE_NIGHT_YES,
-  showBackground = true,
-  name = "Dark Mode"
-)*/
+@Preview
 @Composable
 fun PreviewUserAddressLayoutNoAddress() {
   SimpleXTheme {
@@ -828,11 +926,7 @@ private fun showUnsavedChangesAlert(save: () -> Unit, revert: () -> Unit) {
   )
 }
 
-@Preview/*(
-  uiMode = Configuration.UI_MODE_NIGHT_YES,
-  showBackground = true,
-  name = "Dark Mode"
-)*/
+@Preview
 @Composable
 fun PreviewUserAddressLayoutAddressCreated() {
   SimpleXTheme {

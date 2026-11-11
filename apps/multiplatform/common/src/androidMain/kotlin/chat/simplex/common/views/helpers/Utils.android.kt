@@ -60,8 +60,113 @@ fun keepScreenOn(on: Boolean) {
   }
 }
 
+actual fun saveImageFromUriPlatform(uri: URI): CryptoFile? {
+  return try {
+    val quality = MediaQualityManager.photoQualityState.value
+    val encrypted = chatController.appPrefs.privacyEncryptLocalFiles.get()
+    val inputStream = uri.inputStream() ?: return null
+    val ext = getFileName(uri)?.substringAfterLast(".")?.lowercase() ?: "jpg"
+    val destFileName = generateNewFileName("IMG", if (ext == "png") "png" else "jpg", File(getAppFilePath("")))
+    val destFile = File(getAppFilePath(destFileName))
+
+    createTmpFileAndDelete { tmpFile ->
+      // 1. Копируем исходный файл во временную директорию
+      copyInputStreamToFile(inputStream, tmpFile, Long.MAX_VALUE)
+
+      // 2. Применяем HD (4MP) или UHD (оригинал)
+      val processedFile = if (quality == PhotoQuality.HD) {
+        val hdFile = File(tmpFile.parentFile, "hd_${tmpFile.name}")
+        val result = MediaQualityConverter.processPhoto(
+          inputFile = tmpFile,
+          qualityMode = PhotoQuality.HD,
+          outputFile = hdFile
+        )
+        if (result != tmpFile) {
+          ChatModel.filesToDelete.add(hdFile)
+        }
+        result
+      } else {
+        // UHD: отдаем оригинальный файл без малейших изменений
+        tmpFile
+      }
+
+      // 3. Шифруем или перемещаем итоговый файл в хранилище SimpleX
+      if (encrypted) {
+        try {
+          val args = encryptCryptoFile(processedFile.absolutePath, destFile.absolutePath)
+          CryptoFile(destFileName, args)
+        } catch (e: Exception) {
+          Log.e(TAG, "Unable to encrypt image: ${e.stackTraceToString()}")
+          AlertManager.shared.showAlertMsg(title = generalGetString(MR.strings.error), text = e.stackTraceToString())
+          null
+        }
+      } else {
+        processedFile.copyTo(destFile, overwrite = true)
+        CryptoFile.plain(destFileName)
+      }
+    }
+  } catch (e: Exception) {
+    Log.e(TAG, "saveImageFromUriPlatform error: ${e.stackTraceToString()}")
+    null
+  }
+}
+
 actual fun escapedHtmlToAnnotatedString(text: String, density: Density): AnnotatedString {
   return spannableStringToAnnotatedString(HtmlCompat.fromHtml(text, HtmlCompat.FROM_HTML_MODE_LEGACY), density)
+}
+
+actual fun processVideoIfNeeded(file: File): File {
+  val qualityMode = MediaQualityManager.videoQualityState.value
+
+  // 1. В режиме FullRes видео отправляется оригинальным
+  if (qualityMode == VideoQuality.FULL_RES) {
+    return file
+  }
+
+  // 2. В режиме FHD проверяем видимое разрешение готового ролика
+  val retriever = MediaMetadataRetriever()
+  val (width, height, rotation) = try {
+    retriever.setDataSource(file.absolutePath)
+    val w = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH)?.toIntOrNull() ?: 0
+    val h = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT)?.toIntOrNull() ?: 0
+    val r = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_ROTATION)?.toIntOrNull() ?: 0
+    Triple(w, h, r)
+  } catch (e: Exception) {
+    Log.e(TAG, "retriever error: ${e.message}")
+    Triple(0, 0, 0)
+  } finally {
+    retriever.release()
+  }
+
+  if (width == 0 || height == 0) return file
+
+  val visualWidth = if (rotation == 90 || rotation == 270) height else width
+  val visualHeight = if (rotation == 90 || rotation == 270) width else height
+
+  val isLandscape = visualWidth >= visualHeight
+  val maxLimit = if (isLandscape) 1920 else 1080
+  val minLimit = if (isLandscape) 1080 else 1920
+
+  // Если видео уже <= 1080p (вертикальное 1080x1920 или горизонтальное 1920x1080), сжимать не нужно
+  if (visualWidth <= maxLimit && visualHeight <= minLimit) {
+    return file
+  }
+
+  // 3. Если больше (например, 4K) — уменьшаем до 1080p
+  return try {
+    val fhdFile = File(file.parentFile, "fhd_${file.name}")
+    if (fhdFile.exists()) fhdFile.delete()
+    val success = VideoTranscoder.transcodeTo1080p(file, fhdFile)
+    if (success && fhdFile.exists() && fhdFile.length() > 0) {
+      ChatModel.filesToDelete.add(fhdFile)
+      fhdFile
+    } else {
+      file
+    }
+  } catch (e: Exception) {
+    Log.e(TAG, "Video transcode failed: ${e.message}")
+    file
+  }
 }
 
 private fun spannableStringToAnnotatedString(
@@ -276,19 +381,48 @@ actual fun getFileSize(uri: URI): Long? {
 }
 
 actual fun getBitmapFromUri(uri: URI, withAlertOnException: Boolean): ImageBitmap? {
-  return if (Build.VERSION.SDK_INT >= 28) {
+  val androidUri = uri.toUri()
+  val contentResolver = androidAppContext.contentResolver
+  val mimeType = contentResolver.getType(androidUri) ?: ""
+
+  // 1. Если это видео (.mp4) — сразу извлекаем первый кадр
+  if (mimeType.startsWith("video/") || androidUri.toString().endsWith(".mp4", ignoreCase = true)) {
+    return try {
+      val retriever = android.media.MediaMetadataRetriever()
+      retriever.setDataSource(androidAppContext, androidUri)
+      val frame = retriever.getFrameAtTime(0, android.media.MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
+      retriever.release()
+      frame?.asImageBitmap()
+    } catch (e: Exception) {
+      Log.e(TAG, "Unable to extract video frame: ${e.stackTraceToString()}")
+      null
+    }
+  }
+
+  // 2. Пайплайн для изображений (все ветки строго возвращают android.graphics.Bitmap?)
+  val bitmap: android.graphics.Bitmap? = if (Build.VERSION.SDK_INT >= 28) {
     try {
-      val source = ImageDecoder.createSource(androidAppContext.contentResolver, uri.toUri())
+      val source = ImageDecoder.createSource(contentResolver, androidUri)
       ImageDecoder.decodeBitmap(source)
     } catch (e: Exception) {
-      Log.e(TAG, "Unable to decode the image: ${e.stackTraceToString()}")
-      if (withAlertOnException) showImageDecodingException()
-
-      null
+      // Страховка: если видеофайл пришел без MIME-типа, достаем кадр как Bitmap
+      try {
+        val retriever = android.media.MediaMetadataRetriever()
+        retriever.setDataSource(androidAppContext, androidUri)
+        val frame = retriever.getFrameAtTime(0, android.media.MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
+        retriever.release()
+        frame
+      } catch (videoEx: Exception) {
+        Log.e(TAG, "Unable to decode the image: ${e.stackTraceToString()}")
+        if (withAlertOnException) showImageDecodingException()
+        null
+      }
     }
   } else {
     BitmapFactory.decodeFile(getAppFilePath(uri))
-  }?.asImageBitmap()
+  }
+
+  return bitmap?.asImageBitmap()
 }
 
 actual fun getBitmapFromByteArray(data: ByteArray, withAlertOnException: Boolean): ImageBitmap? {
@@ -327,10 +461,38 @@ actual suspend fun saveTempImageUncompressed(image: ImageBitmap, asPng: Boolean)
   return try {
     val ext = if (asPng) "png" else "jpg"
     tmpDir.mkdir()
+
+    val originalBitmap = image.asAndroidBitmap()
+    val photoMode = MediaQualityManager.photoQualityState.value
+
+    // Алгоритм HD (4MP) vs UHD (Оригинал)
+    val finalBitmap = if (!asPng && photoMode == PhotoQuality.HD) {
+      val srcWidth = originalBitmap.width
+      val srcHeight = originalBitmap.height
+      val totalPixels = srcWidth.toLong() * srcHeight.toLong()
+
+      if (totalPixels > PhotoQuality.HD.maxPixels) {
+        val scale = kotlin.math.sqrt(PhotoQuality.HD.maxPixels.toDouble() / totalPixels.toDouble())
+        val targetWidth = (srcWidth * scale).toInt()
+        val targetHeight = (srcHeight * scale).toInt()
+        Bitmap.createScaledBitmap(originalBitmap, targetWidth, targetHeight, true)
+      } else {
+        originalBitmap
+      }
+    } else {
+      originalBitmap
+    }
+
+    // UHD сохраняем с максимальным качеством 95%, HD — 88%
+    val quality = if (photoMode == PhotoQuality.UHD) 95 else 88
+
     return File(tmpDir.absolutePath + File.separator + generateNewFileName("IMG", ext, tmpDir)).apply {
       outputStream().use { out ->
-        image.asAndroidBitmap().compress(if (asPng) Bitmap.CompressFormat.PNG else Bitmap.CompressFormat.JPEG, 85, out)
+        finalBitmap.compress(if (asPng) Bitmap.CompressFormat.PNG else Bitmap.CompressFormat.JPEG, quality, out)
         out.flush()
+      }
+      if (finalBitmap != originalBitmap && !finalBitmap.isRecycled) {
+        finalBitmap.recycle()
       }
       deleteOnExit()
       ChatModel.filesToDelete.add(this)

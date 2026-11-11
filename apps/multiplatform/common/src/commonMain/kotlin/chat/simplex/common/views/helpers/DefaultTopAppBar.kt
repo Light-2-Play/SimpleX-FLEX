@@ -2,6 +2,7 @@ package chat.simplex.common.views.helpers
 
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -110,7 +111,6 @@ fun DefaultAppBar(
   }
 }
 
-
 @Composable
 fun CallAppBar(
   title: @Composable () -> Unit,
@@ -125,20 +125,82 @@ fun CallAppBar(
 }
 
 @Composable
-fun NavigationButtonBack(onButtonClicked: (() -> Unit)?, tintColor: Color = if (onButtonClicked != null) MaterialTheme.colors.primary else MaterialTheme.colors.secondary, height: Dp = 24.dp) {
-  IconButton(onButtonClicked ?: {}, enabled = onButtonClicked != null) {
-    Icon(
-      painterResource(MR.images.ic_arrow_back_ios_new), stringResource(MR.strings.back), Modifier.height(height), tint = tintColor
-    )
+fun NavigationButtonBack(
+  onButtonClicked: (() -> Unit)? = null,
+  onBackClicked: (() -> Unit)? = onButtonClicked,
+  tintColor: Color = if ((onButtonClicked ?: onBackClicked) != null) MaterialTheme.colors.onSurface else MaterialTheme.colors.secondary,
+  height: Dp = 24.dp
+) {
+  val click = onButtonClicked ?: onBackClicked
+  val isLight = MaterialTheme.colors.isLight
+  val islandColor = androidx.compose.ui.graphics.lerp(
+    MaterialTheme.colors.surface,
+    MaterialTheme.colors.primary,
+    if (isLight) 0.07f else 0.11f
+  )
+
+  Surface(
+    modifier = Modifier
+      .padding(vertical = 4.dp, horizontal = 2.dp)
+      .size(44.dp),
+    shape = RoundedCornerShape(percent = 50),
+    color = islandColor,
+    elevation = 0.dp
+  ) {
+    Box(contentAlignment = Alignment.Center) {
+      IconButton(
+        onClick = { click?.invoke() },
+        enabled = click != null,
+        modifier = Modifier.size(44.dp)
+      ) {
+        Icon(
+          painterResource(MR.images.ic_arrow_back_ios_new),
+          stringResource(MR.strings.back),
+          Modifier.height(height),
+          tint = tintColor
+        )
+      }
+    }
   }
 }
 
 @Composable
-fun NavigationButtonClose(onButtonClicked: (() -> Unit)?, tintColor: Color = if (onButtonClicked != null) MaterialTheme.colors.primary else MaterialTheme.colors.secondary, height: Dp = 24.dp) {
-  IconButton(onButtonClicked ?: {}, enabled = onButtonClicked != null) {
-    Icon(
-      painterResource(MR.images.ic_close), stringResource(MR.strings.back), Modifier.height(height), tint = tintColor
-    )
+fun NavigationButtonClose(
+  onButtonClicked: (() -> Unit)? = null,
+  onCloseClicked: (() -> Unit)? = onButtonClicked,
+  tintColor: Color = if ((onButtonClicked ?: onCloseClicked) != null) MaterialTheme.colors.onSurface else MaterialTheme.colors.secondary,
+  height: Dp = 24.dp
+) {
+  val click = onButtonClicked ?: onCloseClicked
+  val isLight = MaterialTheme.colors.isLight
+  val islandColor = androidx.compose.ui.graphics.lerp(
+    MaterialTheme.colors.surface,
+    MaterialTheme.colors.primary,
+    if (isLight) 0.07f else 0.11f
+  )
+
+  Surface(
+    modifier = Modifier
+      .padding(vertical = 4.dp, horizontal = 2.dp)
+      .size(44.dp),
+    shape = RoundedCornerShape(percent = 50),
+    color = islandColor,
+    elevation = 0.dp
+  ) {
+    Box(contentAlignment = Alignment.Center) {
+      IconButton(
+        onClick = { click?.invoke() },
+        enabled = click != null,
+        modifier = Modifier.size(44.dp)
+      ) {
+        Icon(
+          painterResource(MR.images.ic_close),
+          stringResource(MR.strings.back),
+          Modifier.height(height),
+          tint = tintColor
+        )
+      }
+    }
   }
 }
 

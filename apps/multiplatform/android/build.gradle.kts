@@ -1,11 +1,21 @@
 @file:Suppress("UnstableApiUsage")
 
+import java.net.URI
+import java.net.HttpURLConnection
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.compose")
     kotlin("android")
     id("org.jetbrains.kotlin.plugin.serialization")
     id("org.jetbrains.kotlin.plugin.compose")
+}
+
+// Добавьте этот блок сюда:
+repositories {
+    google()
+    mavenCentral()
+    maven { url = uri("https://jitpack.io") }
 }
 
 android {
@@ -19,7 +29,7 @@ android {
         // !!!
         // skip version code after release to F-Droid, as it uses two version codes
         versionCode = (extra["android.version_code"] as String).toInt()
-        versionName = extra["android.version_name"] as String
+        versionName = "7.0.4-Caramel Donut"
 
         testInstrumentationRunner = "android.support.test.runner.AndroidJUnitRunner"
         vectorDrawables {
@@ -86,11 +96,11 @@ android {
     buildFeatures {
         buildConfig = true
     }
-    packaging {
+   packaging {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
         }
-        jniLibs.useLegacyPackaging = rootProject.extra["compression.level"] as Int != 0
+        jniLibs.useLegacyPackaging = true
     }
     android.sourceSets["main"].assets.setSrcDirs(listOf("../common/src/commonMain/resources/assets"))
     val isRelease = gradle.startParameter.taskNames.find { it.lowercase().contains("release") } != null
@@ -162,7 +172,39 @@ gradle.taskGraph.whenReady {
     }
 }
 
+// Автоматическое скачивание AAR-библиотеки sherpa-onnx, если ее нет локально
+val sherpaAarFile = file("libs/sherpa-onnx.aar")
+
+val downloadSherpaAar by tasks.registering {
+    outputs.file(sherpaAarFile)
+    doLast {
+        if (!sherpaAarFile.exists()) {
+            sherpaAarFile.parentFile.mkdirs()
+            println("--> Скачивание sherpa-onnx-1.13.8.aar из GitHub Releases...")
+
+            val downloadUrl = URI("https://github.com/k2-fsa/sherpa-onnx/releases/download/v1.13.8/sherpa-onnx-1.13.8.aar").toURL()
+            val connection = downloadUrl.openConnection() as HttpURLConnection
+            connection.instanceFollowRedirects = true
+            connection.connectTimeout = 30_000
+            connection.readTimeout = 60_000
+
+            connection.inputStream.use { input ->
+                sherpaAarFile.outputStream().use { output ->
+                    input.copyTo(output)
+                }
+            }
+            println("--> sherpa-onnx.aar успешно загружен!")
+        }
+    }
+}
+
+// Запускать скачивание перед началом компиляции проекта
+tasks.matching { it.name.startsWith("pre") && it.name.endsWith("Build") }.configureEach {
+    dependsOn(downloadSherpaAar)
+}
+
 dependencies {
+    implementation("com.google.guava:guava:31.1-android")
     implementation(project(":common"))
     "googleImplementation"("com.android.billingclient:billing:9.1.0")
     implementation("androidx.core:core-ktx:1.13.1")
@@ -190,8 +232,28 @@ dependencies {
     androidTestImplementation("androidx.test.espresso:espresso-core:3.6.1")
     //androidTestImplementation("androidx.compose.ui:ui-test-junit4:$compose_version")
     debugImplementation("androidx.compose.ui:ui-tooling:1.6.4")
-}
 
+  val cameraxVersion = "1.5.0"
+    implementation("androidx.camera:camera-core:$cameraxVersion")
+    implementation("androidx.camera:camera-camera2:$cameraxVersion")
+    implementation("androidx.camera:camera-lifecycle:$cameraxVersion")
+    implementation("androidx.camera:camera-view:$cameraxVersion")
+
+    // Модуль для записи видео (обязателен для VideoCapture и Recorder из CameraActivity)
+    implementation("androidx.camera:camera-video:$cameraxVersion")
+
+    // Модуль OEM-расширений (ночной режим, HDR, боке)
+    implementation("androidx.camera:camera-extensions:$cameraxVersion")
+
+// Движок автономного распознавания речи (Next-gen Kaldi / ONNX)
+    implementation(files("libs/sherpa-onnx.aar"))
+    
+    // Корутины для фоновой обработки
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
+
+    // Material 3 с поддержкой Dynamic Colors (Monet)
+    implementation("androidx.compose.material3:material3:1.3.1")
+}
 tasks {
     val compressApk by creating {
         doLast {

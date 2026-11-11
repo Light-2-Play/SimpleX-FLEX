@@ -49,8 +49,9 @@ class CustomTakePicturePreview(var uri: Uri?, var tmpFile: File?): ActivityResul
     tmpFile?.deleteOnExit()
     ChatModel.filesToDelete.add(tmpFile!!)
     uri = FileProvider.getUriForFile(context, "$APPLICATION_ID.provider", tmpFile!!)
-    return Intent(MediaStore.ACTION_IMAGE_CAPTURE)
-      .putExtra(MediaStore.EXTRA_OUTPUT, uri)
+return Intent(context, Class.forName("chat.simplex.app.CameraActivity"))
+    .putExtra(MediaStore.EXTRA_OUTPUT, uri)
+    .addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION or Intent.FLAG_GRANT_READ_URI_PERMISSION)
   }
 
   override fun getSynchronousResult(
@@ -59,13 +60,9 @@ class CustomTakePicturePreview(var uri: Uri?, var tmpFile: File?): ActivityResul
   ): SynchronousResult<Uri?>? = null
 
   override fun parseResult(resultCode: Int, intent: Intent?): Uri? {
-    return if (resultCode == Activity.RESULT_OK && uri != null) {
-      uri
-    } else {
-      Log.e(TAG, "Getting image from camera cancelled or failed.")
-      null
-    }
-  }
+    if (resultCode != Activity.RESULT_OK) return null
+    return intent?.data ?: uri // <--- intent?.data возвращает наш .mp4 файл
+}
 
   companion object {
     fun saver(): Saver<CustomTakePicturePreview, *> = Saver(

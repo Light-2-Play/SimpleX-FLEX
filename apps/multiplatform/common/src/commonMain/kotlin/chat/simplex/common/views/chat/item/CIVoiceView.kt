@@ -176,15 +176,21 @@ private fun VoiceLayout(
     }
   }
   when {
-    sizeMultiplier != 1f -> {
-      Row(verticalAlignment = Alignment.CenterVertically) {
-        VoiceMsgIndicator(file, audioPlaying.value, sent, hasText, progress, duration, brokenAudio, sizeMultiplier, play, pause, longClick, receiveFile)
-        Row(Modifier.weight(1f, false), verticalAlignment = Alignment.CenterVertically) {
-          DurationText(text, PaddingValues(start = 8.sp.toDp()), true)
-          Slider(MaterialTheme.colors.background, PaddingValues(start = 7.sp.toDp()))
+      sizeMultiplier != 1f -> {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+          VoiceMsgIndicator(file, audioPlaying.value, sent, hasText, progress, duration, brokenAudio, sizeMultiplier, play, pause, longClick, receiveFile)
+          Row(Modifier.weight(1f, false), verticalAlignment = Alignment.CenterVertically) {
+            DurationText(text, PaddingValues(start = 8.sp.toDp()), true)
+            VoiceSpeedChip(
+              currentSpeed = AudioPlayer.playbackSpeed.value,
+              onSpeedChange = { AudioPlayer.setPlaybackSpeed(it) },
+              modifier = Modifier.padding(start = 6.dp)
+            )
+            Slider(MaterialTheme.colors.background, PaddingValues(start = 7.sp.toDp()))
+          }
         }
       }
-    }
+}
     classicWithText -> {
       val sentColor = MaterialTheme.appColors.sentMessage
       val receivedColor = MaterialTheme.appColors.receivedMessage
@@ -192,6 +198,11 @@ private fun VoiceLayout(
       VoiceMsgIndicator(file, audioPlaying.value, sent, hasText, progress, duration, brokenAudio, 1f, play, pause, longClick, receiveFile)
       Row(verticalAlignment = Alignment.CenterVertically) {
         DurationText(text, PaddingValues(start = 12.sp.toDp() * sizeMultiplier))
+        VoiceSpeedChip(
+          currentSpeed = AudioPlayer.playbackSpeed.value,
+          onSpeedChange = { AudioPlayer.setPlaybackSpeed(it) },
+          modifier = Modifier.padding(start = 6.dp)
+        )
         Slider(if (ci.chatDir.sent) sentColor else receivedColor)
       }
     }
@@ -201,15 +212,19 @@ private fun VoiceLayout(
           Row(Modifier.weight(1f, false), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.End) {
             Spacer(Modifier.height(56.sp.toDp() * sizeMultiplier))
             Slider(MaterialTheme.colors.background, PaddingValues(end = DEFAULT_PADDING_HALF + 3.dp))
+            VoiceSpeedChip(
+              currentSpeed = AudioPlayer.playbackSpeed.value,
+              onSpeedChange = { AudioPlayer.setPlaybackSpeed(it) },
+              modifier = Modifier.padding(end = 6.dp)
+            )
             DurationText(text, PaddingValues(end = 12.sp.toDp() * sizeMultiplier))
           }
           VoiceMsgIndicator(file, audioPlaying.value, sent, hasText, progress, duration, brokenAudio, 1f, play, pause, longClick, receiveFile)
         }
-        Box(Modifier.padding(top = 6.sp.toDp() * sizeMultiplier, end = 6.sp.toDp() * sizeMultiplier)) {
-          CIMetaView(ci, timedMessagesTTL, showViaProxy = showViaProxy, showTimestamp = showTimestamp)
+          }
         }
       }
-    }
+}
     else -> {
       @Composable
       fun VoiceRow(inlineMeta: (@Composable () -> Unit)?) {
@@ -218,6 +233,11 @@ private fun VoiceLayout(
             VoiceMsgIndicator(file, audioPlaying.value, sent, false, progress, duration, brokenAudio, 1f, play, pause, longClick, receiveFile)
             Row(Modifier.weight(1f, false), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Start) {
               DurationText(text, PaddingValues(start = 12.sp.toDp() * sizeMultiplier))
+              VoiceSpeedChip(
+                currentSpeed = AudioPlayer.playbackSpeed.value,
+                onSpeedChange = { AudioPlayer.setPlaybackSpeed(it) },
+                modifier = Modifier.padding(start = 6.dp)
+              )
               Slider(MaterialTheme.colors.background, PaddingValues(start = DEFAULT_PADDING_HALF + 3.dp))
               Spacer(Modifier.height(56.sp.toDp() * sizeMultiplier))
             }

@@ -1,0 +1,14 @@
+name: Generate Keystore
+on: workflow_dispatch
+
+jobs:
+  create-key:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Generate and Encode Key
+        run: |
+          keytool -genkey -v -keystore release.jks -alias simplex_key -keyalg RSA -keysize 2048 -validity 10000 -storepass simplexpass123 -keypass simplexpass123 -dname "CN=SimpleX, OU=Mod, O=Personal, C=RU"
+          echo "=== START_KEY ==="
+          base64 -w 0 release.jks
+          echo ""
+          echo "=== END_KEY ==="

@@ -99,7 +99,10 @@ object NtfManager {
     }
   }
 
-  fun displayNotification(user: UserLike, chatId: String, displayName: String, msgText: String, image: String? = null, actions: List<NotificationAction> = emptyList()) {
+ fun displayNotification(user: UserLike, chatId: String, displayName: String, msgText: String, image: String? = null, actions: List<NotificationAction> = emptyList()) {
+    // ИСПРАВЛЕНИЕ СПАМА: Блокируем пуш-уведомления от технических команд историй
+    if (msgText.startsWith("[STORY")) return
+
     if (!user.showNotifications) return
     Log.d(TAG, "notifyMessageReceived $chatId")
     val now = Clock.System.now().toEpochMilliseconds()

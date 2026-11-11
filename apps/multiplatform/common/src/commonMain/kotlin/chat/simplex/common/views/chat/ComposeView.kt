@@ -6,6 +6,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.Saver
@@ -115,7 +116,7 @@ data class ComposeState(
   val progressByTimeout: Boolean = false,
   val useLinkPreviews: Boolean,
   val mentions: MentionedMembers = emptyMap(),
-  // the max file size the user may attach, raised by their active badge unless the chat is incognito; kept in sync on chat switch
+// the max file size the user may attach, raised by their active badge unless the chat is incognito; kept in sync on chat switch
   val maxFileSize: Long = getMaxFileSize(FileProtocol.XFTP),
   val sendIncognito: Boolean = false
 ) {
@@ -266,7 +267,6 @@ fun chatItemPreview(chatItem: ChatItem): ComposePreview {
   return when (val mc = chatItem.content.msgContent) {
     is MsgContent.MCText -> ComposePreview.NoPreview
     is MsgContent.MCLink -> ComposePreview.CLinkPreview(linkPreview = mc.preview)
-    // TODO: include correct type
     is MsgContent.MCImage -> ComposePreview.MediaPreview(images = listOf(mc.image), listOf(UploadContent.SimpleImage(getAppFileUri(fileName))))
     is MsgContent.MCVideo -> ComposePreview.MediaPreview(images = listOf(mc.image), listOf(UploadContent.SimpleImage(getAppFileUri(fileName))))
     is MsgContent.MCVoice -> ComposePreview.VoicePreview(voice = fileName, mc.duration / 1000, true)
@@ -287,11 +287,6 @@ expect fun AttachmentSelection(
 )
 
 fun MutableState<ComposeState>.onFilesAttached(uris: List<URI>) {
-  // The extension is enough to classify every format except .webm, which is just as commonly an
-  // audio-only container as a video one. An audio-only file has no frame to embed and is sent as a file,
-  // but that can only be told from the content, so reading it is deferred to a background thread.
-  // Only done here, where files arrive without the user saying how to send them (drag & drop, paste) -
-  // an explicitly picked video is still sent as one.
   if (uris.none { isWebmUri(it) }) {
     attachFiles(uris, emptySet())
   } else {
@@ -346,11 +341,13 @@ fun MutableState<ComposeState>.processPickedFile(uri: URI?, text: String?) {
     if (fileSize != null && fileSize <= maxFileSize) {
       val fileName = getFileName(uri)
       if (fileName != null) {
+        RichHaptics.perform(HapticPattern.SELECTION_CHANGE)
         value = value.copy(message = if (text != null) ComposeMessage(text) else value.message, preview = ComposePreview.FilePreview(fileName, uri))
       }
     } else if (fileSize != null) {
-      showLargeFileAlert(fileSize, value.sendIncognito, chatModel.currentUser.value?.profile)
+showLargeFileAlert(fileSize, value.sendIncognito, chatModel.currentUser.value?.profile)
     } else {
+      RichHaptics.perform(HapticPattern.ERROR)
       showWrongUriAlert()
     }
   }
@@ -361,21 +358,20 @@ suspend fun MutableState<ComposeState>.processPickedMedia(uris: List<URI>, text:
   val content = ArrayList<UploadContent>()
   val imagesPreview = ArrayList<String>()
   uris.forEach { uri ->
-    var preview: String? = null
+var preview: String? = null
+    val isVideo = uri.toString().contains(".mp4", ignoreCase = true) || uri.toString().contains("VID_", ignoreCase = true)
     val uploadContent: UploadContent? = when {
-      isImage(uri) -> {
-        // Image
+      !isVideo && isImage(uri) -> {
         val drawable = getDrawableFromUri(uri)
-        // Do not show alert in case it's already shown from the function above
+// Do not show alert in case it's already shown from the function above
         fun bitmapPreview() = getBitmapFromUri(uri, withAlertOnException = !AlertManager.shared.hasAlertsShown())?.let { resizeImageToStrSize(it, maxDataSize = 14000) }
         if (isAnimImage(uri, drawable)) {
-          // It's a gif or webp
           val fileSize = getFileSize(uri)
           if (fileSize != null && fileSize <= maxFileSize) {
             preview = bitmapPreview()
             UploadContent.AnimatedImage(uri)
           } else {
-            showLargeFileAlert(fileSize ?: 0, value.sendIncognito, chatModel.currentUser.value?.profile)
+showLargeFileAlert(fileSize ?: 0, value.sendIncognito, chatModel.currentUser.value?.profile)
             null
           }
         } else {
@@ -384,29 +380,25 @@ suspend fun MutableState<ComposeState>.processPickedMedia(uris: List<URI>, text:
         }
       }
       else -> {
-        // Video
         val res = getBitmapFromVideo(uri, withAlertOnException = true)
         preview = res.preview?.let { resizeImageToStrSize(it, maxDataSize = 14000) }
         val durationMs = res.duration
         UploadContent.Video(uri, durationMs?.div(1000)?.toInt() ?: 0)
       }
     }
-    // content and imagesPreview must stay index-aligned and equal-length: both consumers
+// content and imagesPreview must stay index-aligned and equal-length: both consumers
     // (ComposeImageView and sendMessageAsync) cross-index one list by the other's index.
     // Only pair them when a preview exists; otherwise skip the media entirely.
     if (preview != null && uploadContent != null) {
       content.add(uploadContent)
       imagesPreview.add(preview)
     } else if (uploadContent is UploadContent.Video && !AlertManager.shared.hasAlertsShown()) {
-      // A corrupted/undecodable video can yield a null preview frame without throwing, so
-      // getBitmapFromVideo shows no alert. Skip it (other picked media still send) and tell
-      // the user instead of dropping it silently. hasAlertsShown guards against stacking the
-      // alert across multiple bad items and against duplicating the one already shown on the
-      // exception path. Image decode failures are already surfaced by getBitmapFromUri above.
+      RichHaptics.perform(HapticPattern.ERROR)
       showVideoDecodingException()
     }
   }
   if (imagesPreview.isNotEmpty()) {
+    RichHaptics.perform(HapticPattern.SELECTION_CHANGE)
     value = value.copy(message = if (text != null) ComposeMessage(text) else value.message, preview = ComposePreview.MediaPreview(imagesPreview, content))
   }
 }
@@ -443,7 +435,6 @@ fun ComposeView(
   }
 
   val linkUrl = rememberSaveable { mutableStateOf<String?>(null) }
-  // default value parsed because of draft
   val hasSimplexLink = rememberSaveable { mutableStateOf(getMessageLinks(parseToMarkdown(composeState.value.message.text)).second) }
   val prevLinkUrl = rememberSaveable { mutableStateOf<String?>(null) }
   val pendingLinkUrl = rememberSaveable { mutableStateOf<String?>(null) }
@@ -562,7 +553,6 @@ fun ComposeView(
         is SharedContent.ChatLink -> emptyList()
         is SharedContent.MyAddress -> emptyList()
       }
-      // When sharing a file and pasting it in SimpleX itself, the file shouldn't be deleted before sending or before leaving the chat after sharing
       chatModel.filesToDelete.removeAll { file ->
         if (sharedPaths.any { it.endsWith(file.name) }) {
           false
@@ -606,8 +596,6 @@ fun ComposeView(
     return null
   }
 
-  // TODO [short links] connectCheckLinkPreview
-  // the state is passed in by a send that must not read the current one - see sendMessageAsync
   fun checkLinkPreview(cs: ComposeState = composeState.value): MsgContent {
     val msgText = cs.message.text
     return when (val composePreview = cs.preview) {
@@ -621,7 +609,6 @@ fun ComposeView(
           MsgContent.MCText(msgText)
         }
       }
-
       else -> MsgContent.MCText(msgText)
     }
   }
@@ -630,8 +617,6 @@ fun ComposeView(
     composeState.value = composeState.value.copy(inProgress = true)
   }
 
-  // composeState and its inProgress flag are shared between the chats opened in this view, and sending is not cancelled
-  // when the chat is switched - a send may only clear or reset the state while it still holds the message that was sent
   fun composeHasSentMessage(): Boolean = chatModel.chatId.value == chat.id && composeState.value.inProgress
 
   suspend fun sendMemberContactInvitation() {
@@ -713,11 +698,7 @@ fun ComposeView(
     }
   }
 
-  // toChat is the chat the message was composed in - it differs from the one this view shows only for the live message
-  // committed by a chat switch, which has no context item, so the forwarding, editing and reporting branches below
-  // cannot run with a different chat. cs is that send's state, captured before the switch replaced it.
   suspend fun sendMessageAsync(text: String?, live: Boolean, ttl: Int?, sign: Boolean = false, toChat: Chat = chat, cs: ComposeState = composeState.value): List<ChatItem>? {
-    // a send for another chat may not write to composeState, even after that chat is opened again - it was handed over
     fun composeIsForSend(): Boolean = toChat.id == chat.id
     var sent: List<ChatItem>?
     var lastMessageFailedToSend: ComposeState? = null
@@ -842,8 +823,6 @@ fun ComposeView(
       if (cs.message.text.isNotEmpty()) {
         sent?.mapIndexed { index, message ->
           if (index == sent!!.lastIndex) {
-            // the current state, not cs: forwarding is never reached from the chat switch, and keeps what was typed
-            // while it was in flight
             send(chat, checkLinkPreview(), quoted = message.id, live = false, ttl = ttl, mentions = cs.memberMentions, sign = sign)
           } else {
             message
@@ -874,7 +853,6 @@ fun ComposeView(
           msgs.add(MsgContent.MCChat(text, preview.chatLink, preview.ownerSig))
         }
         is ComposePreview.MediaPreview -> {
-          // TODO batch send: batch media previews
           preview.content.forEachIndexed { index, it ->
             val file = when (it) {
               is UploadContent.SimpleImage ->
@@ -926,7 +904,6 @@ fun ComposeView(
             deleteUnusedFiles()
           } else {
             files.add(CryptoFile.plain(tmpFile.absolutePath))
-            // It will be deleted on JVM shutdown or next start (if the app crashes unexpectedly)
             filesToDelete.remove(tmpFile)
             msgs.add(MsgContent.MCVoice(if (msgs.isEmpty()) msgText else "", preview.durationMs / 1000))
           }
@@ -967,7 +944,6 @@ fun ComposeView(
         sent = if (sendResult != null) listOf(sendResult) else null
         if (sent == null && index == msgs.lastIndex && cs.liveMessage == null) {
           constructFailedMessage(cs)
-          // it's the last message in the series so if it fails, restore it in ComposeView for editing
           lastMessageFailedToSend = constructFailedMessage(cs)
         }
       }
@@ -975,13 +951,8 @@ fun ComposeView(
     val wasForwarding = cs.forwarding
     val forwardingFromChatId = (cs.contextItem as? ComposeContextItem.ForwardingItems)?.fromChatInfo?.id
     val lastFailed = lastMessageFailedToSend
-    // composeState is shared between the chats opened in this view, and this runs after the send API call, so the user
-    // could have switched chats or typed another message in the meantime - only the message that was sent may be
-    // cleared or restored. On Main, so that these checks and changes are not interleaved with the user switching
-    // chats or typing.
     withContext(Dispatchers.Main) {
       val chatIsOpen = composeIsForSend() && chatModel.chatId.value == chat.id
-      // a live message is held in the compose state of the chat it is sent to, but only while that chat is the one open
       val liveSend = live || cs.liveMessage != null
       val sentMessageInCompose = chatIsOpen && (liveSend || composeState.value.inProgress)
       if (sentMessageInCompose) {
@@ -996,9 +967,7 @@ fun ComposeView(
         if (sentMessageInCompose) composeState.value = draft
       } else {
         clearCurrentDraft(toChat)
-        // liveSend excluded: a failing keystroke send would otherwise write a draft on every attempt
         if (!sentMessageInCompose && !liveSend && lastFailed != null) {
-          // the message was not sent, so it is restored in the chat it was composed in, or kept as its draft if another chat is open
           if (chatIsOpen && composeState.value.empty) {
             composeState.value = lastFailed
           } else if (saveLastDraft) {
@@ -1011,11 +980,17 @@ fun ComposeView(
     return sent
   }
 
-  // toChat and composed are for the chat switch, which hands the compose state over to the chat it opened; passing
-  // toChat without doing that leaves the sent message in the input
   fun sendMessage(ttl: Int?, sign: Boolean = false, toChat: Chat = chat, composed: ComposeState? = null) {
+    // 1. Мгновенная тактильная отдача при нажатии на отправку:
+    RichHaptics.perform(HapticPattern.SEND_MESSAGE)
     withLongRunningApi(slow = 120_000) {
-      sendMessageAsync(null, false, ttl, sign, toChat, composed ?: composeState.value)
+      val sent = sendMessageAsync(null, false, ttl, sign, toChat, composed ?: composeState.value)
+      if (sent != null) {
+        // 2. Успешное завершение отправки:
+        RichHaptics.perform(HapticPattern.SUCCESS)
+      } else {
+        RichHaptics.perform(HapticPattern.ERROR)
+      }
     }
   }
 
@@ -1101,6 +1076,7 @@ fun ComposeView(
   }
 
   fun cancelLinkPreview() {
+    RichHaptics.perform(HapticPattern.TICK)
     val pendingLink = pendingLinkUrl.value
     if (pendingLink != null) {
       cancelledLinks.add(pendingLink)
@@ -1114,10 +1090,12 @@ fun ComposeView(
   }
 
   fun cancelImages() {
+    RichHaptics.perform(HapticPattern.TICK)
     composeState.value = composeState.value.copy(preview = ComposePreview.NoPreview)
   }
 
   fun cancelVoice() {
+    RichHaptics.perform(HapticPattern.TICK)
     val filePath = recState.value.filePathNullable
     recState.value = RecordingState.NotStarted
     composeState.value = composeState.value.copy(preview = ComposePreview.NoPreview)
@@ -1129,6 +1107,7 @@ fun ComposeView(
   }
 
   fun cancelFile() {
+    RichHaptics.perform(HapticPattern.TICK)
     composeState.value = composeState.value.copy(preview = ComposePreview.NoPreview)
   }
 
@@ -1185,6 +1164,7 @@ fun ComposeView(
     if (composeState.value.contextItem != ComposeContextItem.NoContextItem || composeState.value.preview != ComposePreview.NoPreview) return
     val lastEditable = chatsCtx.chatItems.value.findLast { it.meta.editable }
     if (lastEditable != null) {
+      RichHaptics.perform(HapticPattern.CLICK)
       composeState.value = ComposeState(editingItem = lastEditable, useLinkPreviews = useLinkPreviews).copy(maxFileSize = composeState.value.maxFileSize)
     }
   }
@@ -1241,7 +1221,7 @@ fun ComposeView(
       is ReportReason.Profile -> generalGetString(MR.strings.report_compose_reason_header_profile)
       is ReportReason.Community -> generalGetString(MR.strings.report_compose_reason_header_community)
       is ReportReason.Other -> generalGetString(MR.strings.report_compose_reason_header_other)
-      is ReportReason.Unknown -> null // should never happen
+      is ReportReason.Unknown -> null
     }
 
     if (reportText != null) {
@@ -1293,7 +1273,10 @@ fun ComposeView(
   fun CommandsButton() {
     val commandsEnabled = chat.chatInfo.sendMsgEnabled && chat.chatInfo.menuCommands.isNotEmpty()
     IconButton(
-      onClick = { showCommandsMenu.value = !showCommandsMenu.value },
+      onClick = {
+        RichHaptics.perform(HapticPattern.CLICK)
+        showCommandsMenu.value = !showCommandsMenu.value
+      },
       enabled = commandsEnabled
     ) {
       Box(
@@ -1313,13 +1296,17 @@ fun ComposeView(
           && !chat.chatInfo.groupInfo.fullGroupPreferences.files.on(chat.chatInfo.groupInfo.membership)
     val attachmentClicked = if (isGroupAndProhibitedFiles) {
       {
+        RichHaptics.perform(HapticPattern.WARNING)
         AlertManager.shared.showAlertMsg(
           title = generalGetString(MR.strings.files_and_media_prohibited),
           text = generalGetString(MR.strings.only_owners_can_enable_files_and_media)
         )
       }
     } else {
-      showChooseAttachment
+      {
+        RichHaptics.perform(HapticPattern.CLICK)
+        showChooseAttachment()
+      }
     }
     val attachmentEnabled =
       !composeState.value.attachmentDisabled
@@ -1363,7 +1350,6 @@ fun ComposeView(
   val allowedVoiceByPrefs = remember(chat.chatInfo) { chat.chatInfo.featureEnabled(ChatFeature.Voice) }
   LaunchedEffect(allowedVoiceByPrefs) {
     if (!allowedVoiceByPrefs && composeState.value.preview is ComposePreview.VoicePreview) {
-      // Voice was disabled right when this user records it, just cancel it
       cancelVoice()
     }
   }
@@ -1378,11 +1364,19 @@ fun ComposeView(
       .distinctUntilChanged()
       .collect {
         when (it) {
-          is RecordingState.Started -> onAudioAdded(it.filePath, it.progressMs, false)
-          is RecordingState.Finished -> if (it.durationMs > 300) {
-            onAudioAdded(it.filePath, it.durationMs, true)
-          } else {
-            cancelVoice()
+          is RecordingState.Started -> {
+            // Тактильная фиксация начала записи голосового сообщения:
+            RichHaptics.perform(HapticPattern.RECORD_START)
+            onAudioAdded(it.filePath, it.progressMs, false)
+          }
+          is RecordingState.Finished -> {
+            // Чёткий отклик при отпускании микрофона:
+            RichHaptics.perform(HapticPattern.RECORD_STOP)
+            if (it.durationMs > 300) {
+              onAudioAdded(it.filePath, it.durationMs, true)
+            } else {
+              cancelVoice()
+            }
           }
           is RecordingState.NotStarted -> {}
         }
@@ -1392,25 +1386,17 @@ fun ComposeView(
   KeyChangeEffect(chatModel.chatId.value) { prevChatId ->
     val cs = composeState.value
     if (cs.liveMessage != null && (cs.message.text.isNotEmpty() || cs.liveMessage.sent)) {
-      // the chat is already switched, so the live message goes to the chat with the id it had before the switch
       val liveMessageChat = if (prevChatId == null || prevChatId == chat.id) chat else chatsCtx.getChat(prevChatId)
-      // if that chat is gone there is nowhere to send it, and it must not be sent to the chat opened instead
-      // cs is captured on this thread, before the compose state is replaced below
       if (liveMessageChat != null) sendMessage(null, toChat = liveMessageChat, composed = cs) else clearState()
       resetLinkPreview()
       clearPrevDraft(prevChatId)
       deleteUnusedFiles()
-      // the sent message belongs to the chat it was composed in; the chat opened next shows its own draft
       val draft = chatModel.draft.value
       composeState.value = if (draft != null && chatModel.draftChatId.value == draftChatId(chatModel.chatId.value, chatScope)) draft
         else ComposeState(useLinkPreviews = useLinkPreviews)
     } else if (cs.inProgress) {
       clearPrevDraft(prevChatId)
-      // the message being sent must not be kept in the compose state, it is shared with the chat opened next;
-      // if it fails to send it is restored in this chat or saved as its draft
       clearState()
-      // clearState() does not load the draft of the chat opened next, and without this it is never shown and is
-      // dropped when that chat is left
       val draft = chatModel.draft.value
       if (draft != null && chatModel.draftChatId.value == draftChatId(chatModel.chatId.value, chatScope)) {
         composeState.value = draft
@@ -1435,15 +1421,14 @@ fun ComposeView(
     chatModel.removeLiveDummy()
     CIFile.cachedRemoteFileRequests.clear()
   }
-  // Must be composed after KeyChangeEffect above (effects run in composition order),
-  // so that on chat switch the previous chat's draft is saved before it is cleared here.
+
   LaunchedEffect(rememberUpdatedState(chat.chatInfo.sendMsgEnabled).value) {
     if (!chat.chatInfo.sendMsgEnabled) {
       clearCurrentDraft()
       clearState()
     }
   }
-  // keep the attach size limit in sync with the chat: the user's active badge raises it, but not in incognito chats where no badge is presented
+
   LaunchedEffect(chat.chatInfo) {
     val incognito = if (chat.chatInfo.profileChangeProhibited) chat.chatInfo.incognito else chatModel.controller.appPrefs.incognito.get()
     composeState.value = composeState.value.copy(
@@ -1452,9 +1437,7 @@ fun ComposeView(
     )
   }
   if (appPlatform.isDesktop) {
-    // the same ComposeView is reused when switching chats, so `chat` captured by onDispose would be the chat opened first, not the current one
     val currentChatId = rememberUpdatedState(chat.id)
-    // Don't enable this on Android, it breaks it, This method only works on desktop. For Android there is a `KeyChangeEffect(chatModel.chatId.value)`
     DisposableEffect(Unit) {
       onDispose {
         if (chatModel.sharedContent.value is SharedContent.Forward && saveLastDraft && !composeState.value.empty) {
@@ -1464,11 +1447,10 @@ fun ComposeView(
       }
     }
   }
-  // support chat is closed without changing chat id, and then `KeyChangeEffect(chatModel.chatId.value)` doesn't save the draft
+
   DisposableEffect(Unit) {
     onDispose {
       val cs = composeState.value
-      // chat change is handled by KeyChangeEffect, unfinished voice recording should not replace the saved draft
       if (chatScope == null || chatModel.chatId.value != scopeChatId || (cs.preview is ComposePreview.VoicePreview && !cs.preview.finished)) return@onDispose
       if (saveLastDraft && !cs.empty) {
         chatModel.draft.value = cs
@@ -1557,7 +1539,10 @@ fun ComposeView(
           style = MaterialTheme.typography.body2,
           color = if (composeState.value.inProgress) MaterialTheme.colors.secondary else MaterialTheme.colors.primary,
           disabled = composeState.value.inProgress,
-          click = { withApi { sendRequest() } }
+          click = {
+            RichHaptics.perform(HapticPattern.CLICK)
+            withApi { sendRequest() }
+          }
         )
       }
     }
@@ -1570,7 +1555,10 @@ fun ComposeView(
     connect: () -> Unit
   ) {
     var modifier = Modifier.height(57.dp).fillMaxWidth()
-    modifier = if (composeState.value.inProgress) modifier else modifier.clickable(onClick = { connect() })
+    modifier = if (composeState.value.inProgress) modifier else modifier.clickable(onClick = {
+      RichHaptics.perform(HapticPattern.CLICK)
+      connect()
+    })
     Box(
       modifier,
       contentAlignment = Alignment.Center
@@ -1623,8 +1611,6 @@ fun ComposeView(
     }
   }
 
-  // In case a user sent something, state is in progress, the user rotates a screen to different orientation.
-  // Without clearing the state the user will be unable to send anything until re-enters ChatView
   LaunchedEffect(Unit) {
     if (composeState.value.inProgress) {
       clearState()
@@ -1632,7 +1618,6 @@ fun ComposeView(
   }
 
   LaunchedEffect(chatModel.sharedContent.value) {
-    // Important. If it's null, don't do anything, chat is not closed yet but will be after a moment
     if (chatModel.chatId.value == null) return@LaunchedEffect
 
     when (val shared = chatModel.sharedContent.value) {
@@ -1748,33 +1733,45 @@ fun ComposeView(
     val fileProhibited = chatsCtx.secondaryContextFilter == null && composeState.value.attachmentPreview && !chat.groupFeatureEnabled(GroupFeature.Files)
     val voiceProhibited = composeState.value.preview is ComposePreview.VoicePreview && !chat.chatInfo.featureEnabled(ChatFeature.Voice)
     val disableSendButton = simplexLinkProhibited || fileProhibited || voiceProhibited
-    if (composeState.value.preview !is ComposePreview.VoicePreview || composeState.value.editing) {
-      if (simplexLinkProhibited) {
-        MsgNotAllowedView(generalGetString(MR.strings.simplex_links_not_allowed), icon = painterResource(MR.images.ic_link))
-      } else if (fileProhibited) {
-        MsgNotAllowedView(generalGetString(MR.strings.files_and_media_not_allowed), icon = painterResource(MR.images.ic_draft))
-      } else if (voiceProhibited) {
-        MsgNotAllowedView(generalGetString(MR.strings.voice_messages_not_allowed), icon = painterResource(MR.images.ic_mic))
-      }
-      contextItemView()
-      when {
-        composeState.value.editing && composeState.value.preview is ComposePreview.VoicePreview -> {}
-        composeState.value.editing && composeState.value.preview is ComposePreview.FilePreview -> {}
-        else -> previewView()
-      }
+    val hasContextOrPreview = composeState.value.contextItem !is ComposeContextItem.NoContextItem || 
+                              composeState.value.preview !is ComposePreview.NoPreview
+    val tonalColor = if (MaterialTheme.colors.isLight) {
+      androidx.compose.ui.graphics.lerp(MaterialTheme.colors.surface, MaterialTheme.colors.primary, 0.07f)
     } else {
-      Box {
-        Box(Modifier.align(Alignment.TopStart).padding(bottom = 69.dp)) {
+      androidx.compose.ui.graphics.lerp(MaterialTheme.colors.surface, MaterialTheme.colors.primary, 0.11f)
+    }
+    if (hasContextOrPreview) {
+      Surface(
+        modifier = Modifier
+          .fillMaxWidth()
+          .padding(horizontal = 8.dp, vertical = 3.dp)
+          .clip(RoundedCornerShape(24.dp)),
+        color = tonalColor,
+        elevation = 0.dp
+      ) {
+        Column {
+          if (simplexLinkProhibited) {
+            MsgNotAllowedView(generalGetString(MR.strings.simplex_links_not_allowed), icon = painterResource(MR.images.ic_link))
+          } else if (fileProhibited) {
+            MsgNotAllowedView(generalGetString(MR.strings.files_and_media_not_allowed), icon = painterResource(MR.images.ic_draft))
+          } else if (voiceProhibited) {
+            MsgNotAllowedView(generalGetString(MR.strings.voice_messages_not_allowed), icon = painterResource(MR.images.ic_mic))
+          }
           contextItemView()
-        }
-        Box(Modifier.align(Alignment.BottomStart)) {
           previewView()
         }
       }
     }
 
-    Surface(color = MaterialTheme.colors.background, contentColor = MaterialTheme.colors.onBackground) {
-      Divider()
+    Surface(
+      modifier = Modifier
+        .fillMaxWidth()
+        .padding(horizontal = 8.dp, vertical = 3.dp)
+        .clip(RoundedCornerShape(28.dp)),
+      color = tonalColor,
+      contentColor = MaterialTheme.colors.onSurface,
+      elevation = 0.dp
+    ) {
       if (chat.chatInfo is ChatInfo.Group && chat.chatInfo.groupInfo.nextConnectPrepared) {
         if (chat.chatInfo.groupInfo.businessChat == null) {
           val isChannel = chat.chatInfo.groupInfo.useRelays
@@ -1886,12 +1883,6 @@ private fun showLinkPreviewsConfirmAlert(socksEnabled: Boolean, onChoice: (Boole
         }) {
           Text(stringResource(MR.strings.link_previews_alert_enable), Modifier.fillMaxWidth(), textAlign = TextAlign.Center, color = if (socksEnabled) MaterialTheme.colors.primary else Color.Red)
         }
-//        SectionItemView({
-//          AlertManager.shared.hideAlert()
-//          onChoice(null)
-//        }) {
-//          Text(stringResource(MR.strings.cancel_verb), Modifier.fillMaxWidth(), textAlign = TextAlign.Center, color = MaterialTheme.colors.onBackground)
-//        }
       }
     }
   )
@@ -2215,4 +2206,3 @@ private data class SubscriberRelayState(
 
 private fun relayMemberRemoved(status: GroupMemberStatus?): Boolean =
   status in listOf(GroupMemberStatus.MemLeft, GroupMemberStatus.MemRemoved, GroupMemberStatus.MemGroupDeleted)
-

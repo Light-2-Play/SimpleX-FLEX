@@ -63,9 +63,10 @@ fun SendMsgView(
   onMessageChange: (ComposeMessage) -> Unit,
   textStyle: MutableState<TextStyle>,
   focusRequester: FocusRequester? = null,
-  ) {
+) {
   val showCustomDisappearingMessageDialog = remember { mutableStateOf(false) }
   val padding = if (appPlatform.isAndroid) PaddingValues(vertical = 8.dp) else PaddingValues(top = 3.dp, bottom = 4.dp)
+
   Box(Modifier.padding(padding)) {
     val cs = composeState.value
     val showVoiceButton = !nextConnect && cs.message.text.isEmpty() && showVoiceRecordIcon && !composeState.value.editing &&
@@ -76,6 +77,7 @@ fun SendMsgView(
         cs.endLiveDisabled ||
         !sendButtonEnabled
     val clicksOnTextFieldDisabled = !sendMsgEnabled || cs.preview is ComposePreview.VoicePreview || cs.inProgress
+
     PlatformTextField(
       composeState,
       sendMsgEnabled,
@@ -98,6 +100,7 @@ fun SendMsgView(
         }
       }
     }
+
     if (clicksOnTextFieldDisabled) {
       if (userCantSendReason != null) {
         Box(
@@ -111,25 +114,25 @@ fun SendMsgView(
             })
         )
       } else {
-        Box(
-          Modifier
-            .matchParentSize()
-        )
+        Box(Modifier.matchParentSize())
       }
     }
+
     if (showDeleteTextButton.value) {
       DeleteTextButton(composeState)
     }
+
     Box(Modifier.align(Alignment.BottomEnd).padding(bottom = if (appPlatform.isAndroid) 0.dp else 5.sp.toDp() * fontSizeSqrtMultiplier)) {
       val sendButtonSize = remember { Animatable(36f) }
       val sendButtonAlpha = remember { Animatable(1f) }
       val scope = rememberCoroutineScope()
+
       LaunchedEffect(Unit) {
-        // Making LiveMessage alive when screen orientation was changed
         if (cs.liveMessage != null && sendLiveMessage != null && updateLiveMessage != null) {
           startLiveMessage(scope, sendLiveMessage, updateLiveMessage, sendButtonSize, sendButtonAlpha, composeState, liveMessageAlertShown)
         }
       }
+
       when {
         cs.progressByTimeout -> ComposeProgressIndicator()
         cs.contextItem is ComposeContextItem.ReportedItem -> {
@@ -138,6 +141,8 @@ fun SendMsgView(
         showVoiceButton && sendMsgEnabled -> {
           Row(verticalAlignment = Alignment.CenterVertically) {
             val stopRecOnNextClick = remember { mutableStateOf(false) }
+
+            // 1. Кнопка микрофона
             when {
               needToAllowVoiceToContact || !allowedVoiceByPrefs -> {
                 DisallowedVoiceButton {
@@ -153,12 +158,14 @@ fun SendMsgView(
               else ->
                 RecordVoiceView(recState, stopRecOnNextClick)
             }
+
+            // 2. Кнопка Live Messages (справа от микрофона)
             if (sendLiveMessage != null
               && updateLiveMessage != null
               && (cs.preview !is ComposePreview.VoicePreview || !stopRecOnNextClick.value)
               && cs.contextItem is ComposeContextItem.NoContextItem
             ) {
-              Spacer(Modifier.width(12.dp))
+              Spacer(Modifier.width(10.dp))
               StartLiveMessageButton {
                 if (composeState.value.preview is ComposePreview.NoPreview) {
                   startLiveMessage(scope, sendLiveMessage, updateLiveMessage, sendButtonSize, sendButtonAlpha, composeState, liveMessageAlertShown)
@@ -173,7 +180,6 @@ fun SendMsgView(
           }
         }
         else -> {
-          val cs = composeState.value
           val icon = if (cs.editing || cs.liveMessage != null) painterResource(MR.images.ic_check_filled) else painterResource(MR.images.ic_arrow_upward)
           val showDropdown = rememberSaveable { mutableStateOf(false) }
 
@@ -210,31 +216,6 @@ fun SendMsgView(
                   )
                 }
               }
-              // hidden until message signing is user-facing (recipient-only stage)
-//              if (showSign && !cs.editing) {
-//                menuItems.add {
-//                  ItemAction(
-//                    generalGetString(MR.strings.sign_message),
-//                    painterResource(MR.images.ic_verified),
-//                    onClick = {
-//                      if (signMessageAlertShown.state.value) {
-//                        sendSignedMessage()
-//                      } else {
-//                        AlertManager.shared.showAlertDialog(
-//                          title = generalGetString(MR.strings.sign_message),
-//                          text = generalGetString(MR.strings.sign_message_desc),
-//                          confirmText = generalGetString(MR.strings.send_verb),
-//                          onConfirm = {
-//                            signMessageAlertShown.set(true)
-//                            sendSignedMessage()
-//                          }
-//                        )
-//                      }
-//                      showDropdown.value = false
-//                    }
-//                  )
-//                }
-//              }
             }
 
             return menuItems
@@ -325,18 +306,19 @@ private fun BoxScope.DeleteTextButton(composeState: MutableState<ComposeState>) 
 private fun RecordVoiceView(recState: MutableState<RecordingState>, stopRecOnNextClick: MutableState<Boolean>) {
   val rec: RecorderInterface = remember { RecorderNative() }
   DisposableEffect(Unit) { onDispose { rec.stop() } }
+
   val stopRecordingAndAddAudio: () -> Unit = {
     recState.value.filePathNullable?.let {
       recState.value = RecordingState.Finished(it, rec.stop())
     }
   }
+
   if (stopRecOnNextClick.value) {
     LaunchedEffect(recState.value) {
       if (recState.value is RecordingState.NotStarted) {
         stopRecOnNextClick.value = false
       }
     }
-    // Lock orientation to current orientation because screen rotation will break the recording
     LockToCurrentOrientationUntilDispose()
     StopRecordButton(stopRecordingAndAddAudio)
   } else {
@@ -354,18 +336,31 @@ private fun RecordVoiceView(recState: MutableState<RecordingState>, stopRecOnNex
         recState.value = RecordingState.Started(filePath = filePath)
       }
     }
+
     val interactionSource = interactionSourceWithTapDetection(
-      onPress = { if (recState.value is RecordingState.NotStarted) startRecording() },
+      onPress = {
+        if (recState.value is RecordingState.NotStarted) {
+          RichHaptics.perform(HapticPattern.RECORD_START)
+          startRecording()
+        }
+      },
       onClick = {
         if (stopRecOnNextClick.value) {
+          RichHaptics.perform(HapticPattern.RECORD_STOP)
           stopRecordingAndAddAudio()
         } else {
-          // tapped and didn't hold a finger
+          RichHaptics.perform(HapticPattern.CLICK)
           stopRecOnNextClick.value = true
         }
       },
-      onCancel = stopRecordingAndAddAudio,
-      onRelease = stopRecordingAndAddAudio
+      onCancel = {
+        RichHaptics.perform(HapticPattern.RECORD_STOP)
+        stopRecordingAndAddAudio()
+      },
+      onRelease = {
+        RichHaptics.perform(HapticPattern.RECORD_STOP)
+        stopRecordingAndAddAudio()
+      }
     )
     RecordVoiceButton(interactionSource)
   }
@@ -483,14 +478,16 @@ private fun SendMsgButton(
     Icon(
       icon,
       stringResource(MR.strings.icon_descr_send_message),
-      tint = Color.White,
+      tint = if (enabled) Color.White else MaterialTheme.colors.onSurface.copy(alpha = 0.38f),
       modifier = Modifier
         .size(sizeDp.value.dp)
-        .padding(4.dp)
         .alpha(alpha.value)
         .clip(CircleShape)
-        .background(if (enabled) sendButtonColor else MaterialTheme.colors.secondary.copy(alpha = 0.75f))
-        .padding(3.dp)
+        .background(
+          if (enabled) sendButtonColor 
+          else MaterialTheme.colors.onSurface.copy(alpha = 0.12f)
+        )
+        .padding(7.dp)
     )
   }
 }
@@ -594,11 +591,7 @@ private fun showDisabledVoiceAlert(isDirectChat: Boolean) {
   )
 }
 
-@Preview/*(
-  uiMode = Configuration.UI_MODE_NIGHT_YES,
-  showBackground = true,
-  name = "Dark Mode"
-)*/
+@Preview
 @Composable
 fun PreviewSendMsgView() {
   val smallFont = MaterialTheme.typography.body1.copy(color = MaterialTheme.colors.onBackground)
@@ -628,11 +621,7 @@ fun PreviewSendMsgView() {
   }
 }
 
-@Preview/*(
-  uiMode = Configuration.UI_MODE_NIGHT_YES,
-  showBackground = true,
-  name = "Dark Mode"
-)*/
+@Preview
 @Composable
 fun PreviewSendMsgViewEditing() {
   val smallFont = MaterialTheme.typography.body1.copy(color = MaterialTheme.colors.onBackground)
@@ -663,11 +652,7 @@ fun PreviewSendMsgViewEditing() {
   }
 }
 
-@Preview/*(
-  uiMode = Configuration.UI_MODE_NIGHT_YES,
-  showBackground = true,
-  name = "Dark Mode"
-)*/
+@Preview
 @Composable
 fun PreviewSendMsgViewInProgress() {
   val smallFont = MaterialTheme.typography.body1.copy(color = MaterialTheme.colors.onBackground)

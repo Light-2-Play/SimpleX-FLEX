@@ -145,12 +145,6 @@ fun MorePrivacyView(chatModel: ChatModel) {
         stringResource(MR.strings.verify_simplex_names),
         chatModel.controller.appPrefs.privacyVerifySimplexNames
       )
-      // hidden until message signing is user-facing (recipient-only stage)
-//      SettingsPreferenceItem(
-//        painterResource(MR.images.ic_verified),
-//        stringResource(MR.strings.show_signature),
-//        chatModel.controller.appPrefs.privacyShowSignature
-//      )
     }
     SectionDividerSpaced()
 
@@ -203,7 +197,6 @@ fun MorePrivacyView(chatModel: ChatModel) {
           chatModel.controller.appPrefs.privacyDeliveryReceiptsSet.set(true)
           chatModel.currentUser.value = currentUser.copy(sendRcptsContacts = enable)
           if (clearOverrides) {
-            // For loop here is to prevent ConcurrentModificationException that happens with forEach
             withContext(Dispatchers.Main) {
               for (i in 0 until chatModel.chatsContext.chats.size) {
                 val chat = chatModel.chatsContext.chats[i]
@@ -229,7 +222,6 @@ fun MorePrivacyView(chatModel: ChatModel) {
           chatModel.currentUser.value = currentUser.copy(sendRcptsSmallGroups = enable)
           if (clearOverrides) {
             withContext(Dispatchers.Main) {
-              // For loop here is to prevent ConcurrentModificationException that happens with forEach
               for (i in 0 until chatModel.chatsContext.chats.size) {
                 val chat = chatModel.chatsContext.chats[i]
                 if (chat.chatInfo is ChatInfo.Group) {

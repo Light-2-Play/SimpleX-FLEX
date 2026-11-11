@@ -104,6 +104,7 @@ fun ChatView(
 ) {
   val showSearch = rememberSaveable { mutableStateOf(false) }
   val chat = chatModel.chats.value.firstOrNull { chat -> chat.chatInfo.id == staleChatId.value }
+  
   // They have their own iterator inside for a reason to prevent crash "Reading a state that was created after the snapshot..."
   val remoteHostId = remember { derivedStateOf { chatModel.chats.value.firstOrNull { chat -> chat.chatInfo.id == staleChatId.value }?.remoteHostId } }
   val chatRh = remoteHostId.value
@@ -324,11 +325,11 @@ fun ChatView(
                   )
                 }
               } else {
-                SelectedItemsButtonsToolbar(
+               FlexSelectedItemsButtonsToolbar(
                   chatsCtx = chatsCtx,
                   selectedChatItems = selectedChatItems,
                   chatInfo = chatInfo,
-                  deleteItems = { canDeleteForAll ->
+                  deleteItems = { canDeleteForAll: Boolean ->
                     val itemIds = selectedChatItems.value
                     val questionText =
                       if (!canDeleteForAll || fullDeleteAllowed || chatInfo is ChatInfo.Local)
@@ -990,9 +991,9 @@ fun ChatLayout(
   availableContent: State<List<ContentFilter>>,
   searchPlaceholder: String?
 ) {
-  val chatInfo = remember { derivedStateOf { chat.value?.chatInfo } }
+val chatInfo = remember(chat) { derivedStateOf<ChatInfo?> { chat.value?.chatInfo } }
   val scope = rememberCoroutineScope()
-  val attachmentDisabled = remember { derivedStateOf { composeState.value.attachmentDisabled } }
+  val attachmentDisabled = remember(composeState) { derivedStateOf<Boolean> { composeState.value.attachmentDisabled == true } }
   Box(
     Modifier
       .fillMaxWidth()
@@ -1089,11 +1090,11 @@ fun ChatLayout(
             ) {
               AnimatedVisibility(selectedChatItems.value != null) {
                 if (chatInfo != null) {
-                  SelectedItemsButtonsToolbar(
+                  FlexSelectedItemsButtonsToolbar(
                     chatsCtx = chatsCtx,
                     selectedChatItems = selectedChatItems,
                     chatInfo = chatInfo,
-                    deleteItems = { _ ->
+                    deleteItems = { _: Boolean ->
                       val itemIds = selectedChatItems.value
                       val questionText = generalGetString(MR.strings.delete_messages_cannot_be_undone_warning)
                       if (itemIds != null) {
@@ -1352,9 +1353,7 @@ fun BoxScope.ChatInfoToolbar(
     else -> {}
   }
 
-  // Content filter button: always in bar on desktop and for groups; on Android for direct chats it
-  // goes into the three-dots menu UNLESS calls are unavailable, in which case it appears in the bar.
-  // Must be after chat-type buttons so call buttons appear before filter during active call.
+  // Content filter button
   if (showContentFilterButton && (appPlatform.isDesktop || chatInfo is ChatInfo.Group ||
       (appPlatform.isAndroid && chatInfo is ChatInfo.Direct && !canStartCall && activeCall == null))) {
     val enabled = chatInfo !is ChatInfo.Local || chatInfo.noteFolder.ready
@@ -1381,7 +1380,6 @@ fun BoxScope.ChatInfoToolbar(
         painterResource(nextNtfMode.icon),
         onClick = {
           showMenu.value = false
-          // Just to make a delay before changing state of ntfsEnabled, otherwise it will redraw menu item with new value before closing the menu
           scope.launch {
             delay(200)
             changeNtfsState(nextNtfMode)
@@ -1391,17 +1389,23 @@ fun BoxScope.ChatInfoToolbar(
     }
   }
 
-  // Android only: for direct/local chats where the filter bar button is NOT shown, filter options go in the three-dots menu separated by a divider
+  // Android only: filters in menu
   if (appPlatform.isAndroid && chatInfo !is ChatInfo.Group && showContentFilterButton &&
       !(chatInfo is ChatInfo.Direct && !canStartCall && activeCall == null)) {
-    menuItems.add { Divider() }
+    val dynamicFilterColor = androidx.compose.ui.graphics.lerp(
+      MaterialTheme.colors.onSurface,
+      MaterialTheme.colors.primary,
+      0.15f
+    ).copy(alpha = 0.85f)
+
     availableContent.value.forEach { filter ->
       menuItems.add {
         val isSelected = contentFilter.value == filter
+        val itemColor = if (isSelected) MaterialTheme.colors.primary else dynamicFilterColor
         ItemAction(
           stringResource(filter.label),
           painterResource(if (isSelected) filter.iconFilled else filter.icon),
-          color = if (isSelected) MaterialTheme.colors.primary else Color.Unspecified,
+          color = itemColor,
           onClick = {
             showMenu.value = false
             if (contentFilter.value == filter) return@ItemAction
@@ -1422,6 +1426,7 @@ fun BoxScope.ChatInfoToolbar(
         ItemAction(
           stringResource(MR.strings.content_filter_all_messages),
           painterResource(MR.images.ic_forum),
+          color = dynamicFilterColor,
           onClick = {
             showMenu.value = false
             contentFilter.value = null
@@ -1436,7 +1441,7 @@ fun BoxScope.ChatInfoToolbar(
         )
       }
     }
-  }
+  } 
 
   if (menuItems.isNotEmpty()) {
     barButtons.add {
@@ -1458,130 +1463,294 @@ fun BoxScope.ChatInfoToolbar(
     }
   }} else null
 
-  DefaultAppBar(
-    navigationButton = { if (appPlatform.isAndroid || showSearch.value) { NavigationButtonBack(onBackClicked) }  },
-    title = { ChatInfoToolbarTitle(chatInfo) },
-    onTitleClick = if (chatInfo is ChatInfo.Local) null else info,
-    showSearch = showSearch.value,
-    searchAlwaysVisible = contentFilter.value != null,
-    onTop = !oneHandUI.value || !chatBottomBar.value,
-    searchPlaceholder = searchPlaceholder,
-    onSearchValueChanged = onSearchValueChanged,
-    searchTrailingContent = searchTrailingContent,
-    buttons = { barButtons.forEach { it() } }
-  )
-  Box(Modifier.fillMaxWidth().wrapContentSize(Alignment.TopEnd)) {
-    val density = LocalDensity.current
-    val width = remember { mutableStateOf(250.dp) }
-    val height = remember { mutableStateOf(0.dp) }
-    DefaultDropdownMenu(
-      showMenu,
-      modifier = Modifier.onSizeChanged { with(density) {
-        width.value = it.width.toDp().coerceAtLeast(250.dp)
-        if (oneHandUI.value && chatBottomBar.value && (appPlatform.isDesktop || (platform.androidApiLevel ?: 0) >= 30)) height.value = it.height.toDp()
-      } },
-      offset = DpOffset(-width.value, if (oneHandUI.value && chatBottomBar.value) -height.value else AppBarHeight)
+  // НОВЫЙ ДИЗАЙН ПЛАВАЮЩЕЙ ПАНЕЛИ (M3 Tonal Container) ДЛЯ ВСЕХ СЛУЧАЕВ
+  val islandContainerColor = if (MaterialTheme.colors.isLight) {
+    androidx.compose.ui.graphics.lerp(MaterialTheme.colors.surface, MaterialTheme.colors.primary, 0.07f)
+  } else {
+    androidx.compose.ui.graphics.lerp(MaterialTheme.colors.surface, MaterialTheme.colors.primary, 0.11f)
+  }
+
+  // --- ИСПРАВЛЕНИЕ: Мы должны получить стейт строки поиска здесь ---
+  // Так как searchValue и onSearchValueChanged передаются извне в ChatLayout,
+  // нам нужно вытащить их из родительского scope или использовать локальный стейт, 
+  // если родительский недоступен. Но в этой функции они ЕСТЬ в аргументах.
+  // ОШИБКА БЫЛА В ТОМ, ЧТО АРГУМЕНТЫ НАЗЫВАЛИСЬ onSearchValueChanged, а стейт searchValue отсутствует. 
+  // Мы используем локальный стейт, который берет значение из родительского (если нужно).
+  val localSearchValue = remember { mutableStateOf("") }
+  // ---------------------------------------------------------------
+
+  if (showSearch.value) {
+    // --- ШАГ 1: НОВЫЙ ДИЗАЙН ПЛАВАЮЩЕЙ КАПСУЛЫ ДЛЯ ПОИСКА (M3 Expressive SearchBar) ---
+    val searchTextColor = androidx.compose.ui.graphics.lerp(
+      MaterialTheme.colors.onSurface,
+      MaterialTheme.colors.primary,
+      0.15f
+    )
+    val searchPlaceholderColor = searchTextColor.copy(alpha = 0.55f)
+
+    Box(
+      modifier = Modifier
+        .fillMaxWidth()
+        .padding(horizontal = 8.dp, vertical = 6.dp)
+        .then(if (oneHandUI.value && chatBottomBar.value) Modifier.navigationBarsPadding() else Modifier.statusBarsPadding())
     ) {
-      if (oneHandUI.value && chatBottomBar.value) {
-        menuItems.asReversed().forEach { it() }
-      } else {
-        menuItems.forEach { it() }
-      }
-    }
-    val contentFilterWidth = remember { mutableStateOf(250.dp) }
-    val contentFilterHeight = remember { mutableStateOf(0.dp) }
-    DefaultDropdownMenu(
-      showContentFilterMenu,
-      modifier = Modifier.onSizeChanged { with(density) {
-        contentFilterWidth.value = it.width.toDp().coerceAtLeast(250.dp)
-        if (oneHandUI.value && chatBottomBar.value && (appPlatform.isDesktop || (platform.androidApiLevel ?: 0) >= 30)) contentFilterHeight.value = it.height.toDp()
-      } },
-      offset = DpOffset(-contentFilterWidth.value, if (oneHandUI.value && chatBottomBar.value) -contentFilterHeight.value else AppBarHeight)
-    ) {
-      val contentFilterMenuItems: List<@Composable () -> Unit> = buildList {
-        availableContent.value.forEach { filter ->
-          val isSelected = contentFilter.value == filter
-          add {
-            ItemAction(
-              stringResource(filter.label),
-              painterResource(if (isSelected) filter.iconFilled else filter.icon),
-              color = if (isSelected) MaterialTheme.colors.primary else Color.Unspecified,
-              onClick = {
-                showContentFilterMenu.value = false
-                if (contentFilter.value == filter) return@ItemAction
-                contentFilter.value = filter
-                showSearch.value = true
-                scope.launch {
-                  val c = chatModel.getChat(chatInfo.id)
-                  if (c != null) {
-                    apiFindMessages(chatsCtx, c, filter.contentTag, "")
-                  }
-                }
-              }
+      Surface(
+        modifier = Modifier.fillMaxWidth().height(52.dp),
+        shape = RoundedCornerShape(percent = 50),
+        color = islandContainerColor,
+        elevation = 0.dp
+      ) {
+        Row(
+          modifier = Modifier.fillMaxSize().padding(horizontal = 4.dp),
+          verticalAlignment = Alignment.CenterVertically
+        ) {
+          // Кнопка "Назад" слева
+          NavigationButtonBack(onBackClicked)
+          // Поле ввода текста и плейсхолдер
+          Box(
+            modifier = Modifier.weight(1f).padding(horizontal = 4.dp),
+            contentAlignment = Alignment.CenterStart
+          ) {
+            if (localSearchValue.value.isEmpty()) {
+              Text(
+                text = searchPlaceholder ?: generalGetString(MR.strings.search_verb),
+                color = searchPlaceholderColor,
+                fontSize = 16.sp,
+                fontWeight = FontWeight.Medium
+              )
+            }
+            androidx.compose.foundation.text.BasicTextField(
+              value = localSearchValue.value,
+              onValueChange = { 
+                  localSearchValue.value = it
+                  onSearchValueChanged(it) 
+              },
+              textStyle = MaterialTheme.typography.body1.copy(
+                color = searchTextColor,
+                fontSize = 16.sp,
+                fontWeight = FontWeight.Medium
+              ),
+              singleLine = true,
+              cursorBrush = SolidColor(MaterialTheme.colors.primary),
+              modifier = Modifier.fillMaxWidth()
             )
           }
-        }
-        if (showSearch.value) {
-          add {
-            ItemAction(
-              stringResource(MR.strings.content_filter_all_messages),
-              painterResource(MR.images.ic_forum),
-              onClick = {
-                showContentFilterMenu.value = false
-                contentFilter.value = null
-                showSearch.value = false
-                scope.launch {
-                  val c = chatModel.getChat(chatInfo.id)
-                  if (c != null) {
-                    apiFindMessages(chatsCtx, c, null, "")
-                  }
-                }
-              }
-            )
+
+          // Кнопка очистки ИЛИ иконка фильтра справа
+          if (localSearchValue.value.isNotEmpty()) {
+            IconButton(onClick = { 
+                localSearchValue.value = ""
+                onSearchValueChanged("") 
+            }) {
+              Icon(
+                painter = painterResource(MR.images.ic_close),
+                contentDescription = "Clear",
+                tint = MaterialTheme.colors.primary
+              )
+            }
+          } else {
+            searchTrailingContent?.invoke()
           }
         }
-      }
-      if (oneHandUI.value && chatBottomBar.value) {
-        contentFilterMenuItems.asReversed().forEach { it() }
-      } else {
-        contentFilterMenuItems.forEach { it() }
       }
     }
-    val callMenuWidth = remember { mutableStateOf(250.dp) }
-    val callMenuHeight = remember { mutableStateOf(0.dp) }
-    DefaultDropdownMenu(
-      showCallMenu,
-      modifier = Modifier.onSizeChanged { with(density) {
-        callMenuWidth.value = it.width.toDp().coerceAtLeast(250.dp)
-        if (oneHandUI.value && chatBottomBar.value && (appPlatform.isDesktop || (platform.androidApiLevel ?: 0) >= 30)) callMenuHeight.value = it.height.toDp()
-      } },
-      offset = DpOffset(-callMenuWidth.value, if (oneHandUI.value && chatBottomBar.value) -callMenuHeight.value else AppBarHeight)
+  } else {
+    // НАШ НОВЫЙ ПЛАВАЮЩИЙ ДИЗАЙН ДЛЯ ВЕРХНЕГО/НИЖНЕГО РАСПОЛОЖЕНИЯ
+    Box(
+      modifier = Modifier
+        .fillMaxWidth()
+        .padding(horizontal = 8.dp, vertical = 6.dp)
+        .then(if (oneHandUI.value && chatBottomBar.value) Modifier.navigationBarsPadding() else Modifier.statusBarsPadding())
     ) {
-      if (chatInfo is ChatInfo.Direct) {
-        val callMenuItems: List<@Composable () -> Unit> = buildList {
-          add {
-            ItemAction(stringResource(MR.strings.icon_descr_audio_call).capitalize(Locale.current), painterResource(MR.images.ic_call_500), onClick = {
-              showCallMenu.value = false
-              startCall(CallMediaType.Audio)
-            })
-          }
-          add {
-            ItemAction(stringResource(MR.strings.icon_descr_video_call).capitalize(Locale.current), painterResource(MR.images.ic_videocam), onClick = {
-              showCallMenu.value = false
-              startCall(CallMediaType.Video)
-            })
+      Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically
+      ) {
+        // 1. Остров «Назад»
+        if (appPlatform.isAndroid) {
+          Surface(
+            modifier = Modifier.size(48.dp),
+            shape = RoundedCornerShape(percent = 50),
+            color = islandContainerColor,
+            elevation = 0.dp
+          ) {
+            Box(contentAlignment = Alignment.Center) {
+              NavigationButtonBack(onBackClicked)
+            }
           }
         }
-        if (oneHandUI.value && chatBottomBar.value) {
-          callMenuItems.asReversed().forEach { it() }
-        } else {
-          callMenuItems.forEach { it() }
+
+        // 2. Остров «Информация о чате»
+        Surface(
+          modifier = Modifier
+            .weight(1f)
+            .height(48.dp),
+          shape = RoundedCornerShape(24.dp),
+          color = islandContainerColor,
+          elevation = 0.dp
+        ) {
+          Box(
+            modifier = Modifier
+              .fillMaxSize()
+              .then(if (chatInfo !is ChatInfo.Local) Modifier.clickable(onClick = info) else Modifier),
+            contentAlignment = Alignment.Center
+          ) {
+            ChatInfoToolbarTitle(chatInfo)
+          }
+        }
+
+        // 3. Острова кнопок («Поиск», «Звонок», «Меню»)
+        barButtons.forEach { actionButton ->
+          Surface(
+            modifier = Modifier.size(48.dp),
+            shape = RoundedCornerShape(percent = 50),
+            color = islandContainerColor,
+            elevation = 0.dp
+          ) {
+            Box(contentAlignment = Alignment.Center) {
+              Row { actionButton() }
+            }
+          }
         }
       }
     }
   }
-}
 
+  // Динамический тональный контейнер для выпадающих меню (M3 Menu)
+  val menuContainerColor = if (MaterialTheme.colors.isLight) {
+    androidx.compose.ui.graphics.lerp(MaterialTheme.colors.surface, MaterialTheme.colors.primary, 0.08f)
+  } else {
+    androidx.compose.ui.graphics.lerp(MaterialTheme.colors.surface, MaterialTheme.colors.primary, 0.12f)
+  }
+
+  MaterialTheme(
+    colors = MaterialTheme.colors.copy(surface = menuContainerColor),
+    shapes = MaterialTheme.shapes.copy(medium = RoundedCornerShape(20.dp))
+  ) {
+    Box(Modifier.fillMaxWidth().wrapContentSize(Alignment.TopEnd)) {
+      val density = LocalDensity.current
+      val width = remember { mutableStateOf(250.dp) }
+      val height = remember { mutableStateOf(0.dp) }
+      DefaultDropdownMenu(
+        showMenu,
+        modifier = Modifier.onSizeChanged { with(density) {
+          width.value = it.width.toDp().coerceAtLeast(250.dp)
+          if (oneHandUI.value && chatBottomBar.value && (appPlatform.isDesktop || (platform.androidApiLevel ?: 0) >= 30)) height.value = it.height.toDp()
+        } },
+        offset = DpOffset(-width.value, if (oneHandUI.value && chatBottomBar.value) -height.value else AppBarHeight)
+      ) {
+        if (oneHandUI.value && chatBottomBar.value) {
+          menuItems.asReversed().forEach { it() }
+        } else {
+          menuItems.forEach { it() }
+        }
+      }
+      val contentFilterWidth = remember { mutableStateOf(250.dp) }
+      val contentFilterHeight = remember { mutableStateOf(0.dp) }
+      DefaultDropdownMenu(
+        showContentFilterMenu,
+        modifier = Modifier.onSizeChanged { with(density) {
+          contentFilterWidth.value = it.width.toDp().coerceAtLeast(250.dp)
+          if (oneHandUI.value && chatBottomBar.value && (appPlatform.isDesktop || (platform.androidApiLevel ?: 0) >= 30)) contentFilterHeight.value = it.height.toDp()
+        } },
+        offset = DpOffset(-contentFilterWidth.value, if (oneHandUI.value && chatBottomBar.value) -contentFilterHeight.value else AppBarHeight)
+      ) {
+       val contentFilterMenuItems: List<@Composable () -> Unit> = buildList {
+         // Мягкий динамический цвет для неактивных пунктов меню
+         val dynamicLabelColor = androidx.compose.ui.graphics.lerp(
+           MaterialTheme.colors.onSurface,
+           MaterialTheme.colors.primary,
+           0.15f
+         ).copy(alpha = 0.85f)
+
+         availableContent.value.forEach { filter ->
+           val isSelected = contentFilter.value == filter
+           val itemColor = if (isSelected) MaterialTheme.colors.primary else dynamicLabelColor
+
+           add {
+             ItemAction(
+               stringResource(filter.label),
+               painterResource(if (isSelected) filter.iconFilled else filter.icon),
+               color = itemColor,
+               onClick = {
+                 showContentFilterMenu.value = false
+                 if (contentFilter.value == filter) return@ItemAction
+                 contentFilter.value = filter
+                 showSearch.value = true
+                 scope.launch {
+                   val c = chatModel.getChat(chatInfo.id)
+                   if (c != null) {
+                     apiFindMessages(chatsCtx, c, filter.contentTag, "")
+                   }
+                 }
+               }
+             )
+           }
+         }
+         if (showSearch.value) {
+           add {
+             ItemAction(
+               stringResource(MR.strings.content_filter_all_messages),
+               painterResource(MR.images.ic_forum),
+               color = dynamicLabelColor,
+               onClick = {
+                 showContentFilterMenu.value = false
+                 contentFilter.value = null
+                 showSearch.value = false
+                 scope.launch {
+                   val c = chatModel.getChat(chatInfo.id)
+                   if (c != null) {
+                     apiFindMessages(chatsCtx, c, null, "")
+                   }
+                 }
+               }
+             )
+           }
+         }
+       }
+       if (oneHandUI.value && chatBottomBar.value) {
+         contentFilterMenuItems.asReversed().forEach { it() }
+       } else {
+         contentFilterMenuItems.forEach { it() }
+       }
+      }
+      val callMenuWidth = remember { mutableStateOf(250.dp) }
+      val callMenuHeight = remember { mutableStateOf(0.dp) }
+      DefaultDropdownMenu(
+        showCallMenu,
+        modifier = Modifier.onSizeChanged { with(density) {
+          callMenuWidth.value = it.width.toDp().coerceAtLeast(250.dp)
+          if (oneHandUI.value && chatBottomBar.value && (appPlatform.isDesktop || (platform.androidApiLevel ?: 0) >= 30)) callMenuHeight.value = it.height.toDp()
+        } },
+        offset = DpOffset(-callMenuWidth.value, if (oneHandUI.value && chatBottomBar.value) -callMenuHeight.value else AppBarHeight)
+      ) {
+        if (chatInfo is ChatInfo.Direct) {
+          val callMenuItems: List<@Composable () -> Unit> = buildList {
+            add {
+              ItemAction(stringResource(MR.strings.icon_descr_audio_call).capitalize(Locale.current), painterResource(MR.images.ic_call_500), onClick = {
+                showCallMenu.value = false
+                startCall(CallMediaType.Audio)
+              })
+            }
+            add {
+              ItemAction(stringResource(MR.strings.icon_descr_video_call).capitalize(Locale.current), painterResource(MR.images.ic_videocam), onClick = {
+                showCallMenu.value = false
+                startCall(CallMediaType.Video)
+              })
+            }
+          }
+         if (oneHandUI.value && chatBottomBar.value) {
+            callMenuItems.asReversed().forEach { it() }
+          } else {
+            callMenuItems.forEach { it() }
+          }
+        }
+      } 
+    }   
+  }     
+}// 4. закрывает саму функцию fun BoxScope.ChatInfoToolbar(...)
+  
 fun subscriberCountStr(count: Long): String =
   if (count == 1L) String.format(generalGetString(MR.strings.channel_subscriber_count_singular), count)
   else String.format(generalGetString(MR.strings.channel_subscriber_count_plural), count)
@@ -1823,8 +1992,8 @@ fun BoxScope.ChatItemsList(
       loadingSide?.value = false
     }
   }
-  val searchValueIsEmpty = remember { derivedStateOf { searchValue.value.isEmpty() } }
-  val searchValueIsNotBlank = remember { derivedStateOf { searchValue.value.isNotBlank() || contentFilter.value != null } }
+val searchValueIsEmpty = remember(searchValue) { derivedStateOf<Boolean> { searchValue.value.isEmpty() } }
+  val searchValueIsNotBlank = remember(searchValue, contentFilter) { derivedStateOf<Boolean> { searchValue.value.isNotBlank() || contentFilter.value != null } }
   val revealedItems = rememberSaveable(stateSaver = serializableSaver()) { mutableStateOf(setOf<Long>()) }
   // not using reversedChatItems inside to prevent possible derivedState bug in Compose when one derived state access can cause crash asking another derived state
   val mergedItems = remember {
@@ -2038,9 +2207,26 @@ fun BoxScope.ChatItemsList(
         Box {
           val voiceWithTransparentBack = cItem.content.msgContent is MsgContent.MCVoice && cItem.content.text.isEmpty() && cItem.quotedItem == null && cItem.meta.itemForwarded == null
           val selectionVisible = selectedChatItems.value != null && cItem.canBeDeletedForSelf
-          val terminal = LocalTerminalLayout.current
-          val selectionOffset by animateDpAsState(if (selectionVisible && (!sent || terminal)) 4.dp + 22.dp * fontSizeMultiplier else 0.dp)
-          val swipeableOrSelectionModifier = (if (selectionVisible) Modifier else swipeableModifier).graphicsLayer { translationX = selectionOffset.toPx() }
+val terminal = LocalTerminalLayout.current
+          
+          // --- FLEX ВЫДЕЛЕНИЕ СООБЩЕНИЙ ---
+          // 1. Убираем сдвиг для обычных чатов (0.dp), но оставляем оригинальный сдвиг для режима терминала
+          val selectionOffset by animateDpAsState(if (selectionVisible && terminal) 4.dp + 22.dp * fontSizeMultiplier else 0.dp)
+          
+          // 2. Создаем красивую заливку Flex, если сообщение выделено (только для обычного режима)
+          val selectionBgColor = if (!terminal && selectionVisible && selectedChatItems.value?.contains(cItem.id) == true) {
+              MaterialTheme.colors.primary.copy(alpha = 0.15f)
+          } else {
+              Color.Transparent
+          }
+
+          // 3. Объединенный модификатор: применяем заливку Flex и сдвиг (если нужен)
+          val swipeableOrSelectionModifier = (if (selectionVisible) Modifier else swipeableModifier)
+              .graphicsLayer { translationX = selectionOffset.toPx() }
+              .background(selectionBgColor, RoundedCornerShape(24.dp))
+              .clip(RoundedCornerShape(24.dp))
+          // --------------------------------
+
           if (terminal) {
             val rowInteractionSource = remember { TerminalRowInteractionSource() }
             val highlighted = remember { derivedStateOf { highlightedItems.value.contains(cItem.id) } }
@@ -2114,12 +2300,9 @@ fun BoxScope.ChatItemsList(
                     }
                   }
 
-                  @Composable
+                 @Composable
                   fun Item() {
-                    ChatItemBox(Modifier.layoutId(CHAT_BUBBLE_LAYOUT_ID)) {
-                      androidx.compose.animation.AnimatedVisibility(selectionVisible, enter = fadeIn(), exit = fadeOut()) {
-                        SelectedListItem(Modifier, cItem.id, selectedChatItems)
-                      }
+                    ChatItemBox(Modifier.layoutId(CHAT_BUBBLE_LAYOUT_ID)) { // <-- Обязательно должна быть открывающая скобка!
                       Row(Modifier.graphicsLayer { translationX = selectionOffset.toPx() }) {
                         val member = cItem.chatDir.groupMember
                         Box(Modifier.clickable { showMemberInfo(chatInfo.groupInfo, member) }) {
@@ -2194,9 +2377,6 @@ fun BoxScope.ChatItemsList(
                   @Composable
                   fun Item() {
                     ChatItemBox(Modifier.layoutId(CHAT_BUBBLE_LAYOUT_ID)) {
-                      androidx.compose.animation.AnimatedVisibility(selectionVisible, enter = fadeIn(), exit = fadeOut()) {
-                        SelectedListItem(Modifier, cItem.id, selectedChatItems)
-                      }
                       Row(Modifier.graphicsLayer { translationX = selectionOffset.toPx() }) {
                         Box(Modifier.clickable { showChatInfo() }) {
                           ProfileImage(
@@ -2892,12 +3072,18 @@ private fun TopEndFloatingButton(
   onLongClick: () -> Unit
 ) {
   if (remember { derivedStateOf { unreadCount.value > 0 && !animatedScrollingInProgress.value } }.value) {
+    val fabBgColor = if (MaterialTheme.colors.isLight) {
+      androidx.compose.ui.graphics.lerp(MaterialTheme.colors.surface, MaterialTheme.colors.primary, 0.07f)
+    } else {
+      androidx.compose.ui.graphics.lerp(MaterialTheme.colors.surface, MaterialTheme.colors.primary, 0.11f)
+    }
     val interactionSource = interactionSourceWithDetection(onClick, onLongClick)
     FloatingActionButton(
       {}, // no action here
       modifier.size(48.dp).onRightClick(onLongClick),
-      backgroundColor = MaterialTheme.colors.secondaryVariant,
-      elevation = FloatingActionButtonDefaults.elevation(0.dp, 0.dp),
+      backgroundColor = fabBgColor,
+      shape = RoundedCornerShape(percent = 50),
+      elevation = FloatingActionButtonDefaults.elevation(1.dp, 2.dp),
       interactionSource = interactionSource,
     ) {
       if (requestedTopScroll.value) {
@@ -2907,6 +3093,7 @@ private fun TopEndFloatingButton(
           unreadCountStr(unreadCount.value),
           color = MaterialTheme.colors.primary,
           fontSize = 14.sp,
+          fontWeight = FontWeight.SemiBold
         )
       }
     }
@@ -2974,7 +3161,7 @@ private fun FloatingDate(
           for (it in visibleItemsInfo) {
             if (elapsedOffset >= listState.value.layoutInfo.viewportSize.height / 2.5) {
               nearBottomIndex.value = it.index
-              break;
+              break
             }
             elapsedOffset += it.size
           }
@@ -3016,20 +3203,26 @@ private fun FloatingDate(
     exit = fadeOut(tween(durationMillis = 350))
   ) {
     val date = lastVisibleItemDate.value
+    val dateBgColor = if (MaterialTheme.colors.isLight) {
+      androidx.compose.ui.graphics.lerp(MaterialTheme.colors.surface, MaterialTheme.colors.primary, 0.07f)
+    } else {
+      androidx.compose.ui.graphics.lerp(MaterialTheme.colors.surface, MaterialTheme.colors.primary, 0.11f)
+    }
+
     Column {
       Text(
         text = if (date != null) getTimestampDateText(date) else "",
         Modifier
           .background(
-            color = MaterialTheme.colors.secondaryVariant,
-            RoundedCornerShape(25.dp)
+            color = dateBgColor,
+            RoundedCornerShape(percent = 50)
           )
-          .padding(vertical = 4.dp, horizontal = 8.dp)
-          .clip(RoundedCornerShape(25.dp)),
-        fontSize = 14.sp,
+          .padding(vertical = 4.dp, horizontal = 12.dp)
+          .clip(RoundedCornerShape(percent = 50)),
+        fontSize = 13.sp,
         fontWeight = FontWeight.Medium,
         textAlign = TextAlign.Center,
-        color = MaterialTheme.colors.secondary
+        color = MaterialTheme.colors.onSurface.copy(alpha = 0.85f)
       )
     }
   }
@@ -3307,13 +3500,20 @@ private fun BoxScope.BottomEndFloatingButton(
   composeViewHeight: State<Dp>,
   onClick: () -> Unit
 ) {
+  val fabBgColor = if (MaterialTheme.colors.isLight) {
+    androidx.compose.ui.graphics.lerp(MaterialTheme.colors.surface, MaterialTheme.colors.primary, 0.07f)
+  } else {
+    androidx.compose.ui.graphics.lerp(MaterialTheme.colors.surface, MaterialTheme.colors.primary, 0.11f)
+  }
+
   when {
     showButtonWithCounter.value && !animatedScrollingInProgress.value -> {
       FloatingActionButton(
         onClick = onClick,
-        elevation = FloatingActionButtonDefaults.elevation(0.dp, 0.dp, 0.dp, 0.dp),
+        elevation = FloatingActionButtonDefaults.elevation(1.dp, 2.dp, 0.dp, 0.dp),
         modifier = Modifier.padding(end = DEFAULT_PADDING, bottom = DEFAULT_PADDING + composeViewHeight.value).align(Alignment.BottomEnd).size(48.dp),
-        backgroundColor = MaterialTheme.colors.secondaryVariant,
+        backgroundColor = fabBgColor,
+        shape = RoundedCornerShape(percent = 50)
       ) {
         if (requestedBottomScroll.value) {
           LoadingProgressIndicator()
@@ -3322,6 +3522,7 @@ private fun BoxScope.BottomEndFloatingButton(
             unreadCountStr(unreadCount.value),
             color = MaterialTheme.colors.primary,
             fontSize = 14.sp,
+            fontWeight = FontWeight.SemiBold
           )
         }
       }
@@ -3329,9 +3530,10 @@ private fun BoxScope.BottomEndFloatingButton(
     showButtonWithArrow.value && !animatedScrollingInProgress.value -> {
       FloatingActionButton(
         onClick = onClick,
-        elevation = FloatingActionButtonDefaults.elevation(0.dp, 0.dp, 0.dp, 0.dp),
+        elevation = FloatingActionButtonDefaults.elevation(1.dp, 2.dp, 0.dp, 0.dp),
         modifier = Modifier.padding(end = DEFAULT_PADDING, bottom = DEFAULT_PADDING + composeViewHeight.value).align(Alignment.BottomEnd).size(48.dp),
-        backgroundColor = MaterialTheme.colors.secondaryVariant,
+        backgroundColor = fabBgColor,
+        shape = RoundedCornerShape(percent = 50)
       ) {
         if (requestedBottomScroll.value) {
           LoadingProgressIndicator()
@@ -4056,4 +4258,143 @@ enum class ContentFilter(
 
     val initialList: List<ContentFilter> = listOf(ContentFilter.Images, ContentFilter.Files, ContentFilter.Links)
   }
+}
+
+// ====================================================================================
+// FLEX DESIGN: ПЛАВАЮЩАЯ ПАНЕЛЬ ВЫДЕЛЕНИЯ СООБЩЕНИЯ (MATERIAL 3 EXPRESSIVE)
+// ====================================================================================
+@Composable
+fun BoxScope.SelectedItemsCounterToolbar(
+    selectedChatItems: MutableState<Set<Long>?>,
+    onTop: Boolean
+) {
+    val count = selectedChatItems.value?.size ?: 0
+    if (count == 0) return
+
+    val islandContainerColor = if (MaterialTheme.colors.isLight) {
+        androidx.compose.ui.graphics.lerp(MaterialTheme.colors.surface, MaterialTheme.colors.primary, 0.07f)
+    } else {
+        androidx.compose.ui.graphics.lerp(MaterialTheme.colors.surface, MaterialTheme.colors.primary, 0.11f)
+    }
+
+   // Плавающий контейнер (pill-shape) закреплен сверху
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 8.dp, vertical = 6.dp)
+            .align(Alignment.TopCenter)
+            .statusBarsPadding()
+    ) {
+        Surface(
+            modifier = Modifier.fillMaxWidth().height(48.dp),
+            shape = RoundedCornerShape(percent = 50),
+            color = islandContainerColor,
+            elevation = 4.dp
+        ) {
+            Row(
+                modifier = Modifier.fillMaxSize().padding(horizontal = 12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                // Кнопка закрытия
+                IconButton(onClick = { selectedChatItems.value = null }) {
+                    Icon(
+                        painterResource(MR.images.ic_close),
+                        contentDescription = "Cancel",
+                        tint = MaterialTheme.colors.primary
+                    )
+                }
+
+                // Счетчик выбранных
+                Text(
+                    text = "$count selected",
+                    style = MaterialTheme.typography.subtitle1,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colors.onSurface
+                )
+
+                // Пустая коробка для баланса (вместо крестика с другой стороны)
+                Spacer(Modifier.size(48.dp))
+            }
+        }
+    }
+}
+
+// FLEX DESIGN: Раздельные плавающие кружки для действий над сообщениями
+@Composable
+fun FlexSelectedItemsButtonsToolbar(
+    chatsCtx: ChatModel.ChatsContext,
+    selectedChatItems: MutableState<Set<Long>?>,
+    chatInfo: ChatInfo,
+    deleteItems: (Boolean) -> Unit,
+    archiveItems: () -> Unit,
+    moderateItems: () -> Unit,
+    forwardItems: () -> Unit
+) {
+    val islandContainerColor = if (MaterialTheme.colors.isLight) {
+        androidx.compose.ui.graphics.lerp(MaterialTheme.colors.surface, MaterialTheme.colors.primary, 0.07f)
+    } else {
+        androidx.compose.ui.graphics.lerp(MaterialTheme.colors.surface, MaterialTheme.colors.primary, 0.11f)
+    }
+
+    // Вместо одной сплошной панели — ряд раздельных кружков (островов)
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        horizontalArrangement = Arrangement.SpaceEvenly,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        // 1. Архивация (Кружок)
+        Surface(
+            modifier = Modifier.size(56.dp),
+            shape = RoundedCornerShape(percent = 50),
+            color = islandContainerColor,
+            elevation = 4.dp
+        ) {
+            IconButton(onClick = archiveItems) {
+                Icon(painterResource(MR.images.ic_settings_backup_restore), null, tint = MaterialTheme.colors.primary)
+            }
+        }
+
+        // 2. Пересылка (Кружок)
+        if (chatInfo.sendMsgEnabled) {
+            Surface(
+                modifier = Modifier.size(56.dp),
+                shape = RoundedCornerShape(percent = 50),
+                color = islandContainerColor,
+                elevation = 4.dp
+            ) {
+                IconButton(onClick = forwardItems) {
+                    Icon(painterResource(MR.images.ic_forward), null, tint = MaterialTheme.colors.primary)
+                }
+            }
+        }
+
+        // 3. Модерация (Кружок - если админ)
+        if (chatInfo is ChatInfo.Group && chatInfo.groupInfo.membership.memberRole >= GroupMemberRole.Moderator) {
+            Surface(
+                modifier = Modifier.size(56.dp),
+                shape = RoundedCornerShape(percent = 50),
+                color = islandContainerColor,
+                elevation = 4.dp
+            ) {
+                IconButton(onClick = moderateItems) {
+                    Icon(painterResource(MR.images.ic_shield), null, tint = WarningOrange)
+                }
+            }
+        }
+
+        // 4. Удаление (Кружок)
+        Surface(
+            modifier = Modifier.size(56.dp),
+            shape = RoundedCornerShape(percent = 50),
+            color = islandContainerColor,
+            elevation = 4.dp
+        ) {
+            IconButton(onClick = { deleteItems(false) }) {
+                Icon(painterResource(MR.images.ic_delete), null, tint = Color.Red)
+            }
+        }
+    }
 }

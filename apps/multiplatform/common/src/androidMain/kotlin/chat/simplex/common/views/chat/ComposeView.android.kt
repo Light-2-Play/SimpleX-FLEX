@@ -22,7 +22,7 @@ actual fun AttachmentSelection(
 ) {
   val cameraLauncher = rememberCameraLauncher { uri: Uri? ->
     if (uri != null) {
-      val imagePreview = resizeImageFileToStrSize(uri.toURI(), maxDataSize = 14000)
+val imagePreview = resizeImageFileToStrSize(uri.toURI(), maxDataSize = 14000)
         ?: getBitmapFromUri(uri.toURI())?.let { resizeImageToStrSize(it, maxDataSize = 14000) }
       if (imagePreview != null) {
         composeState.value = composeState.value.copy(preview = ComposePreview.MediaPreview(listOf(imagePreview), listOf(UploadContent.SimpleImage(uri.toURI()))))
