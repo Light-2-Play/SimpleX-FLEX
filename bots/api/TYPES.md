@@ -9,11 +9,16 @@ This file is generated automatically.
 - [AddressSettings](#addresssettings)
 - [AgentCryptoError](#agentcryptoerror)
 - [AgentErrorType](#agenterrortype)
+- [AgentServiceError](#agentserviceerror)
+- [AppVersionRange](#appversionrange)
 - [AutoAccept](#autoaccept)
 - [BadgeInfo](#badgeinfo)
 - [BadgeProof](#badgeproof)
+- [BadgeRedeemError](#badgeredeemerror)
+- [BadgeServiceErrorCode](#badgeserviceerrorcode)
 - [BadgeStatus](#badgestatus)
 - [BadgeType](#badgetype)
+- [BlockToken](#blocktoken)
 - [BlockingInfo](#blockinginfo)
 - [BlockingReason](#blockingreason)
 - [BrokerErrorType](#brokererrortype)
@@ -45,7 +50,11 @@ This file is generated automatically.
 - [ChatInfo](#chatinfo)
 - [ChatItem](#chatitem)
 - [ChatItemDeletion](#chatitemdeletion)
+- [ChatItemInfo](#chatiteminfo)
+- [ChatItemVersion](#chatitemversion)
+- [ChatLayout](#chatlayout)
 - [ChatListQuery](#chatlistquery)
+- [ChatPagination](#chatpagination)
 - [ChatPeerType](#chatpeertype)
 - [ChatRef](#chatref)
 - [ChatSettings](#chatsettings)
@@ -59,6 +68,7 @@ This file is generated automatically.
 - [CommandErrorType](#commanderrortype)
 - [CommentsGroupPreference](#commentsgrouppreference)
 - [ComposedMessage](#composedmessage)
+- [ConditionsAcceptance](#conditionsacceptance)
 - [ConnStatus](#connstatus)
 - [ConnType](#conntype)
 - [Connection](#connection)
@@ -66,6 +76,7 @@ This file is generated automatically.
 - [ConnectionErrorType](#connectionerrortype)
 - [ConnectionMode](#connectionmode)
 - [ConnectionPlan](#connectionplan)
+- [ConnectionStats](#connectionstats)
 - [Contact](#contact)
 - [ContactAddressPlan](#contactaddressplan)
 - [ContactShortLinkData](#contactshortlinkdata)
@@ -76,6 +87,7 @@ This file is generated automatically.
 - [CreatedConnLink](#createdconnlink)
 - [CryptoFile](#cryptofile)
 - [CryptoFileArgs](#cryptofileargs)
+- [CtrlAppInfo](#ctrlappinfo)
 - [DroppedMsg](#droppedmsg)
 - [E2EInfo](#e2einfo)
 - [ErrorType](#errortype)
@@ -84,6 +96,7 @@ This file is generated automatically.
 - [FileError](#fileerror)
 - [FileErrorType](#fileerrortype)
 - [FileInvitation](#fileinvitation)
+- [FileProhibited](#fileprohibited)
 - [FileProtocol](#fileprotocol)
 - [FileStatus](#filestatus)
 - [FileTransferMeta](#filetransfermeta)
@@ -99,7 +112,6 @@ This file is generated automatically.
 - [GroupFeature](#groupfeature)
 - [GroupFeatureEnabled](#groupfeatureenabled)
 - [GroupInfo](#groupinfo)
-- [GroupKeys](#groupkeys)
 - [GroupLink](#grouplink)
 - [GroupLinkOwner](#grouplinkowner)
 - [GroupLinkPlan](#grouplinkplan)
@@ -110,28 +122,35 @@ This file is generated automatically.
 - [GroupMemberRole](#groupmemberrole)
 - [GroupMemberSettings](#groupmembersettings)
 - [GroupMemberStatus](#groupmemberstatus)
+- [GroupOwnerContact](#groupownercontact)
 - [GroupPreference](#grouppreference)
 - [GroupPreferences](#grouppreferences)
 - [GroupProfile](#groupprofile)
 - [GroupRelay](#grouprelay)
-- [GroupRootKey](#grouprootkey)
 - [GroupShortLinkData](#groupshortlinkdata)
 - [GroupShortLinkInfo](#groupshortlinkinfo)
+- [GroupSndStatus](#groupsndstatus)
 - [GroupSummary](#groupsummary)
 - [GroupSupportChat](#groupsupportchat)
 - [GroupType](#grouptype)
 - [HandshakeError](#handshakeerror)
+- [HostMode](#hostmode)
 - [InlineFileMode](#inlinefilemode)
 - [InvitationLinkPlan](#invitationlinkplan)
 - [InvitedBy](#invitedby)
+- [KeepAliveOpts](#keepaliveopts)
 - [LinkContent](#linkcontent)
 - [LinkOwnerSig](#linkownersig)
 - [LinkPreview](#linkpreview)
+- [ListEntry](#listentry)
 - [LocalBadge](#localbadge)
 - [LocalProfile](#localprofile)
+- [MarkdownBlock](#markdownblock)
 - [MemberCriteria](#membercriteria)
+- [MemberDeliveryStatus](#memberdeliverystatus)
 - [MsgChatLink](#msgchatlink)
 - [MsgContent](#msgcontent)
+- [MsgContentTag](#msgcontenttag)
 - [MsgDecryptError](#msgdecrypterror)
 - [MsgDirection](#msgdirection)
 - [MsgErrorType](#msgerrortype)
@@ -141,9 +160,13 @@ This file is generated automatically.
 - [MsgSigStatus](#msgsigstatus)
 - [MsgVerified](#msgverified)
 - [NameErrorType](#nameerrortype)
+- [NavigationInfo](#navigationinfo)
+- [NetworkConfig](#networkconfig)
 - [NetworkError](#networkerror)
+- [NetworkTimeout](#networktimeout)
 - [NewUser](#newuser)
 - [NoteFolder](#notefolder)
+- [OperatorTag](#operatortag)
 - [OwnerVerification](#ownerverification)
 - [PaginationByTime](#paginationbytime)
 - [PendingContactConnection](#pendingcontactconnection)
@@ -158,6 +181,7 @@ This file is generated automatically.
 - [PublicGroupAccess](#publicgroupaccess)
 - [PublicGroupData](#publicgroupdata)
 - [PublicGroupProfile](#publicgroupprofile)
+- [QueueStatus](#queuestatus)
 - [RCErrorType](#rcerrortype)
 - [RatchetSyncState](#ratchetsyncstate)
 - [RcvConnEvent](#rcvconnevent)
@@ -167,13 +191,26 @@ This file is generated automatically.
 - [RcvFileTransfer](#rcvfiletransfer)
 - [RcvGroupEvent](#rcvgroupevent)
 - [RcvMsgError](#rcvmsgerror)
+- [RcvQueueInfo](#rcvqueueinfo)
+- [RcvSwitchStatus](#rcvswitchstatus)
 - [RelayCapabilities](#relaycapabilities)
+- [RelayConnectionResult](#relayconnectionresult)
 - [RelayProfile](#relayprofile)
 - [RelayStatus](#relaystatus)
+- [RemoteCtrlInfo](#remotectrlinfo)
+- [RemoteCtrlSessionState](#remotectrlsessionstate)
+- [RemoteCtrlStopReason](#remotectrlstopreason)
 - [ReportReason](#reportreason)
 - [RoleGroupPreference](#rolegrouppreference)
 - [SMPAgentError](#smpagenterror)
+- [SMPProxyFallback](#smpproxyfallback)
+- [SMPProxyMode](#smpproxymode)
+- [SMPWebPortServers](#smpwebportservers)
 - [SecurityCode](#securitycode)
+- [SegmentRange](#segmentrange)
+- [ServerOperator](#serveroperator)
+- [ServerRoles](#serverroles)
+- [ServerRolesOverride](#serverrolesoverride)
 - [SimplePreference](#simplepreference)
 - [SimplexDomain](#simplexdomain)
 - [SimplexDomainClaim](#simplexdomainclaim)
@@ -188,14 +225,19 @@ This file is generated automatically.
 - [SndError](#snderror)
 - [SndFileTransfer](#sndfiletransfer)
 - [SndGroupEvent](#sndgroupevent)
+- [SndQueueInfo](#sndqueueinfo)
+- [SndSwitchStatus](#sndswitchstatus)
+- [SocksMode](#socksmode)
 - [SrvError](#srverror)
 - [StoreError](#storeerror)
 - [SubscriptionStatus](#subscriptionstatus)
 - [SupportGroupPreference](#supportgrouppreference)
 - [SwitchPhase](#switchphase)
+- [TableAlign](#tablealign)
 - [TimedMessagesGroupPreference](#timedmessagesgrouppreference)
 - [TimedMessagesPreference](#timedmessagespreference)
 - [TransportError](#transporterror)
+- [TransportSessionMode](#transportsessionmode)
 - [UIColorMode](#uicolormode)
 - [UIColors](#uicolors)
 - [UIThemeEntityOverride](#uithemeentityoverride)
@@ -206,9 +248,12 @@ This file is generated automatically.
 - [UserContact](#usercontact)
 - [UserContactLink](#usercontactlink)
 - [UserContactRequest](#usercontactrequest)
+- [UserContactRequestRef](#usercontactrequestref)
 - [UserInfo](#userinfo)
+- [UserOperatorServers](#useroperatorservers)
 - [UserProfileUpdateSummary](#userprofileupdatesummary)
 - [UserPwdHash](#userpwdhash)
+- [UserServer](#userserver)
 - [VersionRange](#versionrange)
 - [XFTPErrorType](#xftperrortype)
 - [XFTPRcvFile](#xftprcvfile)
@@ -259,6 +304,7 @@ This file is generated automatically.
 **Record type**:
 - businessAddress: bool
 - autoAccept: [AutoAccept](#autoaccept)?
+- chatLayout: [ChatLayout](#chatlayout)?
 - autoReply: [MsgContent](#msgcontent)?
 
 
@@ -362,6 +408,40 @@ INACTIVE:
 
 ---
 
+## AgentServiceError
+
+**Discriminated union type**:
+
+Rejected:
+- type: "rejected"
+- rejectReason: string
+
+Timeout:
+- type: "timeout"
+
+NoPendingRequest:
+- type: "noPendingRequest"
+
+NotDRAddress:
+- type: "notDRAddress"
+
+BadSignature:
+- type: "badSignature"
+
+
+---
+
+## AppVersionRange
+
+Remote controller app version range (min and max as version strings).
+
+**Record type**:
+- minVersion: string
+- maxVersion: string
+
+
+---
+
 ## AutoAccept
 
 **Record type**:
@@ -374,7 +454,7 @@ INACTIVE:
 
 **Record type**:
 - badgeType: [BadgeType](#badgetype)
-- badgeExpiry: UTCTime?
+- badgeExpiry: UTCTime
 - badgeExtra: string
 
 
@@ -387,6 +467,69 @@ INACTIVE:
 - presHeader: string
 - proof: string
 - badgeInfo: [BadgeInfo](#badgeinfo)
+
+
+---
+
+## BadgeRedeemError
+
+**Discriminated union type**:
+
+InvalidCode:
+- type: "invalidCode"
+
+InvalidReceipt:
+- type: "invalidReceipt"
+
+ServiceNotConfigured:
+- type: "serviceNotConfigured"
+
+BadgeActive:
+- type: "badgeActive"
+
+StorePurchaseOpen:
+- type: "storePurchaseOpen"
+
+ServiceError:
+- type: "serviceError"
+- serviceError: [BadgeServiceErrorCode](#badgeserviceerrorcode)
+
+InvalidResponse:
+- type: "invalidResponse"
+- message: string
+
+UnknownKeyIndex:
+- type: "unknownKeyIndex"
+
+CredentialNotVerified:
+- type: "credentialNotVerified"
+
+
+---
+
+## BadgeServiceErrorCode
+
+**Enum type**:
+- "bad_request"
+- "unsupported_version"
+- "unknown_purchase_key"
+- "unknown_offer_id"
+- "offer_disabled"
+- "offer_mismatch"
+- "product_unavailable"
+- "payment_not_entitled"
+- "payment_pending"
+- "provider_unavailable"
+- "provider_not_configured"
+- "rate_limited"
+- "code_invalid"
+- "code_used"
+- "code_expired"
+- "receipt_invalid"
+- "receipt_used"
+- "transfer_limited"
+- "test_purchase"
+- "internal"
 
 
 ---
@@ -409,6 +552,64 @@ INACTIVE:
 - "supporter"
 - "legend"
 - "investor"
+
+
+---
+
+## BlockToken
+
+**Discriminated union type**:
+
+LineBreak:
+- type: "lineBreak"
+
+SoftBreak:
+- type: "softBreak"
+
+HardBreak:
+- type: "hardBreak"
+
+ParagraphBreak:
+- type: "paragraphBreak"
+- lineBreaks: int
+
+Indent:
+- type: "indent"
+
+HeadingMark:
+- type: "headingMark"
+- level: int
+
+HeadingClose:
+- type: "headingClose"
+
+HeadingUnderline:
+- type: "headingUnderline"
+- level: int
+
+ListMark:
+- type: "listMark"
+- number: string?
+
+QuoteMark:
+- type: "quoteMark"
+
+FenceMark:
+- type: "fenceMark"
+- language: string?
+
+RowMark:
+- type: "rowMark"
+
+CellMark:
+- type: "cellMark"
+
+DelimiterRow:
+- type: "delimiterRow"
+- columns: [[TableAlign](#tablealign)]
+
+RuleMark:
+- type: "ruleMark"
 
 
 ---
@@ -722,6 +923,8 @@ LocalRcv:
 - fileSource: [CryptoFile](#cryptofile)?
 - fileStatus: [CIFileStatus](#cifilestatus)
 - fileProtocol: [FileProtocol](#fileprotocol)
+- fileExpires: UTCTime?
+- fileProhibited: [FileProhibited](#fileprohibited)?
 
 
 ---
@@ -807,6 +1010,19 @@ Group:
 - msgDir: [MsgDirection](#msgdirection)
 - groupId: int64?
 - chatItemId: int64?
+- memberId: string?
+- sharedMsgId_: string?
+- groupType: [GroupType](#grouptype)?
+
+GroupLink:
+- type: "groupLink"
+- chatName: string
+- msgDir: [MsgDirection](#msgdirection)
+- groupLink: string
+- publicGroupId: string
+- memberId: string?
+- sharedMsgId: string
+- groupType: [GroupType](#grouptype)?
 
 
 ---
@@ -890,6 +1106,7 @@ Group:
 - sentAt: UTCTime
 - content: [MsgContent](#msgcontent)
 - formattedText: [[FormattedText](#formattedtext)]?
+- markdownBlocks: [[MarkdownBlock](#markdownblock)]?
 
 
 ---
@@ -1302,6 +1519,10 @@ CommandError:
 - type: "commandError"
 - message: string
 
+BadgeRedeemError:
+- type: "badgeRedeemError"
+- badgeRedeemError: [BadgeRedeemError](#badgeredeemerror)
+
 AgentCommandError:
 - type: "agentCommandError"
 - message: string
@@ -1384,6 +1605,7 @@ ContactConnection:
 - content: [CIContent](#cicontent)
 - mentions: {string : [CIMention](#cimention)}
 - formattedText: [[FormattedText](#formattedtext)]?
+- markdownBlocks: [[MarkdownBlock](#markdownblock)]?
 - quotedItem: [CIQuote](#ciquote)?
 - reactions: [[CIReactionCount](#cireactioncount)]
 - file: [CIFile](#cifile)?
@@ -1398,6 +1620,39 @@ Message deletion result.
 **Record type**:
 - deletedChatItem: [AChatItem](#achatitem)
 - toChatItem: [AChatItem](#achatitem)?
+
+
+---
+
+## ChatItemInfo
+
+**Record type**:
+- itemVersions: [[ChatItemVersion](#chatitemversion)]
+- memberDeliveryStatuses: [[MemberDeliveryStatus](#memberdeliverystatus)]?
+- forwardedFromChatItem: [AChatItem](#achatitem)?
+- fileXftpServers: [string]
+
+
+---
+
+## ChatItemVersion
+
+**Record type**:
+- chatItemVersionId: int64
+- msgContent: [MsgContent](#msgcontent)
+- formattedText: [[FormattedText](#formattedtext)]?
+- markdownBlocks: [[MarkdownBlock](#markdownblock)]?
+- itemVersionTs: UTCTime
+- createdAt: UTCTime
+
+
+---
+
+## ChatLayout
+
+**Enum type**:
+- "classic"
+- "terminal"
 
 
 ---
@@ -1418,11 +1673,57 @@ Search:
 
 ---
 
+## ChatPagination
+
+**Discriminated union type**:
+
+Last:
+- type: "last"
+- count: int
+
+After:
+- type: "after"
+- chatItemId: int64
+- count: int
+
+Before:
+- type: "before"
+- chatItemId: int64
+- count: int
+
+Around:
+- type: "around"
+- chatItemId: int64
+- count: int
+
+Initial:
+- type: "initial"
+- count: int
+
+**Syntax**:
+
+```
+count=<count>|after=<chatItemId> count=<count>|before=<chatItemId> count=<count>|around=<chatItemId> count=<count>|initial=<count>
+```
+
+```javascript
+type == 'last' ? 'count=' + count : type == 'after' ? 'after=' + chatItemId + ' count=' + count : type == 'before' ? 'before=' + chatItemId + ' count=' + count : type == 'around' ? 'around=' + chatItemId + ' count=' + count : 'initial=' + count // JavaScript
+```
+
+```python
+'count=' + str(count) if str(type) == 'last' else 'after=' + str(chatItemId) + ' count=' + str(count) if str(type) == 'after' else 'before=' + str(chatItemId) + ' count=' + str(count) if str(type) == 'before' else 'around=' + str(chatItemId) + ' count=' + str(count) if str(type) == 'around' else 'initial=' + str(count) # Python
+```
+
+
+---
+
 ## ChatPeerType
 
 **Enum type**:
 - "human"
 - "bot"
+- "business"
+- "agent"
 
 
 ---
@@ -1612,6 +1913,22 @@ LARGE:
 
 ---
 
+## ConditionsAcceptance
+
+**Discriminated union type**:
+
+Accepted:
+- type: "accepted"
+- acceptedAt: UTCTime?
+- autoAccepted: bool
+
+Required:
+- type: "required"
+- deadline: UTCTime?
+
+
+---
+
 ## ConnStatus
 
 **Discriminated union type**:
@@ -1765,6 +2082,19 @@ Error:
 
 ---
 
+## ConnectionStats
+
+**Record type**:
+- connAgentVersion: int
+- rcvQueuesInfo: [[RcvQueueInfo](#rcvqueueinfo)]
+- sndQueuesInfo: [[SndQueueInfo](#sndqueueinfo)]
+- ratchetSyncState: [RatchetSyncState](#ratchetsyncstate)
+- ratchetSyncSupported: bool
+- subStatus: [SubscriptionStatus](#subscriptionstatus)?
+
+
+---
+
 ## Contact
 
 **Record type**:
@@ -1782,12 +2112,14 @@ Error:
 - chatTs: UTCTime?
 - preparedContact: [PreparedContact](#preparedcontact)?
 - contactRequestId: int64?
+- contactRequest: [UserContactRequestRef](#usercontactrequestref)?
 - contactGroupMemberId: int64?
 - contactGrpInvSent: bool
 - groupDirectInv: [GroupDirectInvitation](#groupdirectinvitation)?
 - chatTags: [int64]
 - chatItemTTL: int64?
 - uiThemes: [UIThemeEntityOverrides](#uithemeentityoverrides)?
+- chatLayout: [ChatLayout](#chatlayout)?
 - chatDeleted: bool
 - customData: JSONObject?
 
@@ -1830,6 +2162,7 @@ ContactViaAddress:
 - profile: [Profile](#profile)
 - message: [MsgContent](#msgcontent)?
 - business: bool
+- chatLayout: [ChatLayout](#chatlayout)?
 - localBadge: [LocalBadge](#localbadge)?
 
 
@@ -1841,6 +2174,7 @@ ContactViaAddress:
 - "active"
 - "deleted"
 - "deletedByUser"
+- "rejected"
 
 
 ---
@@ -1922,6 +2256,18 @@ connFullLink + ((' ' + connShortLink) if connShortLink is not None else '') # Py
 **Record type**:
 - fileKey: string
 - fileNonce: string
+
+
+---
+
+## CtrlAppInfo
+
+Remote controller application info.
+
+**Record type**:
+- appVersionRange: [AppVersionRange](#appversionrange)
+- deviceName: string
+- compression: bool
 
 
 ---
@@ -2083,6 +2429,16 @@ NO_FILE:
 - fileConnReq: string?
 - fileInline: [InlineFileMode](#inlinefilemode)?
 - fileDescr: [FileDescr](#filedescr)?
+- fileBadge: [BadgeProof](#badgeproof)?
+
+
+---
+
+## FileProhibited
+
+**Record type**:
+- maxSize: int64
+- badgeStatus: [BadgeStatus](#badgestatus)?
 
 
 ---
@@ -2136,10 +2492,13 @@ NO_FILE:
 
 ## Format
 
+The format markup is a token of block Markdown syntax; its text is the syntax. The format escape is the backslash of a backslash escape. Bold singleStar: written with single stars.
+
 **Discriminated union type**:
 
 Bold:
 - type: "bold"
+- singleStar: bool
 
 Italic:
 - type: "italic"
@@ -2192,6 +2551,13 @@ Email:
 
 Phone:
 - type: "phone"
+
+Escape:
+- type: "escape"
+
+Markup:
+- type: "markup"
+- token: [BlockToken](#blocktoken)
 
 
 ---
@@ -2353,18 +2719,7 @@ MemberSupport:
 - rosterVersion: int64?
 - membersRequireAttention: int
 - viaGroupLinkUri: string?
-- groupKeys: [GroupKeys](#groupkeys)?
 - groupDomainVerified: bool?
-
-
----
-
-## GroupKeys
-
-**Record type**:
-- publicGroupId: string
-- groupRootKey: [GroupRootKey](#grouprootkey)
-- memberPrivKey: string
 
 
 ---
@@ -2533,6 +2888,29 @@ UpdateRequired:
 
 ---
 
+## GroupOwnerContact
+
+**Record type**:
+- contactId: int64
+- memberId: string
+
+**Syntax**:
+
+```
+contact=<contactId> owner=<memberId>
+```
+
+```javascript
+'contact=' + contactId + ' owner=' + memberId // JavaScript
+```
+
+```python
+'contact=' + str(contactId) + ' owner=' + memberId # Python
+```
+
+
+---
+
 ## GroupPreference
 
 **Record type**:
@@ -2573,6 +2951,7 @@ UpdateRequired:
 - publicGroup: [PublicGroupProfile](#publicgroupprofile)?
 - groupPreferences: [GroupPreferences](#grouppreferences)?
 - memberAdmission: [GroupMemberAdmission](#groupmemberadmission)?
+- chatLayout: [ChatLayout](#chatlayout)?
 
 
 ---
@@ -2586,21 +2965,6 @@ UpdateRequired:
 - relayStatus: [RelayStatus](#relaystatus)
 - relayLink: string?
 - relayCap: [RelayCapabilities](#relaycapabilities)
-
-
----
-
-## GroupRootKey
-
-**Discriminated union type**:
-
-Private:
-- type: "private"
-- rootPrivKey: string
-
-Public:
-- type: "public"
-- rootPubKey: string
 
 
 ---
@@ -2620,6 +2984,41 @@ Public:
 - direct: bool
 - groupRelays: [string]
 - publicGroupId: string?
+
+
+---
+
+## GroupSndStatus
+
+**Discriminated union type**:
+
+New:
+- type: "new"
+
+Forwarded:
+- type: "forwarded"
+
+Inactive:
+- type: "inactive"
+
+Sent:
+- type: "sent"
+
+Rcvd:
+- type: "rcvd"
+- msgRcptStatus: [MsgReceiptStatus](#msgreceiptstatus)
+
+Error:
+- type: "error"
+- agentError: [SndError](#snderror)
+
+Warning:
+- type: "warning"
+- agentError: [SndError](#snderror)
+
+Invalid:
+- type: "invalid"
+- text: string
 
 
 ---
@@ -2661,6 +3060,16 @@ Public:
 - "IDENTITY"
 - "BAD_AUTH"
 - "BAD_SERVICE"
+
+
+---
+
+## HostMode
+
+**Enum type**:
+- "onionViaSocks"
+- "onion"
+- "public"
 
 
 ---
@@ -2714,6 +3123,16 @@ Unknown:
 
 ---
 
+## KeepAliveOpts
+
+**Record type**:
+- keepIdle: int
+- keepIntvl: int
+- keepCnt: int
+
+
+---
+
 ## LinkContent
 
 **Discriminated union type**:
@@ -2758,6 +3177,16 @@ Unknown:
 
 ---
 
+## ListEntry
+
+**Record type**:
+- number: string?
+- content: [SegmentRange](#segmentrange)
+- items: [[ListEntry](#listentry)]
+
+
+---
+
 ## LocalBadge
 
 **Record type**:
@@ -2787,10 +3216,59 @@ Unknown:
 
 ---
 
+## MarkdownBlock
+
+**Discriminated union type**:
+
+Paragraph:
+- type: "paragraph"
+- content: [SegmentRange](#segmentrange)
+
+Heading:
+- type: "heading"
+- level: int
+- content: [SegmentRange](#segmentrange)
+
+CodeBlock:
+- type: "codeBlock"
+- language: string?
+- content: [SegmentRange](#segmentrange)
+
+Quote:
+- type: "quote"
+- content: [SegmentRange](#segmentrange)
+
+List:
+- type: "list"
+- items: [[ListEntry](#listentry)]
+
+Table:
+- type: "table"
+- columns: [[TableAlign](#tablealign)]
+- header: [[SegmentRange](#segmentrange)]
+- rows: [[[SegmentRange](#segmentrange)]]
+
+Rule:
+- type: "rule"
+- mark: [SegmentRange](#segmentrange)
+
+
+---
+
 ## MemberCriteria
 
 **Enum type**:
 - "all"
+
+
+---
+
+## MemberDeliveryStatus
+
+**Record type**:
+- groupMemberId: int64
+- memberDeliveryStatus: [GroupSndStatus](#groupsndstatus)
+- sentViaProxy: bool?
 
 
 ---
@@ -2869,6 +3347,21 @@ Unknown:
 - tag: string
 - text: string
 - json: JSONObject
+
+
+---
+
+## MsgContentTag
+
+**Enum type**:
+- "text"
+- "link"
+- "image"
+- "video"
+- "voice"
+- "file"
+- "report"
+- "chat"
 
 
 ---
@@ -2991,6 +3484,38 @@ RESOLVER:
 
 ---
 
+## NavigationInfo
+
+**Record type**:
+- afterUnread: int
+- afterTotal: int
+
+
+---
+
+## NetworkConfig
+
+**Record type**:
+- socksProxy: string?
+- socksMode: [SocksMode](#socksmode)
+- hostMode: [HostMode](#hostmode)
+- requiredHostMode: bool
+- sessionMode: [TransportSessionMode](#transportsessionmode)
+- smpProxyMode: [SMPProxyMode](#smpproxymode)
+- smpProxyFallback: [SMPProxyFallback](#smpproxyfallback)
+- smpWebPortServers: [SMPWebPortServers](#smpwebportservers)
+- tcpConnectTimeout: [NetworkTimeout](#networktimeout)
+- tcpTimeout: [NetworkTimeout](#networktimeout)
+- tcpTimeoutPerKb: int64
+- rcvConcurrency: int
+- tcpKeepAlive: [KeepAliveOpts](#keepaliveopts)?
+- smpPingInterval: int64
+- smpPingCount: int
+- logTLSErrors: bool
+
+
+---
+
 ## NetworkError
 
 **Discriminated union type**:
@@ -3019,6 +3544,15 @@ SubscribeError:
 
 ---
 
+## NetworkTimeout
+
+**Record type**:
+- backgroundTimeout: int
+- interactiveTimeout: int
+
+
+---
+
 ## NewUser
 
 **Record type**:
@@ -3040,6 +3574,15 @@ SubscribeError:
 - chatTs: UTCTime
 - favorite: bool
 - unread: bool
+
+
+---
+
+## OperatorTag
+
+**Enum type**:
+- "simplex"
+- "flux"
 
 
 ---
@@ -3107,6 +3650,20 @@ count=<count>
 - "allGroups"
 - "unknown"
 - "never"
+
+**Syntax**:
+
+```
+ resolve=allGroups| resolve=never|
+```
+
+```javascript
+self == 'allGroups' ? ' resolve=allGroups' : self == 'never' ? ' resolve=never' : '' // JavaScript
+```
+
+```python
+' resolve=allGroups' if str(self) == 'allGroups' else ' resolve=never' if str(self) == 'never' else '' # Python
+```
 
 
 ---
@@ -3241,6 +3798,18 @@ NO_SESSION:
 - groupLink: string
 - publicGroupId: string
 - publicGroupAccess: [PublicGroupAccess](#publicgroupaccess)?
+
+
+---
+
+## QueueStatus
+
+**Enum type**:
+- "new"
+- "confirmed"
+- "secured"
+- "active"
+- "disabled"
 
 
 ---
@@ -3400,6 +3969,7 @@ Cancelled:
 - fileId: int64
 - xftpRcvFile: [XFTPRcvFile](#xftprcvfile)?
 - fileInvitation: [FileInvitation](#fileinvitation)
+- fileProhibited: [FileProhibited](#fileprohibited)?
 - fileStatus: [RcvFileStatus](#rcvfilestatus)
 - fileType: [FileType](#filetype)
 - rcvFileInline: [InlineFileMode](#inlinefilemode)?
@@ -3501,10 +4071,43 @@ ParseError:
 
 ---
 
+## RcvQueueInfo
+
+**Record type**:
+- rcvServer: string
+- status: [QueueStatus](#queuestatus)
+- rcvSwitchStatus: [RcvSwitchStatus](#rcvswitchstatus)?
+- canAbortSwitch: bool
+- subStatus: [SubscriptionStatus](#subscriptionstatus)
+
+
+---
+
+## RcvSwitchStatus
+
+**Enum type**:
+- "switch_started"
+- "sending_qadd"
+- "sending_quse"
+- "received_message"
+- "received_qend"
+
+
+---
+
 ## RelayCapabilities
 
 **Record type**:
 - webDomain: string?
+
+
+---
+
+## RelayConnectionResult
+
+**Record type**:
+- relayMember: [GroupMember](#groupmember)
+- relayError: [ChatError](#chaterror)?
 
 
 ---
@@ -3530,6 +4133,62 @@ ParseError:
 - "active"
 - "inactive"
 - "rejected"
+
+
+---
+
+## RemoteCtrlInfo
+
+**Record type**:
+- remoteCtrlId: int64
+- ctrlDeviceName: string
+- sessionState: [RemoteCtrlSessionState](#remotectrlsessionstate)?
+
+
+---
+
+## RemoteCtrlSessionState
+
+**Discriminated union type**:
+
+Starting:
+- type: "starting"
+
+Searching:
+- type: "searching"
+
+Connecting:
+- type: "connecting"
+
+PendingConfirmation:
+- type: "pendingConfirmation"
+- sessionCode: string
+
+Connected:
+- type: "connected"
+- sessionCode: string
+
+
+---
+
+## RemoteCtrlStopReason
+
+**Discriminated union type**:
+
+DiscoveryFailed:
+- type: "discoveryFailed"
+- chatError: [ChatError](#chaterror)
+
+ConnectionFailed:
+- type: "connectionFailed"
+- chatError: [ChatError](#chaterror)
+
+SetupFailed:
+- type: "setupFailed"
+- chatError: [ChatError](#chaterror)
+
+Disconnected:
+- type: "disconnected"
 
 
 ---
@@ -3561,6 +4220,7 @@ ParseError:
 
 A_MESSAGE:
 - type: "A_MESSAGE"
+- messageErr: string
 
 A_PROHIBITED:
 - type: "A_PROHIBITED"
@@ -3585,6 +4245,41 @@ A_QUEUE:
 - type: "A_QUEUE"
 - queueErr: string
 
+A_SERVICE:
+- type: "A_SERVICE"
+- serviceError: [AgentServiceError](#agentserviceerror)
+
+
+---
+
+## SMPProxyFallback
+
+**Enum type**:
+- "allow"
+- "allowProtected"
+- "prohibit"
+
+
+---
+
+## SMPProxyMode
+
+**Enum type**:
+- "always"
+- "unknown"
+- "unprotected"
+- "never"
+
+
+---
+
+## SMPWebPortServers
+
+**Enum type**:
+- "all"
+- "preset"
+- "off"
+
 
 ---
 
@@ -3593,6 +4288,51 @@ A_QUEUE:
 **Record type**:
 - securityCode: string
 - verifiedAt: UTCTime
+
+
+---
+
+## SegmentRange
+
+**Record type**:
+- from: int
+- to: int
+
+
+---
+
+## ServerOperator
+
+**Record type**:
+- operatorId: int64
+- operatorTag: [OperatorTag](#operatortag)?
+- tradeName: string
+- legalName: string?
+- serverDomains: [string]
+- conditionsAcceptance: [ConditionsAcceptance](#conditionsacceptance)
+- enabled: bool
+- smpRoles: [ServerRoles](#serverroles)
+- xftpRoles: [ServerRoles](#serverroles)
+
+
+---
+
+## ServerRoles
+
+**Record type**:
+- storage: bool
+- proxy: bool
+- names: bool
+
+
+---
+
+## ServerRolesOverride
+
+**Record type**:
+- storage: bool?
+- proxy: bool?
+- names: bool?
 
 
 ---
@@ -3809,6 +4549,36 @@ MemberAccepted:
 
 UserPendingReview:
 - type: "userPendingReview"
+
+
+---
+
+## SndQueueInfo
+
+**Record type**:
+- sndServer: string
+- status: [QueueStatus](#queuestatus)
+- sndSwitchStatus: [SndSwitchStatus](#sndswitchstatus)?
+
+
+---
+
+## SndSwitchStatus
+
+**Enum type**:
+- "sending_qkey"
+- "sending_qtest"
+- "securing_queue"
+- "sending_qend"
+
+
+---
+
+## SocksMode
+
+**Enum type**:
+- "always"
+- "onion"
 
 
 ---
@@ -4218,6 +4988,17 @@ NoSub:
 
 ---
 
+## TableAlign
+
+**Enum type**:
+- "none"
+- "left"
+- "center"
+- "right"
+
+
+---
+
 ## TimedMessagesGroupPreference
 
 **Record type**:
@@ -4258,6 +5039,17 @@ NoServerAuth:
 Handshake:
 - type: "handshake"
 - handshakeErr: [HandshakeError](#handshakeerror)
+
+
+---
+
+## TransportSessionMode
+
+**Enum type**:
+- "user"
+- "session"
+- "server"
+- "entity"
 
 
 ---
@@ -4305,6 +5097,7 @@ Handshake:
 **Record type**:
 - light: [UIThemeEntityOverride](#uithemeentityoverride)?
 - dark: [UIThemeEntityOverride](#uithemeentityoverride)?
+- chatLayout: [ChatLayout](#chatlayout)?
 
 
 ---
@@ -4334,6 +5127,7 @@ Handshake:
 - sendRcptsContacts: bool
 - sendRcptsSmallGroups: bool
 - autoAcceptMemberContacts: bool
+- autoAcceptGroupInvitations: bool
 - userMemberProfileUpdatedAt: UTCTime?
 - userChatRelay: bool
 - clientService: bool
@@ -4397,6 +5191,16 @@ Handshake:
 - pqSupport: bool
 - welcomeSharedMsgId: string?
 - requestSharedMsgId: string?
+- rejectionSupported: bool
+
+
+---
+
+## UserContactRequestRef
+
+**Record type**:
+- contactRequestId: int64
+- rejectionSupported: bool
 
 
 ---
@@ -4406,6 +5210,17 @@ Handshake:
 **Record type**:
 - user: [User](#user)
 - unreadCount: int
+
+
+---
+
+## UserOperatorServers
+
+**Record type**:
+- operator: [ServerOperator](#serveroperator)?
+- smpServers: [[UserServer](#userserver)]
+- xftpServers: [[UserServer](#userserver)]
+- chatRelays: [[UserChatRelay](#userchatrelay)]
 
 
 ---
@@ -4425,6 +5240,20 @@ Handshake:
 **Record type**:
 - hash: string
 - salt: string
+
+
+---
+
+## UserServer
+
+**Record type**:
+- serverId: int64
+- server: string
+- preset: bool
+- tested: bool?
+- enabled: bool
+- roles: [ServerRolesOverride](#serverrolesoverride)
+- deleted: bool
 
 
 ---
