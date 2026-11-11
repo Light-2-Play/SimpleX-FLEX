@@ -113,7 +113,7 @@ Establishing contact between two SimpleX Chat users. SimpleX uses no user identi
 1. When connecting to a channel link (`GroupShortLinkInfo.direct == false`):
 2. `apiPrepareGroup(connLink:directLink:groupShortLinkData:)` is called with `directLink: false`, preparing the channel locally.
 3. `groupShortLinkInfo.groupRelays` (hostnames) stored in `ChatModel.shared.channelRelayHostnames[groupId]`.
-4. Pre-join UI shows channel icon and "Open new channel" (not "Open new group").
+4. Pre-join UI shows channel icon and "Open channel" (not "Open group").
 5. `apiConnectPreparedGroup(groupId:incognito:msg:)` returns `(GroupInfo, [RelayConnectionResult])`.
 6. `RelayConnectionResult` contains `relayMember: GroupMember` and optional `relayError: ChatError?` per relay.
 7. Relay members are upserted to `chatModel.groupMembers`; `channelRelayHostnames` entry is cleared.
@@ -151,6 +151,7 @@ Establishing contact between two SimpleX Chat users. SimpleX uses no user identi
 | `ChatError.errorAgent(.SMP(_, .BLOCKED(info)))` | Server operator blocked connection | Alert: "Connection blocked" with reason |
 | `ChatError.errorAgent(.SMP(_, .QUOTA))` | Too many undelivered messages | Alert: "Undelivered messages" |
 | `ChatError.errorAgent(.INTERNAL("SEUniqueID"))` | Duplicate connection attempt | Alert: "Already connected?" |
+| `ChatError.errorAgent(.CONN(.DUPLICATE, _))` | One-time link already used to connect | Alert: "Already connected?" |
 | `ChatError.errorAgent(.BROKER(_, .TIMEOUT))` | Server timeout | Retryable via `chatApiSendCmdWithRetry` |
 | `ChatError.errorAgent(.BROKER(_, .NETWORK))` | Network failure | Retryable via `chatApiSendCmdWithRetry` |
 | `contactAlreadyExists` | Connecting to existing contact | Alert: "Contact already exists" with contact name |

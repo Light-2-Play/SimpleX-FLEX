@@ -33,7 +33,7 @@ import chat.simplex.common.platform.*
 import chat.simplex.common.views.chat.*
 import chat.simplex.common.views.newchat.planAndConnect
 import chat.simplex.common.views.chat.item.*
-import chat.simplex.res.MR
+import chat.simplex.res.*
 import dev.icerock.moko.resources.ImageResource
 
 // Spec: spec/client/chat-list.md#ChatPreviewView
@@ -277,6 +277,7 @@ fun ChatPreviewView(
       MarkdownText(
         text,
         formattedText,
+        if (formattedText == null) null else ci.markdownBlocks,
         sender = when {
           cInfo is ChatInfo.Group && !ci.chatDir.sent && !ci.meta.showGroupAsSender -> ci.memberDisplayName
           else -> null
@@ -329,13 +330,13 @@ fun ChatPreviewView(
         }
       }
       is MsgContent.MCImage -> SmallContentPreview {
-        CIImageView(image = mc.image, file = ci.file, provider, noMenu, smallView = true, senderProfile = ciSenderProfile(ci, chat.chatInfo)) {
+        CIImageView(image = mc.image, file = ci.file, provider, noMenu, smallView = true) {
           val user = chatModel.currentUser.value ?: return@CIImageView
           withBGApi { chatModel.controller.receiveFile(chat.remoteHostId, user, it) }
         }
       }
       is MsgContent.MCVideo -> SmallContentPreview {
-        CIVideoView(image = mc.image, mc.duration, file = ci.file, provider, noMenu, smallView = true, senderProfile = ciSenderProfile(ci, chat.chatInfo)) {
+        CIVideoView(image = mc.image, mc.duration, file = ci.file, provider, noMenu, smallView = true) {
           val user = chatModel.currentUser.value ?: return@CIVideoView
           withBGApi { chatModel.controller.receiveFile(chat.remoteHostId, user, it) }
         }
@@ -347,7 +348,7 @@ fun ChatPreviewView(
         }
       }
       is MsgContent.MCFile -> SmallContentPreviewFile {
-        CIFileView(ci.file, ci.meta, cInfo.timedMessagesTTL, showViaProxy = false, showTimestamp = true, showMenu = remember { mutableStateOf(false) }, smallView = true, senderProfile = ciSenderProfile(ci, chat.chatInfo)) {
+        CIFileView(ci.file, ci.meta, cInfo.timedMessagesTTL, showViaProxy = false, showTimestamp = true, showMenu = remember { mutableStateOf(false) }, smallView = true) {
           val user = chatModel.currentUser.value ?: return@CIFileView
           withBGApi { chatModel.controller.receiveFile(chat.remoteHostId, user, it) }
         }
@@ -643,6 +644,6 @@ private data class ActiveVoicePreview(
 @Composable
 fun PreviewChatPreviewView() {
   SimpleXTheme {
-    ChatPreviewView(Chat.sampleData, true, null, null, "", disabled = false, linkMode = SimplexLinkMode.DESCRIPTION, inProgress = false, progressByTimeout = false, {})
+    ChatPreviewView(Chat.sampleData.copy(chatItems = Chat.sampleData.chatItems.map(::previewDated)), true, null, null, "", disabled = false, linkMode = SimplexLinkMode.DESCRIPTION, inProgress = false, progressByTimeout = false, {})
   }
 }

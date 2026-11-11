@@ -16,7 +16,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import chat.simplex.common.platform.base64ToBitmap
-import chat.simplex.common.ui.theme.DEFAULT_PADDING_HALF
+import chat.simplex.res.*
+import chat.simplex.common.ui.theme.*
 import chat.simplex.common.views.helpers.UploadContent
 import chat.simplex.res.MR
 import dev.icerock.moko.resources.compose.painterResource

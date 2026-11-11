@@ -39,7 +39,7 @@ import chat.simplex.common.views.chatlist.*
 import chat.simplex.common.views.helpers.*
 import chat.simplex.common.views.onboarding.*
 import chat.simplex.common.platform.*
-import chat.simplex.res.MR
+import chat.simplex.res.*
 import java.io.File
 import java.io.FileInputStream
 import java.lang.ref.WeakReference

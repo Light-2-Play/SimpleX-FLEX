@@ -154,6 +154,7 @@ struct UserPickerSheetView: View {
 struct ChatListView: View {
     @EnvironmentObject var chatModel: ChatModel
     @StateObject private var connectProgressManager = ConnectProgressManager.shared
+    @ObservedObject private var badgeModel = BadgeModel.shared
     @EnvironmentObject var theme: AppTheme
     @Binding var activeUserPickerSheet: UserPickerSheet?
     @State private var showNewChatSheet = false
@@ -175,9 +176,12 @@ struct ChatListView: View {
     @AppStorage(GROUP_DEFAULT_ONE_HAND_UI, store: groupDefaults) private var oneHandUI = true
     @AppStorage(DEFAULT_ONE_HAND_UI_CARD_SHOWN) private var oneHandUICardShown = false
     @AppStorage(DEFAULT_ADDRESS_CREATION_CARD_SHOWN) private var addressCreationCardShown = false
+    @AppStorage(DEFAULT_SUPPORTER_BANNER_SHOWN) private var supporterBannerShown = false
+    @AppStorage(DEFAULT_SUPPORTER_BANNER_TAPPED) private var supporterBannerTapped = false
     @AppStorage(DEFAULT_GET_STAKE_BANNER_TAPPED) private var getStakeBannerTapped = false
     @AppStorage(DEFAULT_GET_STAKE_BANNER_DISMISSED) private var getStakeBannerDismissed = false
     @AppStorage(DEFAULT_TOOLBAR_MATERIAL) private var toolbarMaterial = ToolbarMaterial.defaultMaterial
+    @State private var showBadgesSheet = false
     
     // Spec: spec/client/chat-list.md#body
     var body: some View {
@@ -213,6 +217,12 @@ struct ChatListView: View {
         .appSheet(isPresented: $showNewChatSheet) {
             NewChatSheet()
                 .environment(\EnvironmentValues.refresh as! WritableKeyPath<EnvironmentValues, RefreshAction?>, nil)
+        }
+        .appSheet(isPresented: $showBadgesSheet) {
+            NavigationView {
+                BadgesView(showsAsSheet: true)
+                    .modifier(ThemedBackground())
+            }
         }
         .appSheet(isPresented: $showGetStakeSheet) {
             GetStakeView(fromSettings: false, showFirstImage: true)
@@ -369,8 +379,63 @@ struct ChatListView: View {
         }
     }
     
+    // the onboarding cards replace the whole chat list, and the badge alert banner lives in the
+    // list - a supporter is not a newcomer, and must be told even with no conversations yet
     private var shouldShowOnboarding: Bool {
-        !addressCreationCardShown && !chatModel.chats.isEmpty && !hasConversations
+        !addressCreationCardShown && !chatModel.chats.isEmpty && !hasConversations && bannerBadgeAlert == nil
+    }
+
+    // the current profile's badge alert, if it is a kind the chat list has a banner for
+    private var bannerBadgeAlert: BadgeAlert? {
+        guard let alert = badgeModel.alert, badgeModel.userId == chatModel.currentUser?.userId else { return nil }
+        switch alert.kind {
+        case .supportEnded, .issueFailed, .subscriptionEnded, .paymentIssue, .subscriptionCancelled, .renewalApproaching: return alert
+        case .prepaidEnding, .unknown: return nil
+        }
+    }
+
+    private var renewalPrice: String? {
+        guard let badgeState = badgeModel.badgeState, let subscription = badgeState.subscription else { return nil }
+        return BadgeStore.shared.subscriptionPrice(badgeState.badgeType, planMonths: subscription.planMonths)
+    }
+
+    private var renewalFailure: LocalizedStringKey {
+        guard let issueError = badgeModel.badgeState?.issueError else { return "Your badge could not be renewed." }
+        return "\(issueError.reason.text)"
+    }
+
+    private func badgeAlertBanner(_ title: LocalizedStringKey, _ subtitle: LocalizedStringKey, warning: Bool = false, dismissTitle: String) -> some View {
+        SupportSimpleXBanner(
+            title: title,
+            subtitle: subtitle,
+            warning: warning,
+            onTap: { showBadgesSheet = true },
+            onDismiss: { showBadgeAlertDismissAlert(dismissTitle) }
+        )
+    }
+
+    private func showBadgeAlertDismissAlert(_ title: String) {
+        showAlert(title) {
+            [
+                UIAlertAction(title: NSLocalizedString("Remind me later", comment: "alert button"), style: .default) { _ in
+                    Task { await ackBadgeAlert(snooze: true) }
+                },
+                UIAlertAction(title: NSLocalizedString("Dismiss", comment: "alert button"), style: .default) { _ in
+                    Task { await ackBadgeAlert(snooze: false) }
+                },
+                cancelAlertAction
+            ]
+        }
+    }
+
+    private func showSupportSimpleXDismissAlert() {
+        showAlert(
+            title: NSLocalizedString("Support SimpleX", comment: "alert title"),
+            message: NSLocalizedString("You can support SimpleX later in Settings.", comment: "alert message"),
+            buttonTitle: NSLocalizedString("Ok", comment: "alert button"),
+            buttonAction: { withAnimation { supporterBannerShown = true } },
+            cancelButton: false
+        )
     }
 
     private var hasConversations: Bool {
@@ -390,10 +455,11 @@ struct ChatListView: View {
         if shouldShowOnboarding {
             VStack(spacing: 0) {
                 ConnectOnboardingView()
-                if isInUS && !getStakeBannerDismissed {
+                if chatModel.bannerSlotFree(for: .getStake) && isInUS && !getStakeBannerDismissed {
                     GetStakeBanner(showDismiss: false, onTap: openGetStake, onDismiss: {})
                         .padding(.horizontal, 20)
                         .padding(.bottom, 8)
+                        .onAppear { chatModel.chatListBanner = .getStake }
                 }
             }
             .scaleEffect(x: 1, y: oneHandUI ? -1 : 1, anchor: .center)
@@ -436,7 +502,54 @@ struct ChatListView: View {
                             .listRowSeparator(.hidden)
                             .listRowBackground(Color.clear)
                     }
-                    if isInUS && !getStakeBannerDismissed {
+                    // one slot: an alert about a badge the user paid for outranks the pitch to get one
+                    if let alert = bannerBadgeAlert {
+                        Group {
+                            switch alert.kind {
+                            case .supportEnded:
+                                badgeAlertBanner("Your badge expired", "Your badge expired on \(alert.dateText).", dismissTitle: NSLocalizedString("Your badge expired", comment: "alert title"))
+                            case .issueFailed:
+                                badgeAlertBanner("Badge renewal failed", renewalFailure, warning: true, dismissTitle: NSLocalizedString("Badge renewal failed", comment: "alert title"))
+                            case .subscriptionEnded:
+                                badgeAlertBanner("Your subscription ended", "Your badge subscription ended on \(alert.dateText).", dismissTitle: NSLocalizedString("Your subscription ended", comment: "alert title"))
+                            case .paymentIssue:
+                                badgeAlertBanner("Badge payment problem", "The store could not charge your payment method.", warning: true, dismissTitle: NSLocalizedString("Badge payment problem", comment: "alert title"))
+                            case .subscriptionCancelled:
+                                badgeAlertBanner("Subscription cancelled", "Your badge stays until \(alert.dateText).", dismissTitle: NSLocalizedString("Subscription cancelled", comment: "alert title"))
+                            case .renewalApproaching:
+                                if let price = renewalPrice {
+                                    badgeAlertBanner("Your badge renews soon", "Renews on \(alert.dateText) for \(price).", dismissTitle: NSLocalizedString("Your badge renews soon", comment: "alert title"))
+                                } else {
+                                    badgeAlertBanner("Your badge renews soon", "Renews on \(alert.dateText).", dismissTitle: NSLocalizedString("Your badge renews soon", comment: "alert title"))
+                                }
+                            case .prepaidEnding, .unknown:
+                                EmptyView()
+                            }
+                        }
+                            .padding(.vertical, 3)
+                            .scaleEffect(x: 1, y: oneHandUI ? -1 : 1, anchor: .center)
+                            .listRowSeparator(.hidden)
+                            .listRowBackground(Color.clear)
+                            .zIndex(1)
+                            .onAppear { chatModel.chatListBanner = .badgeAlert }
+                    // noShownBadge is false until the badge state loads: the pitch must not lock the slot and then
+                    // be hidden by a supporter's badge arriving a moment later, leaving the slot empty for the session
+                    } else if chatModel.bannerSlotFree(for: .badgePitch) && !supporterBannerShown && noShownBadge() && chatModel.chats.count > 3 {
+                        SupportSimpleXBanner(
+                            showDismiss: supporterBannerTapped,
+                            onTap: {
+                                supporterBannerTapped = true
+                                showBadgesSheet = true
+                            },
+                            onDismiss: showSupportSimpleXDismissAlert
+                        )
+                            .padding(.vertical, 3)
+                            .scaleEffect(x: 1, y: oneHandUI ? -1 : 1, anchor: .center)
+                            .listRowSeparator(.hidden)
+                            .listRowBackground(Color.clear)
+                            .zIndex(1)
+                            .onAppear { chatModel.chatListBanner = .badgePitch }
+                    } else if chatModel.bannerSlotFree(for: .getStake) && isInUS && !getStakeBannerDismissed {
                         GetStakeBanner(
                             showDismiss: getStakeBannerTapped && !chatModel.chats.isEmpty,
                             onTap: openGetStake,
@@ -447,6 +560,7 @@ struct ChatListView: View {
                             .listRowSeparator(.hidden)
                             .listRowBackground(Color.clear)
                             .zIndex(1)
+                            .onAppear { chatModel.chatListBanner = .getStake }
                     }
                     if #available(iOS 16.0, *) {
                         ForEach(cs, id: \.viewId) { chat in
@@ -548,7 +662,7 @@ struct ChatListView: View {
         VoiceItemState.smallView.values.forEach { $0.audioPlayer?.stop() }
         VoiceItemState.smallView = [:]
     }
-    
+
     // Spec: spec/client/chat-list.md#filteredChats
     private func filteredChats() -> [Chat] {
         if !searchChatFilteredBySimplexLink.isEmpty {
@@ -1168,17 +1282,19 @@ struct ChatListView_Previews: PreviewProvider {
 
     static var previews: some View {
         let chatModel = ChatModel()
+        var contactRequest = UserContactRequest.sampleData
+        contactRequest.updatedAt = previewDate
         chatModel.updateChats([
             ChatData(
                 chatInfo: ChatInfo.sampleData.direct,
-                chatItems: [ChatItem.getSample(1, .directSnd, .now, "hello")]
+                chatItems: [ChatItem.getSample(1, .directSnd, previewDate, "hello")]
             ),
             ChatData(
                 chatInfo: ChatInfo.sampleData.group,
-                chatItems: [ChatItem.getSample(1, .directSnd, .now, "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum.")]
+                chatItems: [ChatItem.getSample(1, .directSnd, previewDate, "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum.")]
             ),
             ChatData(
-                chatInfo: ChatInfo.sampleData.contactRequest,
+                chatInfo: .contactRequest(contactRequest: contactRequest),
                 chatItems: []
             )
 

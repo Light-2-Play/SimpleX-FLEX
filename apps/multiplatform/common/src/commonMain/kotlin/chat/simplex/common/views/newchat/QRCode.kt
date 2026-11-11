@@ -22,7 +22,7 @@ import chat.simplex.common.model.*
 import chat.simplex.common.platform.*
 import chat.simplex.common.ui.theme.*
 import chat.simplex.common.views.helpers.*
-import chat.simplex.res.MR
+import chat.simplex.res.*
 import kotlinx.coroutines.launch
 
 @Composable
@@ -66,6 +66,8 @@ fun SimpleXLinkQRCode(
   )
 }
 
+val LocalFixedQRCode = staticCompositionLocalOf<ImageBitmap?> { null }
+
 @Composable
 fun QRCode(
   connReq: String,
@@ -82,10 +84,11 @@ fun QRCode(
   var qrStyle by rememberSaveable { mutableStateOf(QrDesignStyle.MODERN) }
 
   val errorLevel = if (small) QrCode.ErrorLevel.M else QrCode.ErrorLevel.L
-  val logoSize = if (small) 0.21f else 0.16f
+val logoSize = if (small) 0.21f else 0.16f
 
+  val fixedQRCode = LocalFixedQRCode.current
   val classicImage = remember(connReq, errorLevel, tintColor, withLogo) {
-    qrCodeBitmap(connReq, 1024, errorLevel)
+    (fixedQRCode ?: qrCodeBitmap(connReq, 1024, errorLevel))
       .replaceColor(Color.Black.toArgb(), tintColor.toArgb())
       .let { if (withLogo) it.addLogo(logoSize) else it }
   }
@@ -226,6 +229,6 @@ expect fun ImageBitmap.replaceColor(from: Int, to: Int): ImageBitmap
 @Composable
 fun PreviewQRCode() {
   SimpleXTheme {
-    QRCode(connReq = "https://simplex.chat/contact#/?v=1&smp=smp%3A%2F%2FPQUV2eL0t7OStZOoAsPEV2QYWt4-xilbakvGUGOItUo%3D%40smp6.simplex.im%2FK1rslx-m5bpXVIdMZg9NLUZ_8JBm8xTt%23MCowBQYDK2VuAyEALDeVe-sG8mRY22LsXlPgiwTNs9dbiLrNuA7f3ZMAJ2w%3D")
+    QRCode(connReq = "https://smp6.simplex.im/a#lrdvu2d8A1GumSmoKb2krQmtKhWXq-tyGpHuM7aMwsw", small = true)
   }
 }

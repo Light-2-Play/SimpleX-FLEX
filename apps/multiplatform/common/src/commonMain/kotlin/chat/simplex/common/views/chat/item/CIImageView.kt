@@ -26,7 +26,7 @@ import chat.simplex.common.model.ChatController.appPrefs
 import chat.simplex.common.platform.*
 import chat.simplex.common.ui.theme.DEFAULT_MAX_IMAGE_WIDTH
 import chat.simplex.common.views.chat.chatViewScrollState
-import chat.simplex.res.MR
+import chat.simplex.res.*
 import dev.icerock.moko.resources.StringResource
 import kotlinx.coroutines.*
 import kotlin.math.roundToInt
@@ -38,7 +38,6 @@ fun CIImageView(
   imageProvider: () -> ImageGalleryProvider,
   showMenu: MutableState<Boolean>,
   smallView: Boolean,
-  senderProfile: LocalProfile?,
   receiveFile: (Long) -> Unit
 ) {
   val blurred = remember { mutableStateOf(appPrefs.privacyMediaBlurRadius.get() > 0) }
@@ -83,7 +82,11 @@ fun CIImageView(
           is CIFileStatus.SndCancelled -> fileIcon(painterResource(MR.images.ic_close), MR.strings.icon_descr_file)
           is CIFileStatus.SndError -> fileIcon(painterResource(MR.images.ic_close), MR.strings.icon_descr_file)
           is CIFileStatus.SndWarning -> fileIcon(painterResource(MR.images.ic_warning_filled), MR.strings.icon_descr_file)
-          is CIFileStatus.RcvInvitation -> fileIcon(painterResource(MR.images.ic_arrow_downward), MR.strings.icon_descr_asked_to_receive)
+          is CIFileStatus.RcvInvitation ->
+            if (file.expired && fileSizeValid(file))
+              fileIcon(painterResource(MR.images.ic_close), MR.strings.icon_descr_file)
+            else
+              fileIcon(painterResource(MR.images.ic_arrow_downward), MR.strings.icon_descr_asked_to_receive)
           is CIFileStatus.RcvAccepted -> fileIcon(painterResource(MR.images.ic_more_horiz), MR.strings.icon_descr_waiting_for_image)
           is CIFileStatus.RcvTransfer -> progressIndicator()
           is CIFileStatus.RcvComplete -> {}
@@ -170,6 +173,15 @@ fun CIImageView(
     return null
   }
 
+  val view = LocalMultiplatformView()
+  if (file != null) {
+    OpenWhenReceivedEffect(file, smallView) {
+      hideKeyboard(view)
+      ModalManager.fullscreen.showCustomModal(animated = false) { close ->
+        ImageFullScreenView(imageProvider, close)
+      }
+    }
+  }
   Box(
     Modifier.layoutId(CHAT_IMAGE_LAYOUT_ID)
       .then(
@@ -210,19 +222,17 @@ fun CIImageView(
     val loaded = if (revealed) res.value else null
     if (loaded != null && file != null) {
       val (imageBitmap, data, _) = loaded
-      SimpleAndAnimatedImageView(data, imageBitmap, file, imageProvider, smallView, @Composable { painter, onClick -> ImageView(painter, image, onClick) })
+      SimpleAndAnimatedImageView(data, imageBitmap, file, imageProvider, smallView, blurred, @Composable { painter, onClick -> ImageView(painter, image, onClick) })
     } else {
       imageView(previewBitmap, onClick = {
         if (file != null) {
           when {
             file.fileStatus is CIFileStatus.RcvInvitation || file.fileStatus is CIFileStatus.RcvAborted ->
-              if (fileSizeValid(file, senderProfile)) {
-                receiveFile(file.fileId)
+              if (file.fileProhibited != null) {
+                showProhibitedFileAlert(file, file.fileProhibited)
               } else {
-                AlertManager.shared.showAlertMsg(
-                  generalGetString(MR.strings.large_file),
-                  String.format(generalGetString(MR.strings.contact_sent_large_file), formatBytes(getMaxFileSize(file.fileProtocol, senderProfile)))
-                )
+                chatModel.openWhenReceived(file, smallView)
+                receiveFile(file.fileId)
               }
             file.fileStatus is CIFileStatus.RcvAccepted ->
               when (file.fileProtocol) {
@@ -239,7 +249,7 @@ fun CIImageView(
                 FileProtocol.LOCAL -> {}
               }
             file.fileStatus is CIFileStatus.RcvError ->
-              showFileErrorAlert(file.fileStatus.rcvFileError)
+              showFileErrorAlert(file.fileStatus.rcvFileError, file)
             file.fileStatus is CIFileStatus.RcvWarning ->
               showFileErrorAlert(file.fileStatus.rcvFileError, temporary = true)
             file.fileStatus is CIFileStatus.SndError ->
@@ -281,5 +291,6 @@ expect fun SimpleAndAnimatedImageView(
   file: CIFile?,
   imageProvider: () -> ImageGalleryProvider,
   smallView: Boolean,
+  blurred: State<Boolean>,
   ImageView: @Composable (painter: Painter, onClick: () -> Unit) -> Unit
 )

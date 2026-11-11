@@ -44,7 +44,7 @@ import chat.simplex.common.views.chat.topPaddingToContent
 import chat.simplex.common.views.helpers.*
 import chat.simplex.common.views.usersettings.*
 import chat.simplex.common.BuildConfigCommon
-import chat.simplex.res.MR
+import chat.simplex.res.*
 import kotlinx.coroutines.*
 // ИМПОРТ НОВОГО КОМПОНЕНТА
 import chat.simplex.common.views.helpers.SmartLinkQRCode

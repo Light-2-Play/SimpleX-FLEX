@@ -24,8 +24,8 @@ import chat.simplex.common.ui.theme.*
 import chat.simplex.common.views.helpers.*
 import chat.simplex.common.views.newchat.*
 import chat.simplex.common.views.usersettings.SettingsActionItem
-import chat.simplex.res.MR
 import chat.simplex.common.views.helpers.SmartLinkQRCode
+import chat.simplex.res.*
 
 @Composable
 fun GroupLinkView(
