@@ -3520,19 +3520,18 @@ private fun BoxScope.BottomEndFloatingButton(
   val showArrow = showButtonWithArrow.value && !animatedScrollingInProgress.value
 
   if (showCounter || showArrow) {
-    // Дополнительные 58.dp поднимают кнопки выше кнопки молнии (Live Message)
-    val extraClearanceForLightning = 58.dp
+    // composeViewHeight уже содержит полную высоту нижней панели, поэтому добавляем только 8.dp зазора над ней
     Row(
       modifier = Modifier
         .padding(
           end = DEFAULT_PADDING,
-          bottom = DEFAULT_PADDING + composeViewHeight.value + extraClearanceForLightning
+          bottom = composeViewHeight.value + 8.dp
         )
         .align(Alignment.BottomEnd),
       horizontalArrangement = Arrangement.spacedBy(10.dp),
       verticalAlignment = Alignment.CenterVertically
     ) {
-      // 1. Кнопка нового сообщения (стоит левее стрелки, а если стрелки нет — занимает её место справа)
+      // 1. Кнопка нового сообщения (левее стрелки, или на её месте если стрелки нет)
       if (showCounter) {
         FloatingActionButton(
           onClick = onClickCounter,
@@ -3547,7 +3546,7 @@ private fun BoxScope.BottomEndFloatingButton(
             Text(
               unreadCountStr(unreadCount.value),
               color = MaterialTheme.colors.primary,
-              fontSize = 14.sp,
+              fontSize = 15.5.sp,
               fontWeight = FontWeight.SemiBold
             )
           }
