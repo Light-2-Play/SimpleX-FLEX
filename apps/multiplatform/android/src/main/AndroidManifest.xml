@@ -51,6 +51,7 @@
       android:enableOnBackInvokedCallback="false"
       android:theme="@style/Theme.SimpleX"
       tools:ignore="UnusedAttribute">
+      android:extractNativeLibs="true">
     <!--      android:localeConfig="@xml/locales_config"-->
 
     <!-- Главная активность приложения -->
