@@ -7,6 +7,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.*
 import androidx.compose.runtime.*
+import chat.simplex.res.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -48,7 +49,7 @@ fun FlexSettingsEntryTile(onClick: () -> Unit) {
     ) {
       Row(verticalAlignment = Alignment.CenterVertically) {
         Icon(
-          painter = painterResource(MR.images.ic_security),
+          painter = painterResource(MR.images.ic_admin_panel_settings),
           contentDescription = null,
           tint = MaterialTheme.colors.primary,
           modifier = Modifier.size(24.dp)
@@ -69,7 +70,7 @@ fun FlexSettingsEntryTile(onClick: () -> Unit) {
         }
       }
       Icon(
-        painter = painterResource(MR.images.ic_arrow_forward),
+        painter = painterResource(MR.images.ic_chevron_right),
         contentDescription = null,
         tint = MaterialTheme.colors.onSurface.copy(alpha = 0.4f),
         modifier = Modifier.size(18.dp)
@@ -115,7 +116,7 @@ fun FlexSettingsView(chatModel: ChatModel? = null) {
       FlexToggleItem(
         title = "USB Panic",
         subtitle = "Purge cache, clipboard and kill app on USB plug",
-        icon = painterResource(MR.images.ic_security),
+        icon = painterResource(MR.images.ic_admin_panel_settings),
         iconTint = if (usbPanicEnabled) Color.Red else MaterialTheme.colors.onSurface.copy(alpha = 0.6f),
         checked = usbPanicEnabled,
         activeTrackColor = Color.Red,
@@ -138,7 +139,7 @@ fun FlexSettingsView(chatModel: ChatModel? = null) {
       FlexToggleItem(
         title = "Advanced Haptics",
         subtitle = "Tactile vibration and feedback across UI",
-        icon = painterResource(MR.images.ic_notifications),
+        icon = painterResource(MR.images.ic_notification_important_filled),
         iconTint = if (advancedHapticsEnabled) Color(0xFFFFA000) else MaterialTheme.colors.onSurface.copy(alpha = 0.6f),
         checked = advancedHapticsEnabled,
         onCheckedChange = { enabled ->
