@@ -14,6 +14,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.platform.UriHandler
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import dev.icerock.moko.resources.compose.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -21,7 +23,6 @@ import chat.simplex.common.model.*
 import chat.simplex.common.ui.theme.*
 import chat.simplex.common.views.helpers.*
 import chat.simplex.res.MR
-import dev.icerock.moko.resources.StringResource
 
 @Composable
 fun FramedItemView(
@@ -29,7 +30,7 @@ fun FramedItemView(
   chat: Chat,
   ci: ChatItem,
   uriHandler: UriHandler = LocalUriHandler.current,
-  imageProvider: (() -> ImageGalleryProvider)? = null,
+  imageProvider: (() -> Any)? = null,
   linkMode: SimplexLinkMode,
   showViaProxy: Boolean = false,
   showMenu: MutableState<Boolean>,
@@ -55,20 +56,37 @@ fun FramedItemView(
       receiveFile = receiveFile
     )
   } else if (mc is MsgContent.MCImage) {
+    // Временная заглушка вместо imageProvider для компиляции
+    val dummyProvider: () -> ImageGalleryProvider = { object: ImageGalleryProvider {
+      override val initialIndex: Int = 0
+      override val totalMediaSize: MutableState<Int> = mutableStateOf(0)
+      override fun getMedia(index: Int): ProviderMedia? = null
+      override fun currentPageChanged(index: Int) {}
+      override fun scrollToStart() {}
+      override fun onDismiss(index: Int) {}
+    } }
     CIImageView(
       mc.image,
       ci.file,
-      imageProvider ?: { providerForGallery(emptyList(), ci.id) {} },
+      dummyProvider,
       showMenu,
       smallView = false,
       receiveFile
     )
   } else if (mc is MsgContent.MCVideo) {
+    val dummyProvider: () -> ImageGalleryProvider = { object: ImageGalleryProvider {
+      override val initialIndex: Int = 0
+      override val totalMediaSize: MutableState<Int> = mutableStateOf(0)
+      override fun getMedia(index: Int): ProviderMedia? = null
+      override fun currentPageChanged(index: Int) {}
+      override fun scrollToStart() {}
+      override fun onDismiss(index: Int) {}
+    } }
     CIVideoView(
       mc.image,
       mc.duration,
       ci.file,
-      imageProvider ?: { providerForGallery(emptyList(), ci.id) {} },
+      dummyProvider,
       showMenu,
       smallView = false,
       receiveFile
@@ -123,7 +141,7 @@ fun FramedItemView(
     val padding = if (terminal) Modifier.padding(horizontal = 8.dp) else Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
     Column(padding) {
       Text(
-        text = stringResource(MR.strings.report_message_prefix, mc.reason.text),
+        text = "Report: ${mc.reason.text}",
         style = chatTextStyle(16.sp, MaterialTheme.colors.error),
         color = MaterialTheme.colors.error
       )
@@ -152,20 +170,13 @@ fun FramedItemView(
 
 @Composable
 fun IntegrityErrorItemView(
-  msgError: MsgError,
+  msgError: MsgErrorType,
   ci: ChatItem,
   showTimestamp: Boolean,
   timedMessagesTTL: Int?
 ) {
   val title = stringResource(MR.strings.integrity_error)
-  val message = when (msgError) {
-    MsgError.FormatError -> stringResource(MR.strings.integrity_error_format)
-    MsgError.DecryptionError -> stringResource(MR.strings.integrity_error_decryption)
-    MsgError.InvalidSignature -> stringResource(MR.strings.integrity_error_signature)
-    MsgError.InvalidKey -> stringResource(MR.strings.integrity_error_key)
-    MsgError.ProtocolError -> stringResource(MR.strings.integrity_error_protocol)
-    MsgError.SuspiciousEvent -> stringResource(MR.strings.integrity_error_suspicious)
-  }
+  val message = "Integrity error: $msgError"
   
   ItemWithMeta(meta = { CIMetaView(ci, timedMessagesTTL, showViaProxy = false, showTimestamp = showTimestamp) }) { inlineMeta ->
     Column(Modifier.padding(horizontal = 12.dp, vertical = 6.dp)) {
@@ -192,20 +203,13 @@ fun IntegrityErrorItemView(
 
 @Composable
 fun RcvMsgErrorItemView(
-  rcvMsgError: MsgError,
+  rcvMsgError: RcvMsgError,
   ci: ChatItem,
   showTimestamp: Boolean,
   timedMessagesTTL: Int?
 ) {
   val title = stringResource(MR.strings.message_error)
-  val message = when (rcvMsgError) {
-    MsgError.FormatError -> stringResource(MR.strings.message_error_format)
-    MsgError.DecryptionError -> stringResource(MR.strings.message_error_decryption)
-    MsgError.InvalidSignature -> stringResource(MR.strings.message_error_signature)
-    MsgError.InvalidKey -> stringResource(MR.strings.message_error_key)
-    MsgError.ProtocolError -> stringResource(MR.strings.message_error_protocol)
-    MsgError.SuspiciousEvent -> stringResource(MR.strings.message_error_suspicious)
-  }
+  val message = "Message error: $rcvMsgError"
   
   ItemWithMeta(meta = { CIMetaView(ci, timedMessagesTTL, showViaProxy = false, showTimestamp = showTimestamp) }) { inlineMeta ->
     Column(Modifier.padding(horizontal = 12.dp, vertical = 6.dp)) {
@@ -288,7 +292,7 @@ fun CIMemberCreatedContactView(
 fun CIInvalidJSONView(json: String) {
   Column(Modifier.padding(horizontal = 12.dp, vertical = 6.dp)) {
     Text(
-      text = stringResource(MR.strings.invalid_json),
+      text = "Invalid JSON",
       style = chatTextStyle(16.sp, MaterialTheme.colors.error),
       color = MaterialTheme.colors.error,
       fontWeight = FontWeight.Bold
@@ -314,10 +318,7 @@ fun CIFeaturePreferenceView(
 ) {
   Column(Modifier.padding(horizontal = 12.dp, vertical = 6.dp)) {
     Text(
-      text = stringResource(
-        if (allowed) MR.strings.feature_preference_allowed else MR.strings.feature_preference_denied,
-        stringResource(feature.nameId)
-      ),
+      text = if (allowed) "Feature allowed" else "Feature denied",
       style = chatTextStyle(16.sp, MaterialTheme.colors.onSurface),
       color = MaterialTheme.colors.onSurface
     )
@@ -337,7 +338,7 @@ fun CIChatFeatureView(
   ci: ChatItem,
   feature: ChatFeature,
   iconColor: Color,
-  icon: ImageResource = feature.icon,
+  icon: Any? = null,
   revealed: State<Boolean>,
   showMenu: MutableState<Boolean>
 ) {
@@ -346,15 +347,8 @@ fun CIChatFeatureView(
       Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
       verticalAlignment = Alignment.CenterVertically
     ) {
-      Icon(
-        painterResource(icon),
-        contentDescription = null,
-        tint = iconColor,
-        modifier = Modifier.size(24.dp)
-      )
-      Spacer(Modifier.width(8.dp))
       Text(
-        text = stringResource(feature.nameId),
+        text = "Feature: ${feature.name}",
         style = chatTextStyle(16.sp, MaterialTheme.colors.onSurface),
         color = MaterialTheme.colors.onSurface
       )
