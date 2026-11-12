@@ -1116,10 +1116,12 @@ val chatInfo = remember(chat) { derivedStateOf<ChatInfo?> { chat.value?.chatInfo
                 Box(Modifier.height(AppBarHeight * fontSizeSqrtMultiplier))
               }
             }
-          } else {
+        } else {
+            val density = LocalDensity.current
             Box(
               Modifier
                 .align(Alignment.BottomCenter)
+                .onSizeChanged { composeViewHeight.value = with(density) { it.height.toDp() } }
                 .imePadding()
                 .navigationBarsPadding()
                 .then(if (oneHandUI.value && chatBottomBar.value) Modifier.padding(bottom = AppBarHeight * fontSizeSqrtMultiplier) else Modifier)
@@ -2868,10 +2870,10 @@ fun BoxScope.FloatingButtons(
       allowToShowBottomWithCounter.value = shouldShow
       shouldShow && allow
   } }
-  val allowToShowBottomWithArrow = remember { mutableStateOf(true) }
+val allowToShowBottomWithArrow = remember { mutableStateOf(true) }
   val showBottomButtonWithArrow = remember { derivedStateOf {
     val allow = allowToShowBottomWithArrow.value
-    val shouldShow = !showBottomButtonWithCounter.value && listState.value.firstVisibleItemIndex != 0
+    val shouldShow = listState.value.firstVisibleItemIndex != 0
     allowToShowBottomWithArrow.value = shouldShow
     shouldShow && allow
   } }
@@ -2886,7 +2888,15 @@ fun BoxScope.FloatingButtons(
     requestedBottomScroll,
     animatedScrollingInProgress,
     composeViewHeight,
-    onClick = {
+    onClickArrow = {
+      if (loadingBottomItems.value || !lastItemsLoaded(chatsCtx)) {
+        requestedTopScroll.value = false
+        requestedBottomScroll.value = true
+      } else {
+        scrollToBottom()
+      }
+    },
+    onClickCounter = {
       if (loadingBottomItems.value || !lastItemsLoaded(chatsCtx)) {
         requestedTopScroll.value = false
         requestedBottomScroll.value = true
@@ -3497,7 +3507,8 @@ private fun BoxScope.BottomEndFloatingButton(
   requestedBottomScroll: State<Boolean>,
   animatedScrollingInProgress: State<Boolean>,
   composeViewHeight: State<Dp>,
-  onClick: () -> Unit
+  onClickArrow: () -> Unit,
+  onClickCounter: () -> Unit = onClickArrow
 ) {
   val fabBgColor = if (MaterialTheme.colors.isLight) {
     androidx.compose.ui.graphics.lerp(MaterialTheme.colors.surface, MaterialTheme.colors.primary, 0.07f)
@@ -3505,47 +3516,65 @@ private fun BoxScope.BottomEndFloatingButton(
     androidx.compose.ui.graphics.lerp(MaterialTheme.colors.surface, MaterialTheme.colors.primary, 0.11f)
   }
 
-  when {
-    showButtonWithCounter.value && !animatedScrollingInProgress.value -> {
-      FloatingActionButton(
-        onClick = onClick,
-        elevation = FloatingActionButtonDefaults.elevation(1.dp, 2.dp, 0.dp, 0.dp),
-        modifier = Modifier.padding(end = DEFAULT_PADDING, bottom = DEFAULT_PADDING + composeViewHeight.value).align(Alignment.BottomEnd).size(48.dp),
-        backgroundColor = fabBgColor,
-        shape = RoundedCornerShape(percent = 50)
-      ) {
-        if (requestedBottomScroll.value) {
-          LoadingProgressIndicator()
-        } else {
-          Text(
-            unreadCountStr(unreadCount.value),
-            color = MaterialTheme.colors.primary,
-            fontSize = 14.sp,
-            fontWeight = FontWeight.SemiBold
-          )
+  val showCounter = showButtonWithCounter.value && !animatedScrollingInProgress.value
+  val showArrow = showButtonWithArrow.value && !animatedScrollingInProgress.value
+
+  if (showCounter || showArrow) {
+    // Дополнительные 58.dp поднимают кнопки выше кнопки молнии (Live Message)
+    val extraClearanceForLightning = 58.dp
+    Row(
+      modifier = Modifier
+        .padding(
+          end = DEFAULT_PADDING,
+          bottom = DEFAULT_PADDING + composeViewHeight.value + extraClearanceForLightning
+        )
+        .align(Alignment.BottomEnd),
+      horizontalArrangement = Arrangement.spacedBy(10.dp),
+      verticalAlignment = Alignment.CenterVertically
+    ) {
+      // 1. Кнопка нового сообщения (стоит левее стрелки, а если стрелки нет — занимает её место справа)
+      if (showCounter) {
+        FloatingActionButton(
+          onClick = onClickCounter,
+          elevation = FloatingActionButtonDefaults.elevation(1.dp, 2.dp, 0.dp, 0.dp),
+          modifier = Modifier.size(48.dp),
+          backgroundColor = fabBgColor,
+          shape = RoundedCornerShape(percent = 50)
+        ) {
+          if (requestedBottomScroll.value && !showArrow) {
+            LoadingProgressIndicator()
+          } else {
+            Text(
+              unreadCountStr(unreadCount.value),
+              color = MaterialTheme.colors.primary,
+              fontSize = 14.sp,
+              fontWeight = FontWeight.SemiBold
+            )
+          }
+        }
+      }
+
+      // 2. Кнопка прокрутки вниз (стрелка)
+      if (showArrow) {
+        FloatingActionButton(
+          onClick = onClickArrow,
+          elevation = FloatingActionButtonDefaults.elevation(1.dp, 2.dp, 0.dp, 0.dp),
+          modifier = Modifier.size(48.dp),
+          backgroundColor = fabBgColor,
+          shape = RoundedCornerShape(percent = 50)
+        ) {
+          if (requestedBottomScroll.value) {
+            LoadingProgressIndicator()
+          } else {
+            Icon(
+              painter = painterResource(MR.images.ic_keyboard_arrow_down),
+              contentDescription = null,
+              tint = MaterialTheme.colors.primary
+            )
+          }
         }
       }
     }
-    showButtonWithArrow.value && !animatedScrollingInProgress.value -> {
-      FloatingActionButton(
-        onClick = onClick,
-        elevation = FloatingActionButtonDefaults.elevation(1.dp, 2.dp, 0.dp, 0.dp),
-        modifier = Modifier.padding(end = DEFAULT_PADDING, bottom = DEFAULT_PADDING + composeViewHeight.value).align(Alignment.BottomEnd).size(48.dp),
-        backgroundColor = fabBgColor,
-        shape = RoundedCornerShape(percent = 50)
-      ) {
-        if (requestedBottomScroll.value) {
-          LoadingProgressIndicator()
-        } else {
-          Icon(
-            painter = painterResource(MR.images.ic_keyboard_arrow_down),
-            contentDescription = null,
-            tint = MaterialTheme.colors.primary
-          )
-        }
-      }
-    }
-    else -> {}
   }
 }
 
