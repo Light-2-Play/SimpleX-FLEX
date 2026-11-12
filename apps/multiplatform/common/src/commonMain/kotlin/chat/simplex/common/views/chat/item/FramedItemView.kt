@@ -41,6 +41,9 @@ fun FramedItemView(
   val terminal = LocalTerminalLayout.current
   val sent = ci.chatDir.sent
 
+  // Увеличенный на 10% размер шрифта (16.sp * 1.1 = 17.6.sp) с учётом системного множителя
+  val msgFontSize = 17.6.sp * fontSizeMultiplier
+
   // M3 Expressive цвет пузыря сообщения
   val isLight = MaterialTheme.colors.isLight
   val bubbleBgColor = if (terminal) {
@@ -127,7 +130,8 @@ fun FramedItemView(
               SelectionContainer {
                 Text(
                   text = mc.text,
-                  style = chatTextStyle(16.sp, MaterialTheme.colors.onSurface),
+                  fontSize = msgFontSize,
+                  style = chatTextStyle(msgFontSize, MaterialTheme.colors.onSurface),
                   color = MaterialTheme.colors.onSurface
                 )
               }
@@ -152,7 +156,8 @@ fun FramedItemView(
                 SelectionContainer {
                   Text(
                     text = mc.text,
-                    style = chatTextStyle(16.sp, MaterialTheme.colors.onSurface),
+                    fontSize = msgFontSize,
+                    style = chatTextStyle(msgFontSize, MaterialTheme.colors.onSurface),
                     color = MaterialTheme.colors.onSurface
                   )
                 }
@@ -174,7 +179,8 @@ fun FramedItemView(
             SelectionContainer {
               Text(
                 text = mc.text,
-                style = chatTextStyle(16.sp, MaterialTheme.colors.onSurface),
+                fontSize = msgFontSize,
+                style = chatTextStyle(msgFontSize, MaterialTheme.colors.onSurface),
                 color = MaterialTheme.colors.onSurface
               )
             }
@@ -194,7 +200,8 @@ fun FramedItemView(
                 SelectionContainer {
                   Text(
                     text = mc.text,
-                    style = chatTextStyle(16.sp, MaterialTheme.colors.onSurface),
+                    fontSize = msgFontSize,
+                    style = chatTextStyle(msgFontSize, MaterialTheme.colors.onSurface),
                     color = MaterialTheme.colors.onSurface
                   )
                 }
@@ -219,14 +226,16 @@ fun FramedItemView(
         Column(padding) {
           Text(
             text = "Report: ${mc.reason.text}",
-            style = chatTextStyle(16.sp, MaterialTheme.colors.error),
+            fontSize = msgFontSize,
+            style = chatTextStyle(msgFontSize, MaterialTheme.colors.error),
             color = MaterialTheme.colors.error
           )
           Spacer(Modifier.height(4.dp))
           SelectionContainer {
             Text(
               text = mc.text,
-              style = chatTextStyle(16.sp, MaterialTheme.colors.onSurface),
+              fontSize = msgFontSize,
+              style = chatTextStyle(msgFontSize, MaterialTheme.colors.onSurface),
               color = MaterialTheme.colors.onSurface
             )
           }
@@ -239,11 +248,28 @@ fun FramedItemView(
         Column(padding) {
           Text(
             text = ci.content.text.ifEmpty { "Unsupported message" },
-            style = chatTextStyle(16.sp, MaterialTheme.colors.secondary),
+            fontSize = msgFontSize,
+            style = chatTextStyle(msgFontSize, MaterialTheme.colors.secondary),
             color = MaterialTheme.colors.secondary
           )
         }
       }
     }
+  }
+}
+
+@Preview
+@Composable
+fun PreviewFramedItemView() {
+  SimpleXTheme {
+    val showMenu = remember { mutableStateOf(false) }
+    FramedItemView(
+      chatsCtx = ChatModel.ChatsContext(secondaryContextFilter = null),
+      chat = Chat.sampleData,
+      ci = ChatItem.getSampleData(1, CIDirection.DirectRcv(), previewDate, "Hello world"),
+      linkMode = SimplexLinkMode.DESCRIPTION,
+      showMenu = showMenu,
+      receiveFile = {}
+    )
   }
 }
