@@ -24,6 +24,7 @@ import dev.icerock.moko.resources.compose.painterResource
 import chat.simplex.common.platform.HapticPattern
 import chat.simplex.common.platform.RichHaptics
 import chat.simplex.res.MR
+import chat.simplex.res.*
 
 private val SecurityGreen = Color(0xFF2E7D32)
 private val SecurityGreenLight = Color(0xFFE8F5E9)
@@ -74,7 +75,7 @@ fun ExpressiveVerificationQRCodeCard(
         horizontalArrangement = Arrangement.spacedBy(8.dp)
       ) {
         Icon(
-          painter = painterResource(MR.images.ic_security),
+          painter = painterResource(MR.images.ic_admin_panel_settings),
           contentDescription = null,
           tint = badgeContentColor,
           modifier = Modifier.size(16.dp)
@@ -161,7 +162,7 @@ fun ExpressiveVerificationQRCodeCard(
             elevation = null
           ) {
             Icon(
-              painter = painterResource(MR.images.ic_check),
+              painter = painterResource(MR.images.ic_check_circle),
               contentDescription = null,
               modifier = Modifier.size(18.dp)
             )
@@ -193,7 +194,7 @@ fun ExpressiveVerificationQRCodeCard(
             )
           ) {
             Icon(
-              painter = painterResource(MR.images.ic_qr_code),
+              painter = painterResource(MR.images.ic_qr_code_2),
               contentDescription = null,
               modifier = Modifier.size(18.dp)
             )
@@ -225,7 +226,7 @@ fun ExpressiveVerificationQRCodeCard(
             )
           ) {
             Icon(
-              painter = painterResource(MR.images.ic_shield),
+              painter = painterResource(MR.images.ic_admin_panel_settings),
               contentDescription = null,
               tint = MaterialTheme.colors.error,
               modifier = Modifier.size(18.dp)
