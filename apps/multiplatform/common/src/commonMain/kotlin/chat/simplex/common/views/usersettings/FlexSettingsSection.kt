@@ -49,7 +49,7 @@ fun FlexSettingsEntryTile(onClick: () -> Unit) {
     ) {
       Row(verticalAlignment = Alignment.CenterVertically) {
         Icon(
-          painter = painterResource(MR.images.ic_admin_panel_settings),
+          painter = painterResource(MR.images.ic_lock),
           contentDescription = null,
           tint = MaterialTheme.colors.primary,
           modifier = Modifier.size(24.dp)
@@ -116,7 +116,7 @@ fun FlexSettingsView(chatModel: ChatModel? = null) {
       FlexToggleItem(
         title = "USB Panic",
         subtitle = "Purge cache, clipboard and kill app on USB plug",
-        icon = painterResource(MR.images.ic_admin_panel_settings),
+        icon = painterResource(MR.images.ic_lock),
         iconTint = if (usbPanicEnabled) Color.Red else MaterialTheme.colors.onSurface.copy(alpha = 0.6f),
         checked = usbPanicEnabled,
         activeTrackColor = Color.Red,
