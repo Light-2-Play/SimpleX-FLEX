@@ -75,7 +75,7 @@ fun ExpressiveVerificationQRCodeCard(
         horizontalArrangement = Arrangement.spacedBy(8.dp)
       ) {
         Icon(
-          painter = painterResource(MR.images.ic_admin_panel_settings),
+          painter = painterResource(MR.images.ic_lock),
           contentDescription = null,
           tint = badgeContentColor,
           modifier = Modifier.size(16.dp)
@@ -194,7 +194,7 @@ fun ExpressiveVerificationQRCodeCard(
             )
           ) {
             Icon(
-              painter = painterResource(MR.images.ic_qr_code_2),
+              painter = painterResource(MR.images.ic_qr_code),
               contentDescription = null,
               modifier = Modifier.size(18.dp)
             )
@@ -226,7 +226,7 @@ fun ExpressiveVerificationQRCodeCard(
             )
           ) {
             Icon(
-              painter = painterResource(MR.images.ic_admin_panel_settings),
+              painter = painterResource(MR.images.ic_lock),
               contentDescription = null,
               tint = MaterialTheme.colors.error,
               modifier = Modifier.size(18.dp)
