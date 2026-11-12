@@ -1205,11 +1205,15 @@ fun ComposeView(
 
   @Composable
   fun MsgNotAllowedView(reason: String, icon: Painter) {
-    val color = MaterialTheme.appColors.receivedQuote
-    Row(Modifier.fillMaxWidth().background(color).padding(horizontal = DEFAULT_PADDING_HALF, vertical = DEFAULT_PADDING_HALF * 1.5f), verticalAlignment = Alignment.CenterVertically) {
+    Row(
+      Modifier
+        .fillMaxWidth()
+        .padding(horizontal = 14.dp, vertical = 8.dp),
+      verticalAlignment = Alignment.CenterVertically
+    ) {
       Icon(icon, null, tint = MaterialTheme.colors.secondary)
-      Spacer(Modifier.width(DEFAULT_PADDING_HALF))
-      Text(reason, fontStyle = FontStyle.Italic)
+      Spacer(Modifier.width(8.dp))
+      Text(reason, fontStyle = FontStyle.Italic, color = MaterialTheme.colors.secondary)
     }
   }
 
@@ -1225,9 +1229,25 @@ fun ComposeView(
     }
 
     if (reportText != null) {
-      val color = MaterialTheme.appColors.receivedQuote
-      Row(Modifier.fillMaxWidth().background(color).padding(horizontal = DEFAULT_PADDING_HALF, vertical = DEFAULT_PADDING_HALF * 1.5f), verticalAlignment = Alignment.CenterVertically) {
-        Text(reportText, fontStyle = FontStyle.Italic, fontSize = 12.sp)
+      val tonalBg = if (MaterialTheme.colors.isLight) {
+        androidx.compose.ui.graphics.lerp(MaterialTheme.colors.surface, MaterialTheme.colors.primary, 0.07f)
+      } else {
+        androidx.compose.ui.graphics.lerp(MaterialTheme.colors.surface, MaterialTheme.colors.primary, 0.11f)
+      }
+      Surface(
+        modifier = Modifier
+          .fillMaxWidth()
+          .padding(horizontal = 8.dp, vertical = 3.dp)
+          .clip(RoundedCornerShape(18.dp)),
+        color = tonalBg,
+        elevation = 0.dp
+      ) {
+        Row(
+          Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 8.dp),
+          verticalAlignment = Alignment.CenterVertically
+        ) {
+          Text(reportText, fontStyle = FontStyle.Italic, fontSize = 12.sp, color = MaterialTheme.colors.secondary)
+        }
       }
     }
   }
