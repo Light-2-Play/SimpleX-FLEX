@@ -119,7 +119,7 @@ fun TemporaryContentProfileSection() {
                         contentAlignment = Alignment.Center
                     ) {
                         Icon(
-                            painter = painterResource(MR.images.ic_timer),
+                            painter = painterResource(MR.images.ic_history),
                             contentDescription = null,
                             tint = primary,
                             modifier = Modifier.size(20.dp)
@@ -153,7 +153,7 @@ fun TemporaryContentProfileSection() {
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Icon(
-                            painter = painterResource(MR.images.ic_add),
+                            painter = painterResource(MR.images.ic_person_add),
                             contentDescription = "Add Temporary Content",
                             tint = MaterialTheme.colors.onPrimary,
                             modifier = Modifier.size(16.dp)
@@ -246,7 +246,7 @@ private fun AddStoryCardTile(onClick: () -> Unit) {
       contentAlignment = Alignment.Center
     ) {
       Icon(
-        painter = painterResource(MR.images.ic_add),
+        painter = painterResource(MR.images.ic_person_add),
         contentDescription = null,
         tint = primary,
         modifier = Modifier.size(28.dp)
@@ -302,7 +302,7 @@ private fun TemporaryStoryTile(
       } else {
         Icon(
           painter = painterResource(
-            if (item.mediaType == TemporaryMediaType.VIDEO) MR.images.ic_videocam else MR.images.ic_image
+            if (item.mediaType == TemporaryMediaType.VIDEO) MR.images.ic_keyboard_voice else MR.images.ic_draft
           ),
           contentDescription = null,
           tint = Color.White.copy(alpha = 0.85f),
@@ -321,7 +321,7 @@ private fun TemporaryStoryTile(
           contentAlignment = Alignment.Center
         ) {
           Icon(
-            painter = painterResource(MR.images.ic_play_arrow_filled),
+            painter = painterResource(MR.images.ic_play_circle_filled),
             contentDescription = null,
             tint = Color.White,
             modifier = Modifier.size(12.dp)
@@ -420,7 +420,7 @@ private fun AddTemporaryContentDialog(
               ) {
                 Icon(
                   painter = painterResource(
-                    if (type == TemporaryMediaType.PHOTO) MR.images.ic_image else MR.images.ic_videocam
+                    if (type == TemporaryMediaType.PHOTO) MR.images.ic_draft else MR.images.ic_keyboard_voice
                   ),
                   contentDescription = null,
                   tint = if (isSelected) MaterialTheme.colors.onPrimary else primary,
@@ -462,7 +462,7 @@ private fun AddTemporaryContentDialog(
             horizontalArrangement = Arrangement.Center
           ) {
             Icon(
-              painter = painterResource(if (selectedFilePath != null) MR.images.ic_check_filled else MR.images.ic_upload_file),
+              painter = painterResource(if (selectedFilePath != null) MR.images.ic_check_circle else MR.images.ic_draft),
               contentDescription = null,
               tint = primary,
               modifier = Modifier.size(22.dp)
@@ -794,7 +794,7 @@ fun TemporaryContentStoryViewer(
                             verticalAlignment = Alignment.CenterVertically,
                             modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
                         ) {
-                            Icon(painterResource(MR.images.ic_timer), null, tint = Color.White, modifier = Modifier.size(16.dp))
+                            Icon(painterResource(MR.images.ic_history), null, tint = Color.White, modifier = Modifier.size(16.dp))
                             Spacer(Modifier.width(6.dp))
                             val authorLabel = currentItem.authorDisplayName ?: "Contact"
                             Text("$authorLabel • ${currentItem.remainingTimeText(now)}", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold)
@@ -815,7 +815,7 @@ fun TemporaryContentStoryViewer(
                                     if (items.size <= 1) onDismiss()
                                 }
                             ) {
-                                Icon(painterResource(MR.images.ic_delete), null, tint = Color(0xFFFF5252), modifier = Modifier.size(18.dp))
+                                Icon(painterResource(MR.images.ic_delete_forever), null, tint = Color(0xFFFF5252), modifier = Modifier.size(18.dp))
                             }
                         }
 
@@ -990,7 +990,7 @@ fun AllStoriesFeedView(close: () -> Unit) {
                         contentAlignment = Alignment.Center
                     ) {
                         Icon(
-                            painter = painterResource(if (myStories.isNotEmpty()) MR.images.ic_play_arrow_filled else MR.images.ic_add),
+                            painter = painterResource(if (myStories.isNotEmpty()) MR.images.ic_play_circle_filled else MR.images.ic_person_add),
                             contentDescription = null,
                             tint = if (myStories.isNotEmpty()) Color.White else primary,
                             modifier = Modifier.size(24.dp)
@@ -1015,7 +1015,7 @@ fun AllStoriesFeedView(close: () -> Unit) {
                             onClick = handleAddClick,
                             modifier = Modifier.background(primary.copy(alpha = 0.1f), CircleShape)
                         ) {
-                            Icon(painterResource(MR.images.ic_add), null, tint = primary)
+                            Icon(painterResource(MR.images.ic_person_add), null, tint = primary)
                         }
                     }
                 }
@@ -1076,7 +1076,7 @@ fun AllStoriesFeedView(close: () -> Unit) {
                             contentAlignment = Alignment.Center
                         ) {
                             Icon(
-                                painter = painterResource(MR.images.ic_person),
+                                painter = painterResource(MR.images.ic_account_circle),
                                 contentDescription = null,
                                 tint = Color.White.copy(alpha = 0.7f),
                                 modifier = Modifier.size(28.dp)
