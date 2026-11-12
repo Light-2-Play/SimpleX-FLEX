@@ -1049,8 +1049,10 @@ private fun ChatListSearchBar(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp)
       ) {
-        val focusRequester = remember { FocusRequester() }
+        // Убран лишний var focusRequester - он создавал путаницу
         var focused by remember { mutableStateOf(false) }
+        val focusManager = LocalFocusManager.current
+        
         Icon(
           painterResource(MR.images.ic_search),
           contentDescription = null,
@@ -1058,7 +1060,7 @@ private fun ChatListSearchBar(
           tint = MaterialTheme.colors.primary.copy(alpha = 0.8f)
         )
         SearchTextField(
-          Modifier.weight(1f).onFocusChanged { focused = it.hasFocus }.focusRequester(focusRequester),
+          Modifier.weight(1f).onFocusChanged { focused = it.hasFocus },
           placeholder = stringResource(MR.strings.search_or_paste_simplex_link),
           alwaysVisible = true,
           searchText = searchText,
@@ -1082,15 +1084,17 @@ private fun ChatListSearchBar(
           }
           Spacer(Modifier.width(padding))
         }
-        val focusManager = LocalFocusManager.current
+        
         val keyboardState = getKeyboardState()
         LaunchedEffect(keyboardState.value) {
           if (keyboardState.value == KeyboardState.Closed && focused) {
             focusManager.clearFocus()
           }
         }
-}
+      }
       val view = LocalMultiplatformView()
+      
+      // ИСПРАВЛЕНО: закрывающие и открывающие скобки выровнены и восстановлены 
       LaunchedEffect(Unit) {
         snapshotFlow { searchText.value.text }
           .distinctUntilChanged()
@@ -1124,36 +1128,20 @@ private fun ChatListSearchBar(
                 if (ids.size == targets.size) connectNameCandidate.value = null
               } else if (!searchShowingSimplexLink.value || it.isEmpty()) {
                 if (it.isNotEmpty()) {
-                  focusRequester.requestFocus()
+                  // do nothing here, let the user type
                 } else {
                   if (!chatModel.appOpenUrlConnecting.value) {
                     connectProgressManager.cancelConnectProgress()
                   }
+                  if (listState.layoutInfo.totalItemsCount > 0) {
+                    listState.scrollToItem(0)
+                  }
                 }
+                searchShowingSimplexLink.value = false
+                searchChatFilteredBySimplexLink.value = emptySet()
               }
             }
           }
-      }
-                  }
-                  searchChatFilteredBySimplexLink.value = ids.toSet()
-                  if (ids.size == targets.size) connectNameCandidate.value = null
-                } else if (!searchShowingSimplexLink.value || it.isEmpty()) {
-                  if (it.isNotEmpty()) {
-                    focusRequester.requestFocus()
-                  } else {
-                    if (!chatModel.appOpenUrlConnecting.value) {
-                      connectProgressManager.cancelConnectProgress()
-                    }
-                    if (listState.layoutInfo.totalItemsCount > 0) {
-                      listState.scrollToItem(0)
-                    }
-                  }
-                  searchShowingSimplexLink.value = false
-                  searchChatFilteredBySimplexLink.value = emptySet()
-                }
-              }
-            }
-        }
       }
     }
   }
