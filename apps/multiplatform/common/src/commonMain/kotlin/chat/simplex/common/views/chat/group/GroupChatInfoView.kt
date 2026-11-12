@@ -695,6 +695,7 @@ fun ModalData.GroupChatInfoLayout(
       item {
         if (!groupInfo.useRelays) {
           SectionView {
+            var anyTopSectionRowShow = false
             if (groupInfo.canAddMembers && groupInfo.businessChat == null) {
               anyTopSectionRowShow = true
               if (groupLink == null) {
@@ -715,15 +716,16 @@ fun ModalData.GroupChatInfoLayout(
                 }
               }
             }
-            if (showUserSupportChat) {
+            if (groupInfo.membership.memberActive &&
+                ((groupInfo.fullGroupPreferences.support.on && groupInfo.membership.memberRole < GroupMemberRole.Moderator)
+                || groupInfo.membership.supportChat != null)) {
               anyTopSectionRowShow = true
               UserSupportChatButton(chat, groupInfo, scrollToItemId)
             }
+            if (anyTopSectionRowShow) {
+              SectionDividerSpaced()
+            }
           }
-        }
-        
-        if (anyTopSectionRowShow) {
-          SectionDividerSpaced()
         }
         
         SectionView {
