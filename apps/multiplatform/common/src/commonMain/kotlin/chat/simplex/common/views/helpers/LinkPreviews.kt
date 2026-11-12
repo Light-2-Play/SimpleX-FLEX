@@ -148,7 +148,7 @@ suspend fun getLinkPreview(url: String): LinkPreview? {
 fun ComposeLinkView(linkPreview: LinkPreview?, cancelPreview: () -> Unit, cancelEnabled: Boolean) {
   val sentColor = MaterialTheme.appColors.sentMessage
   Row(
-    Modifier.fillMaxWidth().padding(top = 8.dp).background(sentColor),
+    Modifier.fillMaxWidth().padding(vertical = 4.dp),
     verticalAlignment = Alignment.CenterVertically
   ) {
     if (linkPreview == null) {
