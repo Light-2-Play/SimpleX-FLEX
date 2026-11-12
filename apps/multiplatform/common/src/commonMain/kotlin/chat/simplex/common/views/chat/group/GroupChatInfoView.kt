@@ -678,8 +678,10 @@ fun ModalData.GroupChatInfoLayout(
           }
         }
         
-        if (groupInfo.isOwner && groupLink != null) {
-          SectionDividerSpaced()
+       if (groupInfo.isOwner && groupLink != null) {
+          if (groupInfo.useRelays && anyTopSectionRowShow) {
+            SectionDividerSpaced()
+          }
           val channelDomain = groupInfo.groupProfile.publicGroup?.publicGroupAccess?.groupDomainClaim?.shortName
           SectionView(title = if (channelDomain != null) generalGetString(MR.strings.channel_simplex_name) else null) {
             SettingsActionItem(
@@ -689,42 +691,45 @@ fun ModalData.GroupChatInfoLayout(
               iconColor = MaterialTheme.colors.secondary
             )
           }
+          SectionDividerSpaced()
         }
       }
 
       item {
         if (!groupInfo.useRelays) {
-          SectionView {
-            var anyTopSectionRowShow = false
-            if (groupInfo.canAddMembers && groupInfo.businessChat == null) {
-              anyTopSectionRowShow = true
-              if (groupLink == null) {
-                CreateGroupLinkButton(manageGroupLink)
-              } else {
-                GroupLinkButton(manageGroupLink)
-              }
-            }
-            if (groupInfo.businessChat == null && groupInfo.membership.memberRole >= GroupMemberRole.Moderator) {
-              anyTopSectionRowShow = true
-              MemberSupportButton(chat, openMemberSupport)
-            }
-            if (groupInfo.canModerate) {
-              anyTopSectionRowShow = true
-              GroupReportsButton(chat) {
-                scope.launch {
-                  showGroupReportsView(chatModel.chatId, scrollToItemId, chat.chatInfo)
+          val showAddLink = groupInfo.canAddMembers && groupInfo.businessChat == null
+          val showMemberSupport = groupInfo.businessChat == null && groupInfo.membership.memberRole >= GroupMemberRole.Moderator
+          val showReports = groupInfo.canModerate
+          val showUserSupport = groupInfo.membership.memberActive &&
+            ((groupInfo.fullGroupPreferences.support.on && groupInfo.membership.memberRole < GroupMemberRole.Moderator)
+              || groupInfo.membership.supportChat != null)
+          val anyTopSectionRowShow = showAddLink || showMemberSupport || showReports || showUserSupport
+
+          if (anyTopSectionRowShow) {
+            SectionView {
+              if (showAddLink) {
+                if (groupLink == null) {
+                  CreateGroupLinkButton(manageGroupLink)
+                } else {
+                  GroupLinkButton(manageGroupLink)
                 }
               }
+              if (showMemberSupport) {
+                MemberSupportButton(chat, openMemberSupport)
+              }
+              if (showReports) {
+                GroupReportsButton(chat) {
+                  scope.launch {
+                    showGroupReportsView(chatModel.chatId, scrollToItemId, chat.chatInfo)
+                  }
+                }
+              }
+              if (showUserSupport) {
+                UserSupportChatButton(chat, groupInfo, scrollToItemId)
+              }
             }
-            if (groupInfo.membership.memberActive &&
-                ((groupInfo.fullGroupPreferences.support.on && groupInfo.membership.memberRole < GroupMemberRole.Moderator)
-                || groupInfo.membership.supportChat != null)) {
-              anyTopSectionRowShow = true
-              UserSupportChatButton(chat, groupInfo, scrollToItemId)
-            }
-            if (anyTopSectionRowShow) {
-              SectionDividerSpaced()
-            }
+            // Разделитель вынесен ЗА пределы SectionView!
+            SectionDividerSpaced()
           }
         }
         
