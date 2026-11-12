@@ -55,8 +55,8 @@ fun FramedItemView(
   }
 
   @Composable
-  fun BubbleSurface(content: @Composable () -> Unit) {
-    if (terminal) {
+  fun BubbleSurface(transparent: Boolean = false, content: @Composable () -> Unit) {
+    if (terminal || transparent) {
       content()
     } else {
       Surface(
@@ -84,28 +84,73 @@ fun FramedItemView(
       }
     }
     is MsgContent.MCImage -> {
-      BubbleSurface {
-        CIImageView(
-          mc.image,
-          ci.file,
-          imageProvider ?: { providerForGallery(emptyList(), ci.id) {} },
-          showMenu,
-          smallView = false,
-          receiveFile = receiveFile
-        )
+      val hasCaption = mc.text.isNotEmpty()
+      // Если подписи нет — фон полностью прозрачный (для PNG/стикеров и чистых фото)
+      BubbleSurface(transparent = !hasCaption) {
+        Column(modifier = Modifier.width(IntrinsicSize.Min)) {
+          CIImageView(
+            mc.image,
+            ci.file,
+            imageProvider ?: { providerForGallery(emptyList(), ci.id) {} },
+            showMenu,
+            smallView = false,
+            receiveFile = receiveFile
+          )
+          if (hasCaption) {
+            ItemWithMeta(meta = { CIMetaView(ci, cInfo.timedMessagesTTL, showViaProxy = showViaProxy, showTimestamp = showTimestamp) }) { inlineMeta ->
+              Column(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 8.dp)) {
+                SelectionContainer {
+                  Text(
+                    text = mc.text,
+                    fontSize = msgFontSize,
+                    style = chatTextStyle(msgFontSize, MaterialTheme.colors.onSurface),
+                    color = MaterialTheme.colors.onSurface
+                  )
+                }
+                if (inlineMeta != null) {
+                  Box(Modifier.align(Alignment.End).padding(top = 2.dp)) {
+                    inlineMeta()
+                  }
+                }
+              }
+            }
+          }
+        }
       }
     }
     is MsgContent.MCVideo -> {
-      BubbleSurface {
-        CIVideoView(
-          mc.image,
-          mc.duration,
-          ci.file,
-          imageProvider ?: { providerForGallery(emptyList(), ci.id) {} },
-          showMenu,
-          smallView = false,
-          receiveFile = receiveFile
-        )
+      val hasCaption = mc.text.isNotEmpty()
+      BubbleSurface(transparent = !hasCaption) {
+        Column(modifier = Modifier.width(IntrinsicSize.Min)) {
+          CIVideoView(
+            mc.image,
+            mc.duration,
+            ci.file,
+            imageProvider ?: { providerForGallery(emptyList(), ci.id) {} },
+            showMenu,
+            smallView = false,
+            receiveFile = receiveFile
+          )
+          if (hasCaption) {
+            ItemWithMeta(meta = { CIMetaView(ci, cInfo.timedMessagesTTL, showViaProxy = showViaProxy, showTimestamp = showTimestamp) }) { inlineMeta ->
+              Column(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 8.dp)) {
+                SelectionContainer {
+                  Text(
+                    text = mc.text,
+                    fontSize = msgFontSize,
+                    style = chatTextStyle(msgFontSize, MaterialTheme.colors.onSurface),
+                    color = MaterialTheme.colors.onSurface
+                  )
+                }
+                if (inlineMeta != null) {
+                  Box(Modifier.align(Alignment.End).padding(top = 2.dp)) {
+                    inlineMeta()
+                  }
+                }
+              }
+            }
+          }
+        }
       }
     }
     is MsgContent.MCVoice -> {
