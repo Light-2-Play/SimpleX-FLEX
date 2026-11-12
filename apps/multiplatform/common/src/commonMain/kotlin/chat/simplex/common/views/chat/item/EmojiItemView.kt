@@ -28,7 +28,7 @@ fun EmojiItemView(chatItem: ChatItem, timedMessagesTTL: Int?, showViaProxy: Bool
 
   ItemWithMeta(meta = { CIMetaView(chatItem, timedMessagesTTL, showViaProxy = showViaProxy, showTimestamp = showTimestamp) }, metaReserved = true, gapBelowCard = terminalReactionsGap(chatItem).toDp()) { inlineMeta ->
     Column(
-      if (LocalTerminalLayout.current) Modifier.padding(horizontal = CHAT_ITEM_TEXT_PADDING).messageCard().messageLastLine() else Modifier.padding(vertical = 8.dp, horizontal = 12.dp),
+      if (LocalTerminalLayout.current) Modifier.padding(horizontal = 8.dp).messageCard().messageLastLine() else Modifier.padding(vertical = 8.dp, horizontal = 12.dp),
       horizontalAlignment = Alignment.CenterHorizontally
     ) {
       if (isSelected) {
