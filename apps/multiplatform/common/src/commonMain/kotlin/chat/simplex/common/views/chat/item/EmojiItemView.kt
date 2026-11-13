@@ -59,6 +59,8 @@ private const val emojiStr = "^(" +
 private val emojiRegex = Regex(emojiStr)
 
 fun isShortEmoji(str: String): Boolean {
+  if (str.isEmpty() || str.length > 32 || '\n' in str || '\r' in str) return false
   val s = str.trim()
-  return s.codePoints().count() in 1..5 && emojiRegex.matches(str)
+  if (s.isEmpty()) return false
+  return s.codePoints().count() in 1..5 && emojiRegex.matches(s)
 }
