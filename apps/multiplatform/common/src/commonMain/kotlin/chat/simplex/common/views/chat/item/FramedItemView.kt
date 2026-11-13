@@ -11,6 +11,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.platform.UriHandler
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import chat.simplex.common.model.*
@@ -85,7 +86,6 @@ fun FramedItemView(
     }
     is MsgContent.MCImage -> {
       val hasCaption = mc.text.isNotEmpty()
-      // Если подписи нет — фон полностью прозрачный (для PNG/стикеров и чистых фото)
       BubbleSurface(transparent = !hasCaption) {
         Column(modifier = Modifier.width(IntrinsicSize.Min)) {
           CIImageView(
@@ -98,17 +98,22 @@ fun FramedItemView(
           )
           if (hasCaption) {
             ItemWithMeta(meta = { CIMetaView(ci, cInfo.timedMessagesTTL, showViaProxy = showViaProxy, showTimestamp = showTimestamp) }) { inlineMeta ->
-              Column(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 8.dp)) {
+              Column(
+                Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp),
+                verticalArrangement = Arrangement.Center,
+                horizontalAlignment = Alignment.CenterHorizontally
+              ) {
                 SelectionContainer {
                   Text(
                     text = mc.text,
                     fontSize = msgFontSize,
+                    textAlign = TextAlign.Center,
                     style = chatTextStyle(msgFontSize, MaterialTheme.colors.onSurface),
                     color = MaterialTheme.colors.onSurface
                   )
                 }
                 if (inlineMeta != null) {
-                  Box(Modifier.align(Alignment.End).padding(top = 2.dp)) {
+                  Box(Modifier.align(Alignment.End).padding(top = 4.dp)) {
                     inlineMeta()
                   }
                 }
@@ -133,17 +138,22 @@ fun FramedItemView(
           )
           if (hasCaption) {
             ItemWithMeta(meta = { CIMetaView(ci, cInfo.timedMessagesTTL, showViaProxy = showViaProxy, showTimestamp = showTimestamp) }) { inlineMeta ->
-              Column(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 8.dp)) {
+              Column(
+                Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp),
+                verticalArrangement = Arrangement.Center,
+                horizontalAlignment = Alignment.CenterHorizontally
+              ) {
                 SelectionContainer {
                   Text(
                     text = mc.text,
                     fontSize = msgFontSize,
+                    textAlign = TextAlign.Center,
                     style = chatTextStyle(msgFontSize, MaterialTheme.colors.onSurface),
                     color = MaterialTheme.colors.onSurface
                   )
                 }
                 if (inlineMeta != null) {
-                  Box(Modifier.align(Alignment.End).padding(top = 2.dp)) {
+                  Box(Modifier.align(Alignment.End).padding(top = 4.dp)) {
                     inlineMeta()
                   }
                 }
@@ -156,7 +166,7 @@ fun FramedItemView(
     is MsgContent.MCVoice -> {
       BubbleSurface {
         ItemWithMeta(meta = { CIMetaView(ci, cInfo.timedMessagesTTL, showViaProxy = showViaProxy, showTimestamp = showTimestamp) }) { inlineMeta ->
-          Column(Modifier.padding(horizontal = 12.dp, vertical = 6.dp)) {
+          Column(Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
             CIVoiceView(
               mc.duration,
               ci.file,
@@ -193,11 +203,11 @@ fun FramedItemView(
     is MsgContent.MCLink -> {
       BubbleSurface {
         ItemWithMeta(meta = { CIMetaView(ci, cInfo.timedMessagesTTL, showViaProxy = showViaProxy, showTimestamp = showTimestamp) }) { inlineMeta ->
-          Column(Modifier.padding(bottom = 6.dp)) {
+          Column(Modifier.padding(bottom = 8.dp)) {
             ChatItemLinkView(mc.preview, showMenu, onLongClick = { onLinkLongClick("") })
             if (mc.text.isNotEmpty()) {
               Spacer(Modifier.height(6.dp))
-              Box(Modifier.padding(horizontal = 12.dp)) {
+              Box(Modifier.padding(horizontal = 14.dp), contentAlignment = Alignment.Center) {
                 SelectionContainer {
                   Text(
                     text = mc.text,
@@ -235,24 +245,53 @@ fun FramedItemView(
             }
           }
         } else {
+          val hasFile = ci.file != null && ci.file.fileStatus !is CIFileStatus.Invalid
+          val isSingleLine = !hasFile && '\n' !in mc.text && mc.text.length <= 26
+
           BubbleSurface {
             ItemWithMeta(meta = { CIMetaView(ci, cInfo.timedMessagesTTL, showViaProxy = showViaProxy, showTimestamp = showTimestamp) }) { inlineMeta ->
-              Column(Modifier.padding(horizontal = 14.dp, vertical = 8.dp)) {
-                if (ci.file != null && ci.file.fileStatus !is CIFileStatus.Invalid) {
-                  CIFileView(ci.file, ci.meta, cInfo.timedMessagesTTL, showViaProxy, showTimestamp, showMenu, smallView = true, receiveFile = receiveFile)
-                  Spacer(Modifier.height(6.dp))
+              if (isSingleLine && inlineMeta != null) {
+                // Короткое сообщение: текст и время строго посередине по вертикали и горизонтали
+                Row(
+                  modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+                  verticalAlignment = Alignment.CenterVertically,
+                  horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally)
+                ) {
+                  SelectionContainer {
+                    Text(
+                      text = mc.text,
+                      fontSize = msgFontSize,
+                      textAlign = TextAlign.Center,
+                      style = chatTextStyle(msgFontSize, MaterialTheme.colors.onSurface),
+                      color = MaterialTheme.colors.onSurface
+                    )
+                  }
+                  inlineMeta()
                 }
-                SelectionContainer {
-                  Text(
-                    text = mc.text,
-                    fontSize = msgFontSize,
-                    style = chatTextStyle(msgFontSize, MaterialTheme.colors.onSurface),
-                    color = MaterialTheme.colors.onSurface
-                  )
-                }
-                if (inlineMeta != null) {
-                  Box(Modifier.align(Alignment.End).padding(top = 2.dp)) {
-                    inlineMeta()
+              } else {
+                // Длинное или многострочное сообщение: центрируем содержимое внутри капсулы
+                Column(
+                  modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+                  verticalArrangement = Arrangement.Center,
+                  horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                  if (hasFile) {
+                    CIFileView(ci.file, ci.meta, cInfo.timedMessagesTTL, showViaProxy, showTimestamp, showMenu, smallView = true, receiveFile = receiveFile)
+                    Spacer(Modifier.height(6.dp))
+                  }
+                  SelectionContainer {
+                    Text(
+                      text = mc.text,
+                      fontSize = msgFontSize,
+                      textAlign = TextAlign.Center,
+                      style = chatTextStyle(msgFontSize, MaterialTheme.colors.onSurface),
+                      color = MaterialTheme.colors.onSurface
+                    )
+                  }
+                  if (inlineMeta != null) {
+                    Box(Modifier.align(Alignment.End).padding(top = 4.dp)) {
+                      inlineMeta()
+                    }
                   }
                 }
               }
@@ -266,12 +305,17 @@ fun FramedItemView(
       }
     }
     is MsgContent.MCReport -> {
-      val padding = if (terminal) Modifier.padding(horizontal = 8.dp) else Modifier.padding(horizontal = 14.dp, vertical = 8.dp)
+      val padding = if (terminal) Modifier.padding(horizontal = 8.dp) else Modifier.padding(horizontal = 14.dp, vertical = 10.dp)
       BubbleSurface {
-        Column(padding) {
+        Column(
+          padding,
+          verticalArrangement = Arrangement.Center,
+          horizontalAlignment = Alignment.CenterHorizontally
+        ) {
           Text(
             text = "Report: ${mc.reason.text}",
             fontSize = msgFontSize,
+            textAlign = TextAlign.Center,
             style = chatTextStyle(msgFontSize, MaterialTheme.colors.error),
             color = MaterialTheme.colors.error
           )
@@ -280,6 +324,7 @@ fun FramedItemView(
             Text(
               text = mc.text,
               fontSize = msgFontSize,
+              textAlign = TextAlign.Center,
               style = chatTextStyle(msgFontSize, MaterialTheme.colors.onSurface),
               color = MaterialTheme.colors.onSurface
             )
@@ -288,12 +333,17 @@ fun FramedItemView(
       }
     }
     else -> {
-      val padding = if (terminal) Modifier.padding(horizontal = 8.dp) else Modifier.padding(horizontal = 14.dp, vertical = 8.dp)
+      val padding = if (terminal) Modifier.padding(horizontal = 8.dp) else Modifier.padding(horizontal = 14.dp, vertical = 10.dp)
       BubbleSurface {
-        Column(padding) {
+        Column(
+          padding,
+          verticalArrangement = Arrangement.Center,
+          horizontalAlignment = Alignment.CenterHorizontally
+        ) {
           Text(
             text = ci.content.text.ifEmpty { "Unsupported message" },
             fontSize = msgFontSize,
+            textAlign = TextAlign.Center,
             style = chatTextStyle(msgFontSize, MaterialTheme.colors.secondary),
             color = MaterialTheme.colors.secondary
           )
