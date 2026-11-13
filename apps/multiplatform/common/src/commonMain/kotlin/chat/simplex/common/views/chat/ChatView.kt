@@ -1121,7 +1121,12 @@ val chatInfo = remember(chat) { derivedStateOf<ChatInfo?> { chat.value?.chatInfo
             Box(
               Modifier
                 .align(Alignment.BottomCenter)
-                .onSizeChanged { composeViewHeight.value = with(density) { it.height.toDp() } }
+              .onSizeChanged {
+  val newHeight = with(density) { it.height.toDp() }
+  if (composeViewHeight.value != newHeight) {
+    composeViewHeight.value = newHeight
+  }
+}
                 .imePadding()
                 .navigationBarsPadding()
                 .then(if (oneHandUI.value && chatBottomBar.value) Modifier.padding(bottom = AppBarHeight * fontSizeSqrtMultiplier) else Modifier)
