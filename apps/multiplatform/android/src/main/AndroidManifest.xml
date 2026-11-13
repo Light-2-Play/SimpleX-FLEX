@@ -46,13 +46,12 @@
       android:icon="@mipmap/icon"
       android:label="SimpleX FLEX"
       android:largeHeap="true"
-      android:extractNativeLibs="${extract_native_libs}"
+      android:extractNativeLibs="true"
       android:supportsRtl="true"
       android:enableOnBackInvokedCallback="false"
       android:theme="@style/Theme.SimpleX"
+      tools:replace="android:extractNativeLibs"
       tools:ignore="UnusedAttribute">
-      android:extractNativeLibs="true">
-    <!--      android:localeConfig="@xml/locales_config"-->
 
     <!-- Главная активность приложения -->
     <activity
@@ -64,7 +63,7 @@
         android:windowSoftInputMode="adjustResize"
         android:configChanges="uiMode"
         android:theme="@style/Theme.SimpleX">
-      
+
       <!-- open simplex:/ connection URI -->
       <intent-filter>
         <action android:name="android.intent.action.VIEW" />
@@ -85,7 +84,7 @@
         <action android:name="android.intent.action.VIEW" />
         <category android:name="android.intent.category.DEFAULT" />
         <category android:name="android.intent.category.BROWSABLE" />
-        
+
         <data android:scheme="http" />
         <data android:scheme="https" />
         <data android:host="simplex.chat" />
@@ -168,13 +167,14 @@
       </intent-filter>
     </activity-alias>
 
-    <activity android:name=".views.call.CallActivity"
+    <activity
+        android:name=".views.call.CallActivity"
         android:showOnLockScreen="true"
         android:exported="false"
         android:launchMode="singleInstance"
         android:supportsPictureInPicture="true"
         android:autoRemoveFromRecents="true"
-        android:configChanges="screenSize|smallestScreenSize|screenLayout|orientation"/>
+        android:configChanges="screenSize|smallestScreenSize|screenLayout|orientation" />
 
     <provider
         android:name="androidx.core.content.FileProvider"
@@ -198,16 +198,14 @@
         android:enabled="true"
         android:exported="false"
         android:stopWithTask="false"
-        android:foregroundServiceType="remoteMessaging"
-    />
+        android:foregroundServiceType="remoteMessaging" />
 
     <service
         android:name=".CallService"
         android:enabled="true"
         android:exported="false"
         android:stopWithTask="false"
-        android:foregroundServiceType="mediaPlayback|microphone|camera|remoteMessaging"
-    />
+        android:foregroundServiceType="mediaPlayback|microphone|camera|remoteMessaging" />
 
     <receiver
         android:name=".CallService$CallActionReceiver"
