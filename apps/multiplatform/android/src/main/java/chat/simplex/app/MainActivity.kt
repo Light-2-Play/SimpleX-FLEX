@@ -519,7 +519,7 @@ fun rememberDirectMonetColors(context: android.content.Context = androidx.compos
 }
 
 // =====================================================================
-// COMPOSE DIALOG COMPONENTS
+// COMPOSE DIALOG COMPONENTS (MATERIAL 3 EXPRESSIVE + RICH HAPTICS)
 // =====================================================================
 @Composable
 fun SingBoxComposeDialogs(activity: MainActivity) {
@@ -528,8 +528,16 @@ fun SingBoxComposeDialogs(activity: MainActivity) {
   val monet = rememberDirectMonetColors(activity)
   var showCustomInputDialog by remember { mutableStateOf(false) }
 
+  // Реактивные состояния прокси
+  val isRunning = chat.simplex.common.views.chatlist.ByeDpiBridge.isRunning.value
+  val isConnecting = SingBoxService.isConnectingState.value
+  val statusDetail = SingBoxService.statusDetailState.value
+
   if (!showCustomInputDialog) {
-    Dialog(onDismissRequest = { showSingBoxDialogState.value = false }) {
+    Dialog(onDismissRequest = {
+      RichHaptics.perform(HapticPattern.TICK)
+      showSingBoxDialogState.value = false
+    }) {
       Surface(
         shape = RoundedCornerShape(28.dp),
         color = monet.surface,
@@ -537,11 +545,47 @@ fun SingBoxComposeDialogs(activity: MainActivity) {
         modifier = Modifier
           .fillMaxWidth()
           .border(1.dp, monet.outline, RoundedCornerShape(28.dp))
+          .expressiveContainerSize()
       ) {
         Column(modifier = Modifier.padding(24.dp)) {
           val modeLabel = if (SingBoxService.isCustomMode(activity)) "Custom VLESS" else "Auto Selection"
-          val isRunning = SingBoxService.isRunning
-          val statusText = if (isRunning) "● VLESS active ($modeLabel)" else "○ VLESS disabled"
+          val statusTitle = when {
+            isConnecting -> statusDetail.ifBlank { "Connecting..." }
+            isRunning -> statusDetail.ifBlank { "VLESS active ($modeLabel)" }
+            statusDetail.startsWith("Error") || statusDetail.startsWith("Failure") -> statusDetail
+            else -> "VLESS disabled"
+          }
+
+          val isErrorStatus = !isRunning && !isConnecting &&
+            (statusDetail.startsWith("Error") || statusDetail.startsWith("Failure"))
+
+          val statusPillBg by androidx.compose.animation.animateColorAsState(
+            targetValue = when {
+              isErrorStatus -> Color(0xFFB3261E).copy(alpha = 0.16f)
+              isRunning || isConnecting -> monet.primaryContainer
+              else -> monet.background
+            },
+            animationSpec = androidx.compose.animation.core.spring(dampingRatio = 0.82f, stiffness = 420f)
+          )
+          val statusContentColor by androidx.compose.animation.core.animateColorAsState(
+            targetValue = when {
+              isErrorStatus -> Color(0xFFF2B8B5)
+              isRunning || isConnecting -> monet.primary
+              else -> monet.onSurfaceVariant
+            },
+            animationSpec = androidx.compose.animation.core.spring(dampingRatio = 0.82f, stiffness = 420f)
+          )
+
+          // Пульсация индикатора при активном или подключающемся туннеле
+          val infiniteTransition = androidx.compose.animation.core.rememberInfiniteTransition()
+          val pulseScale by infiniteTransition.animateFloat(
+            initialValue = 0.85f,
+            targetValue = 1.25f,
+            animationSpec = androidx.compose.animation.core.infiniteRepeatable(
+              animation = androidx.compose.animation.core.tween(900),
+              repeatMode = androidx.compose.animation.core.RepeatMode.Reverse
+            )
+          )
 
           Text(
             text = "VLESS Proxy Settings",
@@ -549,12 +593,37 @@ fun SingBoxComposeDialogs(activity: MainActivity) {
             fontSize = 20.sp,
             fontWeight = FontWeight.Bold
           )
-          Spacer(modifier = Modifier.height(4.dp))
-          Text(
-            text = statusText,
-            color = if (isRunning) monet.primary else monet.onSurfaceVariant,
-            fontSize = 14.sp
-          )
+          Spacer(modifier = Modifier.height(10.dp))
+
+          // Статусная капсула M3 Expressive
+          Row(
+            modifier = Modifier
+              .clip(CircleShape)
+              .background(statusPillBg)
+              .border(1.dp, statusContentColor.copy(alpha = 0.25f), CircleShape)
+              .expressiveContainerSize()
+              .padding(horizontal = 12.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+          ) {
+            Box(
+              modifier = Modifier
+                .size(8.dp)
+                .androidx.compose.ui.graphics.graphicsLayer {
+                  val s = if (isRunning || isConnecting) pulseScale else 1f
+                  scaleX = s
+                  scaleY = s
+                }
+                .background(statusContentColor, CircleShape)
+            )
+            Text(
+              text = statusTitle,
+              color = statusContentColor,
+              fontSize = 13.sp,
+              fontWeight = FontWeight.Medium,
+              maxLines = 2
+            )
+          }
 
           Spacer(modifier = Modifier.height(16.dp))
 
@@ -570,20 +639,47 @@ fun SingBoxComposeDialogs(activity: MainActivity) {
           var selectedIndex by remember {
             val isCustom = SingBoxService.isCustomMode(activity)
             val curLim = SingBoxService.getServerLimit(activity)
-            mutableStateOf(if (isCustom) 4 else {
-              val idx = limits.indexOf(curLim)
-              if (idx == -1) 0 else idx
-            })
+            mutableStateOf(
+              if (isCustom) 4 else {
+                val idx = limits.indexOf(curLim)
+                if (idx == -1) 0 else idx
+              }
+            )
           }
 
           options.forEachIndexed { index, text ->
             val isSelected = selectedIndex == index
+            val rowInteraction = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
+
+            val rowBg by androidx.compose.animation.animateColorAsState(
+              targetValue = if (isSelected) monet.primaryContainer else Color.Transparent,
+              animationSpec = androidx.compose.animation.core.spring(dampingRatio = 0.85f, stiffness = 460f)
+            )
+            val dotScale by androidx.compose.animation.core.animateFloatAsState(
+              targetValue = if (isSelected) 1f else 0f,
+              animationSpec = ExpressiveSprings.Bouncy
+            )
+
             Row(
               modifier = Modifier
                 .fillMaxWidth()
+                .expressivePress(
+                  interactionSource = rowInteraction,
+                  targetScale = 0.965f
+                )
                 .clip(RoundedCornerShape(14.dp))
-                .background(if (isSelected) monet.primaryContainer else Color.Transparent)
-                .clickable { selectedIndex = index }
+                .background(rowBg)
+                .clickable(
+                  interactionSource = rowInteraction,
+                  indication = androidx.compose.foundation.LocalIndication.current
+                ) {
+                  if (selectedIndex != index) {
+                    RichHaptics.perform(HapticPattern.SELECTION_CHANGE)
+                    selectedIndex = index
+                  } else {
+                    RichHaptics.perform(HapticPattern.TICK)
+                  }
+                }
                 .padding(vertical = 12.dp, horizontal = 12.dp),
               verticalAlignment = Alignment.CenterVertically
             ) {
@@ -597,8 +693,16 @@ fun SingBoxComposeDialogs(activity: MainActivity) {
                   ),
                 contentAlignment = Alignment.Center
               ) {
-                if (isSelected) {
-                  Box(modifier = Modifier.size(10.dp).background(monet.primary, CircleShape))
+                if (dotScale > 0.01f) {
+                  Box(
+                    modifier = Modifier
+                      .size(10.dp)
+                      .androidx.compose.ui.graphics.graphicsLayer {
+                        scaleX = dotScale
+                        scaleY = dotScale
+                      }
+                      .background(monet.primary, CircleShape)
+                  )
                 }
               }
               Spacer(modifier = Modifier.width(14.dp))
@@ -616,17 +720,23 @@ fun SingBoxComposeDialogs(activity: MainActivity) {
 
           Spacer(modifier = Modifier.height(24.dp))
 
+          val disableInteraction = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
+          val cancelInteraction = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
+          val applyInteraction = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
+
           Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.End,
             verticalAlignment = Alignment.CenterVertically
           ) {
             TextButton(
-              onClick = { 
+              onClick = {
+                RichHaptics.perform(HapticPattern.TOGGLE_OFF)
                 SingBoxService.stop()
-                chat.simplex.common.views.chatlist.ByeDpiBridge.isRunning.value = false
-                showSingBoxDialogState.value = false 
+                showSingBoxDialogState.value = false
               },
+              interactionSource = disableInteraction,
+              modifier = Modifier.expressivePress(disableInteraction, targetScale = 0.93f),
               shape = CircleShape,
               colors = ButtonDefaults.textButtonColors(contentColor = monet.primary)
             ) {
@@ -634,7 +744,12 @@ fun SingBoxComposeDialogs(activity: MainActivity) {
             }
             Spacer(modifier = Modifier.width(4.dp))
             TextButton(
-              onClick = { showSingBoxDialogState.value = false },
+              onClick = {
+                RichHaptics.perform(HapticPattern.TICK)
+                showSingBoxDialogState.value = false
+              },
+              interactionSource = cancelInteraction,
+              modifier = Modifier.expressivePress(cancelInteraction, targetScale = 0.93f),
               shape = CircleShape,
               colors = ButtonDefaults.textButtonColors(contentColor = monet.primary)
             ) {
@@ -644,16 +759,21 @@ fun SingBoxComposeDialogs(activity: MainActivity) {
             Button(
               onClick = {
                 if (selectedIndex == 4) {
+                  RichHaptics.perform(HapticPattern.CLICK)
                   showCustomInputDialog = true
                 } else {
+                  RichHaptics.perform(HapticPattern.TOGGLE_ON)
                   SingBoxService.setCustomMode(activity, false)
                   SingBoxService.setServerLimit(activity, limits[selectedIndex])
                   if (SingBoxService.isRunning) SingBoxService.restart(activity)
                   else SingBoxService.start(activity)
-                  chat.simplex.common.views.chatlist.ByeDpiBridge.isRunning.value = true
                   showSingBoxDialogState.value = false
                 }
               },
+              interactionSource = applyInteraction,
+              modifier = Modifier
+                .expressivePress(applyInteraction, targetScale = 0.93f)
+                .expressiveContainerSize(),
               shape = CircleShape,
               colors = ButtonDefaults.buttonColors(
                 backgroundColor = monet.primary,
@@ -661,14 +781,26 @@ fun SingBoxComposeDialogs(activity: MainActivity) {
               ),
               elevation = ButtonDefaults.elevation(0.dp, 0.dp)
             ) {
-              Text(if (isRunning) "Apply" else "Turn On", fontWeight = FontWeight.SemiBold)
+              Text(
+                text = when {
+                  selectedIndex == 4 -> "Configure"
+                  isRunning -> "Apply"
+                  else -> "Turn On"
+                },
+                fontWeight = FontWeight.SemiBold
+              )
             }
           }
         }
       }
     }
   } else {
-    Dialog(onDismissRequest = { showCustomInputDialog = false }) {
+    val clipboardManager = androidx.compose.ui.platform.LocalClipboardManager.current
+
+    Dialog(onDismissRequest = {
+      RichHaptics.perform(HapticPattern.TICK)
+      showCustomInputDialog = false
+    }) {
       Surface(
         shape = RoundedCornerShape(28.dp),
         color = monet.surface,
@@ -676,6 +808,7 @@ fun SingBoxComposeDialogs(activity: MainActivity) {
         modifier = Modifier
           .fillMaxWidth()
           .border(1.dp, monet.outline, RoundedCornerShape(28.dp))
+          .expressiveContainerSize()
       ) {
         Column(modifier = Modifier.padding(24.dp)) {
           Text(
@@ -684,14 +817,78 @@ fun SingBoxComposeDialogs(activity: MainActivity) {
             fontSize = 20.sp,
             fontWeight = FontWeight.Bold
           )
-          Spacer(modifier = Modifier.height(16.dp))
+          Spacer(modifier = Modifier.height(12.dp))
 
           var customKey by remember { mutableStateOf(SingBoxService.getCustomKey(activity)) }
+
+          // Быстрые кнопки Paste / Clear в стиле M3 Expressive
+          Row(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically
+          ) {
+            val pasteInteraction = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
+            Surface(
+              shape = CircleShape,
+              color = monet.primaryContainer,
+              modifier = Modifier
+                .expressivePress(pasteInteraction, targetScale = 0.93f)
+                .clip(CircleShape)
+                .clickable(
+                  interactionSource = pasteInteraction,
+                  indication = androidx.compose.foundation.LocalIndication.current
+                ) {
+                  val clipText = clipboardManager.getText()?.text?.trim().orEmpty()
+                  if (clipText.isNotEmpty()) {
+                    RichHaptics.perform(HapticPattern.CLICK)
+                    customKey = clipText
+                  } else {
+                    RichHaptics.perform(HapticPattern.WARNING)
+                  }
+                }
+            ) {
+              Text(
+                text = "Paste",
+                color = monet.onPrimaryContainer,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp)
+              )
+            }
+
+            if (customKey.isNotEmpty()) {
+              val clearInteraction = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
+              Surface(
+                shape = CircleShape,
+                color = monet.background,
+                modifier = Modifier
+                  .expressivePress(clearInteraction, targetScale = 0.93f)
+                  .border(1.dp, monet.outline, CircleShape)
+                  .clip(CircleShape)
+                  .clickable(
+                    interactionSource = clearInteraction,
+                    indication = androidx.compose.foundation.LocalIndication.current
+                  ) {
+                    RichHaptics.perform(HapticPattern.TICK)
+                    customKey = ""
+                  }
+              ) {
+                Text(
+                  text = "Clear",
+                  color = monet.onSurfaceVariant,
+                  fontSize = 13.sp,
+                  fontWeight = FontWeight.Medium,
+                  modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp)
+                )
+              }
+            }
+          }
+
+          Spacer(modifier = Modifier.height(12.dp))
 
           TextField(
             value = customKey,
             onValueChange = { customKey = it },
-            placeholder = { Text("vless://... or http://...", color = monet.onSurfaceVariant.copy(alpha = 0.6f)) },
+            placeholder = { Text("vless://... or https://...", color = monet.onSurfaceVariant.copy(alpha = 0.6f)) },
             colors = TextFieldDefaults.textFieldColors(
               textColor = monet.onSurface,
               placeholderColor = monet.onSurfaceVariant.copy(alpha = 0.6f),
@@ -710,13 +907,21 @@ fun SingBoxComposeDialogs(activity: MainActivity) {
 
           Spacer(modifier = Modifier.height(24.dp))
 
+          val backInteraction = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
+          val connectInteraction = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
+
           Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.End,
             verticalAlignment = Alignment.CenterVertically
           ) {
             TextButton(
-              onClick = { showCustomInputDialog = false },
+              onClick = {
+                RichHaptics.perform(HapticPattern.TICK)
+                showCustomInputDialog = false
+              },
+              interactionSource = backInteraction,
+              modifier = Modifier.expressivePress(backInteraction, targetScale = 0.93f),
               shape = CircleShape,
               colors = ButtonDefaults.textButtonColors(contentColor = monet.primary)
             ) {
@@ -727,15 +932,19 @@ fun SingBoxComposeDialogs(activity: MainActivity) {
               onClick = {
                 val key = customKey.trim()
                 if (key.isNotEmpty()) {
+                  RichHaptics.perform(HapticPattern.TOGGLE_ON)
                   SingBoxService.setCustomMode(activity, true)
                   SingBoxService.setCustomKey(activity, key)
                   if (SingBoxService.isRunning) SingBoxService.restart(activity)
                   else SingBoxService.start(activity)
-                  chat.simplex.common.views.chatlist.ByeDpiBridge.isRunning.value = true
                   showCustomInputDialog = false
                   showSingBoxDialogState.value = false
+                } else {
+                  RichHaptics.perform(HapticPattern.WARNING)
                 }
               },
+              interactionSource = connectInteraction,
+              modifier = Modifier.expressivePress(connectInteraction, targetScale = 0.93f),
               shape = CircleShape,
               colors = ButtonDefaults.buttonColors(
                 backgroundColor = monet.primary,
