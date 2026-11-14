@@ -42,12 +42,12 @@ fun DefaultSwitch(
   val offset = with(density) { Offset(4.dp.toPx(), 11.dp.toPx()) }
   val radius = with(density) { 13.dp.toPx() }
 
-  Switch(
+ Switch(
     checked = checked,
     onCheckedChange = onCheckedChange?.let { callback ->
       { newValue ->
         RichHaptics.perform(
-          if (newValue) HapticPattern.SELECTION_CHANGE else HapticPattern.TICK
+          if (newValue) HapticPattern.TOGGLE_ON else HapticPattern.TOGGLE_OFF
         )
         callback(newValue)
       }
@@ -64,4 +64,3 @@ fun DefaultSwitch(
     enabled = enabled,
     interactionSource = interactionSource,
   )
-}
