@@ -540,7 +540,7 @@ fun SingBoxComposeDialogs(activity: MainActivity) {
   val monet = rememberDirectMonetColors(activity)
   var showCustomInputDialog by remember { mutableStateOf(false) }
 
-  val isRunning = ByeDpiBridge.isRunning.value
+ val isRunning = chat.simplex.common.views.chatlist.ByeDpiBridge.isRunning.value
   val isConnecting = SingBoxService.isConnectingState.value
   val statusDetail = SingBoxService.statusDetailState.value
 
