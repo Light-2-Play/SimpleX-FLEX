@@ -45,6 +45,7 @@ val LocalVoiceTranscriptionWidget = staticCompositionLocalOf<@Composable (ChatIt
   { /* Пустышка для Desktop/iOS */ }
 }
 
+val CHAT_ITEM_TEXT_PADDING = 12.dp
 private val msgRectMaxRadius = 26.dp
 private val msgBubbleMaxRadius = 28.dp
 val msgTailWidthDp = 10.dp
@@ -600,7 +601,7 @@ fun ChatItemView(
                         ItemInfoAction(cInfo, cItem, showItemDetails, showMenu)
                         DeleteItemAction(chatsCtx, cInfo, cItem, revealed, showMenu, questionText = deleteMessageQuestionText(), deleteMessage, deleteMessages)
                         if (cItem.canBeDeletedForSelf) {
-                          Divider(Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colors.onSurface.copy(alpha = 0.1f))
+                          Divider(Modifier.padding(horizontal = 16.dp, vertical = 4.dp), color = MaterialTheme.colors.onSurface.copy(alpha = 0.1f))
                           SelectItemAction(showMenu, selectChatItem)
                         }
                       }
@@ -610,7 +611,7 @@ fun ChatItemView(
                         ItemInfoAction(cInfo, cItem, showItemDetails, showMenu)
                         DeleteItemAction(chatsCtx, cInfo, cItem, revealed, showMenu, questionText = deleteMessageQuestionText(), deleteMessage, deleteMessages)
                         if (cItem.canBeDeletedForSelf) {
-                          Divider(Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colors.onSurface.copy(alpha = 0.1f))
+                          Divider(Modifier.padding(horizontal = 16.dp, vertical = 4.dp), color = MaterialTheme.colors.onSurface.copy(alpha = 0.1f))
                           SelectItemAction(showMenu, selectChatItem)
                         }
                       }
@@ -624,7 +625,7 @@ fun ChatItemView(
                         }
                         DeleteItemAction(chatsCtx, cInfo, cItem, revealed, showMenu, questionText = deleteMessageQuestionText(), deleteMessage, deleteMessages)
                         if (cItem.canBeDeletedForSelf) {
-                          Divider(Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colors.onSurface.copy(alpha = 0.1f))
+                          Divider(Modifier.padding(horizontal = 16.dp, vertical = 4.dp), color = MaterialTheme.colors.onSurface.copy(alpha = 0.1f))
                           SelectItemAction(showMenu, selectChatItem)
                         }
                       }
@@ -793,46 +794,20 @@ fun ChatItemView(
                 e2eeInfoText(if (e2EEInfo.public == true) MR.strings.e2ee_info_no_e2ee else MR.strings.e2ee_info_no_pq)
               }
 
-            if (markedDeleted) {
-              MarkedDeletedItemView(chatsCtx, cItem, cInfo, cInfo.timedMessagesTTL, revealed, showViaProxy = showViaProxy, showTimestamp = showTimestamp)
-              MarkedDeletedItemDropdownMenu()
-            } else {
-              when (val c = cItem.content) {
-                is CIContent.SndMsgContent -> ContentItem()
-                is CIContent.RcvMsgContent -> ContentItem()
-                is CIContent.SndDeleted -> LegacyDeletedItem()
-                is CIContent.RcvDeleted -> LegacyDeletedItem()
-                is CIContent.SndCall -> CallItem(c.status, c.duration)
-                is CIContent.RcvCall -> CallItem(c.status, c.duration)
-                is CIContent.RcvIntegrityError -> {
-                  IntegrityErrorItemView(c.msgError, cItem, showTimestamp, cInfo.timedMessagesTTL)
-                  DeleteItemMenu()
-                }
-                is CIContent.RcvMsgErrorContent -> {
-                  RcvMsgErrorItemView(c.rcvMsgError, cItem, showTimestamp, cInfo.timedMessagesTTL)
-                }
-                is CIContent.RcvDecryptionError -> {
-                  CIRcvDecryptionError(c.msgDecryptError, c.msgCount, cInfo, cItem, updateContactStats = updateContactStats, updateMemberStats = updateMemberStats, syncContactConnection = syncContactConnection, syncMemberConnection = syncMemberConnection, findModelChat = findModelChat, findModelMember = findModelMember)
-                  DeleteItemMenu()
-                }
-                is CIContent.RcvGroupInvitation -> {
-                  CIGroupInvitationView(cItem, c.groupInvitation, c.memberRole, joinGroup = joinGroup, chatIncognito = cInfo.incognito, groupChat = cInfo is ChatInfo.Group, showTimestamp = showTimestamp, timedMessagesTTL = cInfo.timedMessagesTTL)
-                  DeleteItemMenu()
-                }
-                is CIContent.SndGroupInvitation -> {
-                  CIGroupInvitationView(cItem, c.groupInvitation, c.memberRole, joinGroup = joinGroup, chatIncognito = cInfo.incognito, groupChat = cInfo is ChatInfo.Group, showTimestamp = showTimestamp, timedMessagesTTL = cInfo.timedMessagesTTL)
-                  DeleteItemMenu()
-                }
-                is CIContent.RcvDirectEventContent -> {
-                  EventItemView()
-                  MsgContentItemDropdownMenu()
-                }
-                is CIContent.RcvGroupEventContent -> {
-                  when (c.rcvGroupEvent) {
-                    is RcvGroupEvent.MemberCreatedContact -> CIMemberCreatedContactView(cItem, openDirectChat)
-                    is RcvGroupEvent.NewMemberPendingReview -> PendingReviewEventItemView()
-                    else -> EventItemView()
-
+              if (markedDeleted) {
+                MarkedDeletedItemView(chatsCtx, cItem, cInfo, cInfo.timedMessagesTTL, revealed, showViaProxy = showViaProxy, showTimestamp = showTimestamp)
+                MarkedDeletedItemDropdownMenu()
+              } else {
+                when (val c = cItem.content) {
+                  is CIContent.SndMsgContent -> ContentItem()
+                  is CIContent.RcvMsgContent -> ContentItem()
+                  is CIContent.SndDeleted -> LegacyDeletedItem()
+                  is CIContent.RcvDeleted -> LegacyDeletedItem()
+                  is CIContent.SndCall -> CallItem(c.status, c.duration)
+                  is CIContent.RcvCall -> CallItem(c.status, c.duration)
+                  is CIContent.RcvIntegrityError -> {
+                    IntegrityErrorItemView(c.msgError, cItem, showTimestamp, cInfo.timedMessagesTTL)
+                    DeleteItemMenu()
                   }
                   is CIContent.RcvMsgErrorContent -> {
                     RcvMsgErrorItemView(c.rcvMsgError, cItem, showTimestamp, cInfo.timedMessagesTTL)
