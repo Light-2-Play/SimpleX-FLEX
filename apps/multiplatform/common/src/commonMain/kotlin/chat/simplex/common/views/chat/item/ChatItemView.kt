@@ -488,8 +488,8 @@ fun ChatItemView(
                             showMenu.value = false
                           })
                         }
-                        if (cItem.content.text.isNotEmpty()) {
-                          ItemAction("Select Text", painterResource(MR.images.ic_content_copy), onClick = {
+                       if (cItem.content.text.isNotEmpty()) {
+                          ItemAction("Select text", painterResource(MR.images.ic_content_copy), onClick = {
                             RichHaptics.perform(HapticPattern.CLICK)
                             showMenu.value = false
                             showSelectTextDialog(cItem.content.text)
@@ -1537,7 +1537,7 @@ fun deleteMessageAlertDialog(chatItem: ChatItem, questionText: String, chatInfo:
 }
 fun showSelectTextDialog(text: String) {
   AlertManager.shared.showAlertDialogButtons(
-    title = "Выделить текст",
+    title = "Select text",
     buttons = {
       Column(
         Modifier
