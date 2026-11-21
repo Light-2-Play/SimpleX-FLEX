@@ -52,7 +52,8 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
@@ -62,11 +63,16 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.translate
+import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
@@ -203,10 +209,14 @@ class CameraActivity : ComponentActivity() { // или AppCompatActivity
         }
 
         // --- Переменные для видео и таймера ---
-      // Переменные для таймера записи
+     // --- Переменные для видео, таймера и блокировки свайпом вверх ---
         var recordingTimeSeconds by remember { mutableStateOf(0) }
+        var isRecordingLocked by remember { mutableStateOf(false) }
+        var lockDragOffsetY by remember { mutableStateOf(0f) }
+        var isCancellingRecording by remember { mutableStateOf(false) }
+        val haptic = LocalHapticFeedback.current
+        val density = LocalDensity.current
 
-// --- ВОТ СЮДА ВСТАВЛЯЕМ НАШ КОД (ШАГ 1 и ШАГ 2) ---
         var isTorchOn by remember { mutableStateOf(false) }
         val hasFlashUnit = remember(currentCamera) {
             currentCamera?.cameraInfo?.hasFlashUnit() == true
@@ -221,15 +231,23 @@ class CameraActivity : ComponentActivity() { // или AppCompatActivity
                 }
             }
         }
-        
-       // 1. Сначала объявляем остановку:
+
+        // Остановка с сохранением и отправкой
         fun stopVideoRecording() {
             activeRecording?.stop()
             activeRecording = null
         }
 
-        // 2. Теперь объявляем старт (компилятор уже видит stopVideoRecording):
+        // Отмена заблокированной записи с удалением временного файла
+        fun cancelVideoRecording() {
+            isCancellingRecording = true
+            activeRecording?.stop()
+            activeRecording = null
+        }
+
+        // Старт записи видео
         fun startVideoRecording(videoCapture: VideoCapture<Recorder>) {
+            isCancellingRecording = false
             val videoFile = File(context.cacheDir, "VID_${System.currentTimeMillis()}.mp4")
             val outputOptions = FileOutputOptions.Builder(videoFile).build()
 
@@ -250,12 +268,15 @@ class CameraActivity : ComponentActivity() { // или AppCompatActivity
                             stopVideoRecording()
                         }
                     }
-                   is VideoRecordEvent.Finalize -> {
+                    is VideoRecordEvent.Finalize -> {
+                        val wasCancelled = isCancellingRecording
+                        isCancellingRecording = false
                         isRecordingVideo = false
+                        isRecordingLocked = false
+                        lockDragOffsetY = 0f
                         recordingTimeSeconds = 0
-                        if (!event.hasError()) {
+                        if (!wasCancelled && !event.hasError()) {
                             val authority = "${context.packageName}.provider"
-                            // Обязательно возвращаем URI через FileProvider, чтобы SimpleX его "съел"
                             val videoUri = FileProvider.getUriForFile(context, authority, videoFile)
 
                             val resultIntent = Intent().apply {
@@ -269,9 +290,9 @@ class CameraActivity : ComponentActivity() { // или AppCompatActivity
                             videoFile.delete()
                         }
                     }
-                } // закрывает when (event)
-            } // закрывает pending.start { ... }
-        } // закрывает fun startVideoRecording
+                }
+            }
+        }
 
         @androidx.annotation.OptIn(androidx.camera.camera2.interop.ExperimentalCamera2Interop::class)
 fun bindCamera(previewView: PreviewView) {
@@ -760,7 +781,10 @@ fun bindCamera(previewView: PreviewView) {
                 }
             } // Закрывает Box верхнего ряда панели
 
-            // Нижний ряд: [Спейсер] — [Затвор] — [Переворот камеры]
+            // Нижний ряд: [Отмена при блокировке] — [Затвор + замок сверху] — [Переворот камеры]
+            val lockThresholdPx = with(density) { 72.dp.toPx() }
+            val lockProgress = ((-lockDragOffsetY) / lockThresholdPx).coerceIn(0f, 1f)
+
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -768,36 +792,160 @@ fun bindCamera(previewView: PreviewView) {
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Spacer(modifier = Modifier.size(48.dp))
+                // Слева: кнопка отмены записи (появляется, когда запись заблокирована)
+                if (isRecordingLocked) {
+                    Box(
+                        modifier = Modifier
+                            .size(48.dp)
+                            .background(monetButtonBg, CircleShape)
+                            .clickable { cancelVideoRecording() },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Canvas(modifier = Modifier.size(16.dp)) {
+                            val stroke = 2.5f.dp.toPx()
+                            drawLine(Color(0xFFFF6B6B), Offset(0f, 0f), Offset(size.width, size.height), stroke, StrokeCap.Round)
+                            drawLine(Color(0xFFFF6B6B), Offset(size.width, 0f), Offset(0f, size.height), stroke, StrokeCap.Round)
+                        }
+                    }
+                } else {
+                    Spacer(modifier = Modifier.size(48.dp))
+                }
 
-                // Затвор (Тап = Фото, Удержание = Видео)
+                // Центр: плавающий индикатор замка при свайпе вверх + кнопка затвора
                 Box(
-                    modifier = Modifier
-                        .size(76.dp)
-                        .border(4.dp, if (isRecordingVideo) Color.Red else monetAccent, CircleShape)
-                        .padding(if (isRecordingVideo) 14.dp else 6.dp)
-                        .background(
-                            if (isRecordingVideo) Color.Red else monetAccent,
-                            if (isRecordingVideo) RoundedCornerShape(8.dp) else CircleShape
-                        )
-                        .pointerInput(currentImageCapture, currentVideoCapture, currentCamera, isNightSightActive) {
-                            detectTapGestures(
-                                onPress = {
+                    contentAlignment = Alignment.Center
+                ) {
+                    if (isRecordingVideo && !isRecordingLocked) {
+                        val badgeOffsetY = with(density) { (-88.dp.toPx() + lockProgress * 18.dp.toPx()).toDp() }
+                        val badgeBg = lerp(monetButtonBg, monetAccent, lockProgress * 0.85f)
+                        val iconTint = if (lockProgress > 0.6f) Color.Black else monetAccentSoft
+
+                        Column(
+                            modifier = Modifier
+                                .offset(y = badgeOffsetY)
+                                .width(40.dp)
+                                .height(58.dp)
+                                .background(badgeBg, CircleShape)
+                                .padding(vertical = 8.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            // Стрелка вверх ^
+                            Canvas(modifier = Modifier.size(12.dp, 8.dp)) {
+                                val stroke = 2.dp.toPx()
+                                drawLine(iconTint, Offset(0f, size.height), Offset(size.width / 2f, 0f), stroke, StrokeCap.Round)
+                                drawLine(iconTint, Offset(size.width / 2f, 0f), Offset(size.width, size.height), stroke, StrokeCap.Round)
+                            }
+                            // Иконка замка (дужка опускается по мере свайпа вверх)
+                            Canvas(modifier = Modifier.size(18.dp)) {
+                                val stroke = 2.dp.toPx()
+                                val shackleLift = (1f - lockProgress) * 3.dp.toPx()
+                                translate(top = -shackleLift) {
+                                    drawArc(
+                                        color = iconTint,
+                                        startAngle = 180f,
+                                        sweepAngle = 180f,
+                                        useCenter = false,
+                                        topLeft = Offset(size.width * 0.28f, size.height * 0.08f),
+                                        size = Size(size.width * 0.44f, size.height * 0.44f),
+                                        style = Stroke(width = stroke, cap = StrokeCap.Round)
+                                    )
+                                }
+                                drawRoundRect(
+                                    color = iconTint,
+                                    topLeft = Offset(size.width * 0.18f, size.height * 0.44f),
+                                    size = Size(size.width * 0.64f, size.height * 0.48f),
+                                    cornerRadius = CornerRadius(3.dp.toPx(), 3.dp.toPx())
+                                )
+                            }
+                        }
+                    }
+
+                    val shutterOffsetY = if (isRecordingVideo && !isRecordingLocked) {
+                        with(density) { (lockDragOffsetY * 0.35f).coerceIn(-26.dp.toPx(), 0f).toDp() }
+                    } else {
+                        0.dp
+                    }
+
+                    // Затвор (Тап = Фото, Удержание = Видео, Свайп вверх = Блокировка, Тап при блокировке = Стоп и отправка)
+                    Box(
+                        modifier = Modifier
+                            .offset(y = shutterOffsetY)
+                            .size(76.dp)
+                            .border(4.dp, if (isRecordingVideo) Color.Red else monetAccent, CircleShape)
+                            .padding(if (isRecordingVideo) 18.dp else 6.dp)
+                            .background(
+                                if (isRecordingVideo) Color.Red else monetAccent,
+                                if (isRecordingVideo) RoundedCornerShape(8.dp) else CircleShape
+                            )
+                            .pointerInput(currentImageCapture, currentVideoCapture, currentCamera, isNightSightActive, isRecordingLocked) {
+                                awaitEachGesture {
+                                    val down = awaitFirstDown(requireUnconsumed = false)
+                                    down.consume()
+
+                                    // Если запись уже заблокирована — нажатие останавливает и отправляет видео
+                                    if (isRecordingLocked) {
+                                        var released = false
+                                        while (true) {
+                                            val event = awaitPointerEvent()
+                                            val change = event.changes.firstOrNull { it.id == down.id }
+                                            if (change == null || !change.pressed) {
+                                                released = true
+                                                break
+                                            }
+                                        }
+                                        if (released && (activeRecording != null || isRecordingVideo)) {
+                                            stopVideoRecording()
+                                        }
+                                        return@awaitEachGesture
+                                    }
+
+                                    val startY = down.position.y
+                                    var latestDy = 0f
+                                    var lockedInThisGesture = false
+
                                     val timerJob = coroutineScope.launch {
                                         delay(350)
                                         currentVideoCapture?.let { vc ->
                                             if (activeRecording == null) {
                                                 startVideoRecording(vc)
+                                                if (latestDy <= -lockThresholdPx) {
+                                                    lockedInThisGesture = true
+                                                    isRecordingLocked = true
+                                                    lockDragOffsetY = 0f
+                                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                                }
                                             }
                                         }
                                     }
 
-                                    val released = tryAwaitRelease()
-                                    timerJob.cancel()
+                                    while (true) {
+                                        val event = awaitPointerEvent()
+                                        val change = event.changes.firstOrNull { it.id == down.id }
+                                        if (change == null || !change.pressed) {
+                                            break
+                                        }
+                                        change.consume()
+                                        latestDy = change.position.y - startY
+                                        if (isRecordingVideo && !lockedInThisGesture) {
+                                            lockDragOffsetY = latestDy.coerceAtMost(0f)
+                                            if (latestDy <= -lockThresholdPx) {
+                                                lockedInThisGesture = true
+                                                isRecordingLocked = true
+                                                lockDragOffsetY = 0f
+                                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                            }
+                                        }
+                                    }
 
-                                    if (activeRecording != null || isRecordingVideo) {
+                                    timerJob.cancel()
+                                    lockDragOffsetY = 0f
+
+                                    if (lockedInThisGesture || isRecordingLocked) {
+                                        // Запись заблокирована — продолжаем снимать без удержания пальца
+                                    } else if (activeRecording != null || isRecordingVideo) {
                                         stopVideoRecording()
-                                    } else if (released) {
+                                    } else {
                                         currentImageCapture?.let { capture ->
                                             if (isNightSightActive) {
                                                 isProcessingNightSight = true
@@ -820,39 +968,43 @@ fun bindCamera(previewView: PreviewView) {
                                         }
                                     }
                                 }
+                            }
+                    )
+                }
+
+                // Справа: переворот камеры (скрываем во время записи, чтобы случайно не прервать видео)
+                if (!isRecordingVideo) {
+                    Box(
+                        modifier = Modifier
+                            .size(48.dp)
+                            .background(monetButtonBg, CircleShape)
+                            .clickable {
+                                if (isTorchOn) {
+                                    currentCamera?.cameraControl?.enableTorch(false)
+                                    isTorchOn = false
+                                }
+                                lensFacing = if (lensFacing == CameraSelector.LENS_FACING_BACK) {
+                                    CameraSelector.LENS_FACING_FRONT
+                                } else {
+                                    CameraSelector.LENS_FACING_BACK
+                                }
+                                cachedPreviewView?.let { bindCamera(it) }
+                            },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Canvas(modifier = Modifier.size(20.dp)) {
+                            drawArc(
+                                color = monetAccentSoft,
+                                startAngle = 0f,
+                                sweepAngle = 280f,
+                                useCenter = false,
+                                style = Stroke(width = 2.5f.dp.toPx(), cap = StrokeCap.Round)
                             )
                         }
-                )
-
-                // Переворот камеры
-                Box(
-                    modifier = Modifier
-                        .size(48.dp)
-                        .background(monetButtonBg, CircleShape)
-                        .clickable {
-                            if (isTorchOn) {
-                                currentCamera?.cameraControl?.enableTorch(false)
-                                isTorchOn = false
-                            }
-                            lensFacing = if (lensFacing == CameraSelector.LENS_FACING_BACK) {
-                                CameraSelector.LENS_FACING_FRONT
-                            } else {
-                                CameraSelector.LENS_FACING_BACK
-                            }
-                            cachedPreviewView?.let { bindCamera(it) }
-                        },
-                    contentAlignment = Alignment.Center
-                ) {
-                    Canvas(modifier = Modifier.size(20.dp)) {
-                        drawArc(
-                            color = monetAccentSoft,
-                            startAngle = 0f,
-                            sweepAngle = 280f,
-                            useCenter = false,
-                            style = Stroke(width = 2.5f.dp.toPx(), cap = StrokeCap.Round)
-                        )
                     }
-                } // Закрывает Canvas переворота камеры
+                } else {
+                    Spacer(modifier = Modifier.size(48.dp))
+                }
             } // Закрывает Row нижнего ряда
         } // Закрывает Column нижней панели
     } // Закрывает Box экрана
