@@ -6,6 +6,7 @@ import androidx.compose.foundation.*
 import androidx.compose.foundation.interaction.*
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.*
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -485,6 +486,13 @@ fun ChatItemView(
                               composeState.value = composeState.value.copy(contextItem = ComposeContextItem.QuotedItem(cItem))
                             }
                             showMenu.value = false
+                          })
+                        }
+                        if (cItem.content.text.isNotEmpty()) {
+                          ItemAction("Select Text", painterResource(MR.images.ic_content_copy), onClick = {
+                            RichHaptics.perform(HapticPattern.CLICK)
+                            showMenu.value = false
+                            showSelectTextDialog(cItem.content.text)
                           })
                         }
                         
@@ -1523,6 +1531,37 @@ fun deleteMessageAlertDialog(chatItem: ChatItem, questionText: String, chatInfo:
             AlertManager.shared.hideAlert()
           }) { Text(stringResource(MR.strings.for_everybody), color = MaterialTheme.colors.error) }
         }
+      }
+    }
+  )
+}
+fun showSelectTextDialog(text: String) {
+  AlertManager.shared.showAlertDialogButtons(
+    title = "Выделить текст",
+    buttons = {
+      Column(
+        Modifier
+          .fillMaxWidth()
+          .heightIn(max = 360.dp)
+          .verticalScroll(rememberScrollState())
+          .padding(horizontal = 20.dp, vertical = 12.dp)
+      ) {
+        SelectionContainer {
+          Text(
+            text = text,
+            style = MaterialTheme.typography.body1.copy(color = MaterialTheme.colors.onSurface, lineHeight = 22.sp)
+          )
+        }
+      }
+      SectionItemView({
+        AlertManager.shared.hideAlert()
+      }) {
+        Text(
+          stringResource(MR.strings.cancel_verb),
+          Modifier.fillMaxWidth(),
+          textAlign = TextAlign.Center,
+          color = MaterialTheme.colors.primary
+        )
       }
     }
   )
