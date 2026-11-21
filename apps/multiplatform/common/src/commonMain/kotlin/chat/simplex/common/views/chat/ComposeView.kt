@@ -359,7 +359,10 @@ suspend fun MutableState<ComposeState>.processPickedMedia(uris: List<URI>, text:
   val imagesPreview = ArrayList<String>()
   uris.forEach { uri ->
 var preview: String? = null
-    val isVideo = uri.toString().contains(".mp4", ignoreCase = true) || uri.toString().contains("VID_", ignoreCase = true)
+    val isVideo = isVideoUri(uri) ||
+      uri.toString().contains(".mp4", ignoreCase = true) ||
+      uri.toString().contains("VID_", ignoreCase = true) ||
+      uri.toString().contains("/video/", ignoreCase = true)
     val uploadContent: UploadContent? = when {
       !isVideo && isImage(uri) -> {
         val drawable = getDrawableFromUri(uri)
