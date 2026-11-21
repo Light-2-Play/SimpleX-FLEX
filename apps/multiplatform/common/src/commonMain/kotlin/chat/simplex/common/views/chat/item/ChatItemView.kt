@@ -45,7 +45,6 @@ val LocalVoiceTranscriptionWidget = staticCompositionLocalOf<@Composable (ChatIt
   { /* Пустышка для Desktop/iOS */ }
 }
 
-val CHAT_ITEM_TEXT_PADDING = 12.dp
 private val msgRectMaxRadius = 26.dp
 private val msgBubbleMaxRadius = 28.dp
 val msgTailWidthDp = 10.dp
