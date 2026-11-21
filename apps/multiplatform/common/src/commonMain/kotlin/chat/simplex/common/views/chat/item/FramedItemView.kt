@@ -505,8 +505,7 @@ fun CIMarkdownText(
 ) {
   val chatInfo = chat.chatInfo
   val text = if (ci.meta.isLive) ci.content.msgContent?.text ?: ci.text else ci.text
-  val bases = remember(ci, linkMode) { itemDisplay(ci, linkMode)?.bases ?: listOf(0) }
-  val selection = setupItemSelection(LocalSelectionManager.current, LocalItemContext.current.selectionIndex, ci.meta.isLive == true, bases)
+val selection = null
   val terminal = LocalTerminalLayout.current
   val msgFontSize = 17.6.sp
 
