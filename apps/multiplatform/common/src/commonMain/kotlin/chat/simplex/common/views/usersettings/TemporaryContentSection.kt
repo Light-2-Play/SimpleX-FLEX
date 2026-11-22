@@ -8,6 +8,7 @@ import androidx.compose.foundation.*
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -18,6 +19,7 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Image
+import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PlayArrow
@@ -55,6 +57,11 @@ val LocalStoryImageViewer = compositionLocalOf<(@Composable (filePath: String, m
 object TemporaryContentPickerBridge {
   var pickMedia: ((TemporaryMediaType, (String?) -> Unit) -> Unit)? = null
 }
+
+private val STORY_REACTION_EMOJIS = listOf(
+  "❤️", "🔥", "😂", "😍", "😮", "😢", "👏", "👍",
+  "👎", "🎉", "💯", "🙏", "🤯", "🥳", "😎", "💔"
+)
 
 // =====================================================================
 // 1. СЕКЦИЯ В ПРОФИЛЕ ("TEMPORARY CONTENT")
@@ -202,7 +209,7 @@ fun TemporaryContentProfileSection() {
             }
         }
     }
-    
+
     if (showAddDialog) {
         AddTemporaryContentDialog(
             onDismiss = { showAddDialog = false },
@@ -363,6 +370,7 @@ private fun AddTemporaryContentDialog(
   var selectedDuration by remember { mutableStateOf(TemporaryDuration.HOURS_24) }
   var selectedMediaType by remember { mutableStateOf(TemporaryMediaType.PHOTO) }
   var selectedAudience by remember { mutableStateOf(TemporaryAudience.CONTACTS) }
+  var allowReactions by remember { mutableStateOf(true) }
   var selectedFilePath by remember { mutableStateOf<String?>(null) }
   var caption by remember { mutableStateOf("") }
 
@@ -387,6 +395,7 @@ private fun AddTemporaryContentDialog(
       Column(
         modifier = Modifier
           .fillMaxWidth()
+          .verticalScroll(rememberScrollState())
           .padding(22.dp)
       ) {
         Text(
@@ -535,6 +544,47 @@ private fun AddTemporaryContentDialog(
         Spacer(Modifier.height(16.dp))
 
         Text(
+          text = "REACTIONS",
+          fontSize = 11.sp,
+          fontWeight = FontWeight.Bold,
+          letterSpacing = 1.sp,
+          color = primary
+        )
+        Spacer(Modifier.height(8.dp))
+        Row(
+          modifier = Modifier.fillMaxWidth(),
+          horizontalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+          listOf(true to "Allows Reactions", false to "Restrict Reactions").forEach { (allowed, label) ->
+            val isSelected = allowReactions == allowed
+            Surface(
+              shape = RoundedCornerShape(percent = 50),
+              color = if (isSelected) primary else primary.copy(alpha = 0.10f),
+              modifier = Modifier
+                .weight(1f)
+                .clip(RoundedCornerShape(percent = 50))
+                .clickable(enabled = !isUploading) {
+                  RichHaptics.perform(HapticPattern.SELECTION_CHANGE)
+                  allowReactions = allowed
+                }
+            ) {
+              Text(
+                text = label,
+                fontSize = 11.5.sp,
+                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                color = if (isSelected) MaterialTheme.colors.onPrimary else MaterialTheme.colors.onSurface,
+                textAlign = TextAlign.Center,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.padding(vertical = 8.dp, horizontal = 6.dp)
+              )
+            }
+          }
+        }
+
+        Spacer(Modifier.height(16.dp))
+
+        Text(
           text = "AUTO-DELETE AFTER",
           fontSize = 11.sp,
           fontWeight = FontWeight.Bold,
@@ -542,7 +592,7 @@ private fun AddTemporaryContentDialog(
           color = primary
         )
         Spacer(Modifier.height(8.dp))
-        
+
         val durations = TemporaryDuration.values().toList()
         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
           durations.chunked(3).forEach { rowItems ->
@@ -643,7 +693,8 @@ private fun AddTemporaryContentDialog(
                   mediaType = selectedMediaType,
                   duration = selectedDuration,
                   caption = caption.trim(),
-                  audience = selectedAudience
+                  audience = selectedAudience,
+                  allowReactions = allowReactions
                 ) ?: return@Button
 
                 isUploading = true
@@ -696,13 +747,26 @@ fun TemporaryContentStoryViewer(
     onDismiss: () -> Unit,
     onDeleteStory: (String) -> Unit = {}
 ) {
+    val liveItems by TemporaryContentManager.items.collectAsState()
     var currentIndex by remember { mutableStateOf(initialIndex.coerceIn(0, items.lastIndex)) }
-    val currentItem = items.getOrNull(currentIndex) ?: run {
+    val safeIndex = currentIndex.coerceIn(0, (items.size - 1).coerceAtLeast(0))
+    val baseItem = items.getOrNull(safeIndex) ?: run {
         onDismiss()
         return
     }
+    val currentItem = remember(baseItem, liveItems) {
+        liveItems.firstOrNull { it.id == baseItem.id } ?: baseItem
+    }
 
+    var showReactionPicker by remember(currentItem.id) { mutableStateOf(false) }
     val now = System.currentTimeMillis()
+    val primary = MaterialTheme.colors.primary
+
+    fun onToggleReaction(emoji: String) {
+        val added = TemporaryContentManager.toggleLocalReaction(currentItem.id, emoji) ?: return
+        RichHaptics.perform(if (added) HapticPattern.SELECTION_CHANGE else HapticPattern.TICK)
+        StorySyncManager.sendStoryReaction(chatModel, currentItem, emoji, added)
+    }
 
     Dialog(
         onDismissRequest = onDismiss,
@@ -712,17 +776,21 @@ fun TemporaryContentStoryViewer(
             modifier = Modifier
                 .fillMaxSize()
                 .background(Color.Black)
-                .pointerInput(currentIndex, items.size) {
+                .pointerInput(safeIndex, items.size, showReactionPicker) {
                     detectTapGestures { offset ->
+                        if (showReactionPicker) {
+                            showReactionPicker = false
+                            return@detectTapGestures
+                        }
                         if (offset.x < size.width * 0.35f) {
-                            if (currentIndex > 0) {
+                            if (safeIndex > 0) {
                                 RichHaptics.perform(HapticPattern.TICK)
-                                currentIndex--
+                                currentIndex = safeIndex - 1
                             }
                         } else {
-                            if (currentIndex < items.lastIndex) {
+                            if (safeIndex < items.lastIndex) {
                                 RichHaptics.perform(HapticPattern.TICK)
-                                currentIndex++
+                                currentIndex = safeIndex + 1
                             } else {
                                 onDismiss()
                             }
@@ -769,8 +837,8 @@ fun TemporaryContentStoryViewer(
                 ) {
                     items.forEachIndexed { idx, it ->
                         val progress = when {
-                            idx < currentIndex -> 1f
-                            idx == currentIndex -> it.remainingProgress(now)
+                            idx < safeIndex -> 1f
+                            idx == safeIndex -> it.remainingProgress(now)
                             else -> 0f
                         }
                         LinearProgressIndicator(
@@ -805,7 +873,7 @@ fun TemporaryContentStoryViewer(
                         ) {
                             Icon(rememberVectorPainter(Icons.Default.Schedule), null, tint = Color.White, modifier = Modifier.size(16.dp))
                             Spacer(Modifier.width(6.dp))
-                            val authorLabel = currentItem.authorDisplayName ?: "Contact"
+                            val authorLabel = currentItem.authorDisplayName ?: "You"
                             Text("$authorLabel • ${currentItem.remainingTimeText(now)}", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold)
                         }
                     }
@@ -841,29 +909,211 @@ fun TemporaryContentStoryViewer(
                 }
             }
 
-            // 3. Плавающая подпись снизу (Плавающий M3-контейнер)
-            if (currentItem.caption.isNotBlank()) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .align(Alignment.BottomCenter)
-                        .navigationBarsPadding()
-                        .padding(horizontal = 24.dp, vertical = 24.dp),
-                    contentAlignment = Alignment.Center
-                ) {
+            // 3. Нижний оверлей: подпись + Public Reactions в левом нижнем углу
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .align(Alignment.BottomStart)
+                    .navigationBarsPadding()
+                    .padding(start = 16.dp, end = 16.dp, bottom = 20.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                // Плавающая подпись (если есть)
+                if (currentItem.caption.isNotBlank()) {
+                    Box(
+                        modifier = Modifier.fillMaxWidth(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Surface(
+                            color = Color.Black.copy(alpha = 0.48f),
+                            shape = RoundedCornerShape(16.dp),
+                            elevation = 0.dp
+                        ) {
+                            Text(
+                                text = currentItem.caption,
+                                color = Color.White,
+                                fontSize = 15.sp,
+                                textAlign = TextAlign.Center,
+                                maxLines = 4,
+                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp)
+                            )
+                        }
+                    }
+                }
+
+                // Public Reactions в левом нижнем углу
+                if (currentItem.allowReactions) {
+                    val groupedReactions = remember(currentItem.reactions) {
+                        currentItem.reactions
+                            .groupBy { it.emoji }
+                            .map { (emoji, list) ->
+                                Triple(
+                                    emoji,
+                                    list.size,
+                                    list.any { it.senderContactId == null }
+                                )
+                            }
+                    }
+
+                    // Выезжающая панель выбора Emoji
+                    AnimatedVisibility(
+                        visible = showReactionPicker,
+                        enter = fadeIn(tween(180)) + expandVertically(expandFrom = Alignment.Bottom),
+                        exit = fadeOut(tween(150)) + shrinkVertically(shrinkTowards = Alignment.Bottom)
+                    ) {
+                        Surface(
+                            color = Color(0xFF141418).copy(alpha = 0.88f),
+                            shape = RoundedCornerShape(percent = 50),
+                            border = BorderStroke(1.dp, Color.White.copy(alpha = 0.18f)),
+                            elevation = 4.dp,
+                            modifier = Modifier
+                                .pointerInput(Unit) {
+                                    detectTapGestures { /* перехватываем клики внутри панели */ }
+                                }
+                        ) {
+                            LazyRow(
+                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                items(STORY_REACTION_EMOJIS) { emoji ->
+                                    val alreadySelected = groupedReactions.any { it.first == emoji && it.third }
+                                    Box(
+                                        modifier = Modifier
+                                            .size(36.dp)
+                                            .clip(CircleShape)
+                                            .background(
+                                                if (alreadySelected) primary.copy(alpha = 0.35f) else Color.Transparent
+                                            )
+                                            .clickable {
+                                                onToggleReaction(emoji)
+                                                showReactionPicker = false
+                                            },
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Text(
+                                            text = emoji,
+                                            fontSize = 21.sp
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // Ряд активных публичных реакций + кнопка добавления реакции слева снизу
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        // Кнопка открытия выбора Emoji
+                        Surface(
+                            color = if (showReactionPicker) primary else Color.Black.copy(alpha = 0.50f),
+                            shape = RoundedCornerShape(percent = 50),
+                            border = BorderStroke(
+                                1.dp,
+                                if (showReactionPicker) primary else Color.White.copy(alpha = 0.24f)
+                            ),
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(percent = 50))
+                                .clickable {
+                                    RichHaptics.perform(HapticPattern.CLICK)
+                                    showReactionPicker = !showReactionPicker
+                                }
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                Text(
+                                    text = "😊",
+                                    fontSize = 15.sp
+                                )
+                                Icon(
+                                    painter = rememberVectorPainter(
+                                        if (showReactionPicker) Icons.Default.Close else Icons.Default.Add
+                                    ),
+                                    contentDescription = "Add reaction",
+                                    tint = if (showReactionPicker) MaterialTheme.colors.onPrimary else Color.White,
+                                    modifier = Modifier.size(14.dp)
+                                )
+                            }
+                        }
+
+                        // Капсулы с публичными Emoji-реакциями и счётчиками
+                        groupedReactions.forEach { (emoji, count, isMine) ->
+                            val chipBg = if (isMine) {
+                                primary.copy(alpha = 0.85f)
+                            } else {
+                                Color.Black.copy(alpha = 0.50f)
+                            }
+                            val chipBorder = if (isMine) {
+                                primary
+                            } else {
+                                Color.White.copy(alpha = 0.22f)
+                            }
+                            val textColor = if (isMine) {
+                                MaterialTheme.colors.onPrimary
+                            } else {
+                                Color.White
+                            }
+
+                            Surface(
+                                color = chipBg,
+                                shape = RoundedCornerShape(percent = 50),
+                                border = BorderStroke(1.dp, chipBorder),
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(percent = 50))
+                                    .clickable { onToggleReaction(emoji) }
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 11.dp, vertical = 6.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(5.dp)
+                                ) {
+                                    Text(
+                                        text = emoji,
+                                        fontSize = 15.sp
+                                    )
+                                    Text(
+                                        text = count.toString(),
+                                        fontSize = 12.5.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = textColor
+                                    )
+                                }
+                            }
+                        }
+                    }
+                } else if (currentItem.authorContactId == null) {
+                    // Для автора показываем аккуратный индикатор, что реакции отключены
                     Surface(
                         color = Color.Black.copy(alpha = 0.45f),
-                        shape = RoundedCornerShape(16.dp),
-                        elevation = 0.dp
+                        shape = RoundedCornerShape(percent = 50),
+                        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.16f))
                     ) {
-                        Text(
-                            text = currentItem.caption,
-                            color = Color.White,
-                            fontSize = 15.sp,
-                            textAlign = TextAlign.Center,
-                            maxLines = 4,
-                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)
-                        )
+                        Row(
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Icon(
+                                painter = rememberVectorPainter(Icons.Default.Lock),
+                                contentDescription = null,
+                                tint = Color.White.copy(alpha = 0.75f),
+                                modifier = Modifier.size(13.dp)
+                            )
+                            Text(
+                                text = "Reactions restricted",
+                                color = Color.White.copy(alpha = 0.8f),
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Medium
+                            )
+                        }
                     }
                 }
             }
@@ -936,7 +1186,7 @@ fun AllStoriesFeedView(close: () -> Unit) {
                             isReloading = true
                             RichHaptics.perform(HapticPattern.CLICK)
                             scope.launch {
-                                TemporaryContentManager.reload() // Перезагружаем при ручном обновлении
+                                TemporaryContentManager.reload()
                                 StorySyncManager.syncAllStoriesNow(chatModel)
                                 delay(600L)
                                 isReloading = false
@@ -1128,7 +1378,7 @@ fun AllStoriesFeedView(close: () -> Unit) {
             items = storiesToView,
             initialIndex = 0,
             onDismiss = { viewingStories = null },
-            onDeleteStory = { idToDelete -> 
+            onDeleteStory = { idToDelete ->
                 val isMyStory = TemporaryContentManager.items.value.find { it.id == idToDelete }?.authorContactId == null
                 TemporaryContentManager.removeContent(idToDelete)
                 if (isMyStory) {
@@ -1143,7 +1393,7 @@ private fun loadStoryThumbnailSafe(filePath: String): ImageBitmap? {
   return try {
     val thumbFile = File("${filePath}_thumb.jpg")
     val targetFile = if (thumbFile.exists() && thumbFile.length() > 0) thumbFile else File(filePath)
-    
+
     if (targetFile.exists() && targetFile.length() in 1..900_000L) {
       val bytes = targetFile.readBytes()
       val base64Str = java.util.Base64.getEncoder().encodeToString(bytes)
