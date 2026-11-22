@@ -10,11 +10,6 @@ import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import java.io.File
 import kotlinx.coroutines.*
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
 
 enum class TemporaryMediaType {
   PHOTO, VIDEO
@@ -33,8 +28,14 @@ enum class TemporaryDuration(val hours: Float, val label: String) {
 enum class TemporaryAudience(val label: String) {
   VERIFIED_USERS("Verified"),
   CONTACTS("Contacts")
-  // Пункт ALL_USERS удален по вашему запросу
 }
+
+@Serializable
+data class StoryReaction(
+  val emoji: String,
+  val senderContactId: Long? = null, // null = текущая реакция пользователя, иначе contactId собеседника
+  val senderName: String? = null
+)
 
 @Serializable
 data class TemporaryContentItem(
@@ -44,10 +45,12 @@ data class TemporaryContentItem(
   val filePath: String,
   val mediaType: TemporaryMediaType,
   val createdAtMillis: Long,
-  val durationHours: Float, // Теперь Float
+  val durationHours: Float,
   val expiresAtMillis: Long = createdAtMillis + (durationHours * 3600_000f).toLong(),
   val caption: String = "",
-  val audience: TemporaryAudience = TemporaryAudience.CONTACTS
+  val audience: TemporaryAudience = TemporaryAudience.CONTACTS,
+  val allowReactions: Boolean = true,
+  val reactions: List<StoryReaction> = emptyList()
 ) {
   @Transient
   var linkedChatItem: ChatItem? = null
@@ -67,7 +70,7 @@ data class TemporaryContentItem(
     val totalMs = (durationHours * 3600_000f)
     if (totalMs <= 0f) return 0f
     val remainingMs = (expiresAtMillis - nowMillis).coerceIn(0L, totalMs.toLong()).toFloat()
-    return (remainingMs / totalMs).coerceIn(0f, 1f)
+    return (remainingMs / totalMs).toFloat().coerceIn(0f, 1f)
   }
 }
 
@@ -87,28 +90,29 @@ object TemporaryContentManager {
 
   private val metadataFile: File
     get() = File(getStorageDir(), "metadata.json")
-   
+
   private val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
 
   init {
     loadMetadataFromDisk()
     purgeExpired()
-    
+
     // Фоновый таймер: проверяет и удаляет истекший контент каждую минуту
     scope.launch {
       while (true) {
-        delay(60_000L) 
+        delay(60_000L)
         purgeExpired()
       }
     }
   }
 
-fun addContentFromFilePath(
+  fun addContentFromFilePath(
     sourcePath: String,
     mediaType: TemporaryMediaType,
     duration: TemporaryDuration,
     caption: String,
-    audience: TemporaryAudience
+    audience: TemporaryAudience,
+    allowReactions: Boolean = true
   ): TemporaryContentItem? {
     return try {
       val sourceFile = File(sourcePath)
@@ -144,7 +148,8 @@ fun addContentFromFilePath(
         durationHours = duration.hours,
         expiresAtMillis = expiresAt,
         caption = caption,
-        audience = audience
+        audience = audience,
+        allowReactions = allowReactions
       )
 
       val currentList = _items.value.toMutableList()
@@ -157,7 +162,7 @@ fun addContentFromFilePath(
       null
     }
   }
-  
+
   fun getActiveItemsFor(contactId: Long?): List<TemporaryContentItem> {
     val now = System.currentTimeMillis()
     return _items.value.filter { it.authorContactId == contactId && it.expiresAtMillis > now }
@@ -168,7 +173,8 @@ fun addContentFromFilePath(
     mediaType: TemporaryMediaType,
     duration: TemporaryDuration,
     caption: String,
-    audience: TemporaryAudience
+    audience: TemporaryAudience,
+    allowReactions: Boolean = true
   ): TemporaryContentItem? {
     return try {
       val dir = getStorageDir()
@@ -198,7 +204,8 @@ fun addContentFromFilePath(
         durationHours = duration.hours,
         expiresAtMillis = expiresAt,
         caption = caption,
-        audience = audience
+        audience = audience,
+        allowReactions = allowReactions
       )
 
       val currentList = _items.value.toMutableList()
@@ -219,9 +226,10 @@ fun addContentFromFilePath(
     decryptedFile: File,
     previewBase64: String?,
     mediaType: TemporaryMediaType,
-    durationHours: Float, // Теперь Float
+    durationHours: Float,
     caption: String,
-    createdAtMillis: Long
+    createdAtMillis: Long,
+    allowReactions: Boolean = true
   ) {
     try {
       if (!decryptedFile.exists() || decryptedFile.length() <= 1000L) return
@@ -234,6 +242,7 @@ fun addContentFromFilePath(
         } catch (_: Exception) {}
       }
 
+      val existingReactions = _items.value.firstOrNull { it.id == storyId }?.reactions ?: emptyList()
       val expiresAt = createdAtMillis + (durationHours * 3600_000f).toLong()
       val newItem = TemporaryContentItem(
         id = storyId,
@@ -245,7 +254,9 @@ fun addContentFromFilePath(
         durationHours = durationHours,
         expiresAtMillis = expiresAt,
         caption = caption,
-        audience = TemporaryAudience.CONTACTS
+        audience = TemporaryAudience.CONTACTS,
+        allowReactions = allowReactions,
+        reactions = existingReactions
       )
 
       val currentList = _items.value.toMutableList()
@@ -256,6 +267,64 @@ fun addContentFromFilePath(
     } catch (e: Exception) {
       Log.e(TAG, "registerImportedStoryFile error: ${e.message}")
     }
+  }
+
+  /**
+   * Переключает реакцию текущего пользователя на сторис.
+   * Возвращает true, если реакция добавлена, false — если снята, null — если реакции запрещены.
+   */
+  fun toggleLocalReaction(storyId: String, emoji: String): Boolean? {
+    val currentList = _items.value.toMutableList()
+    val index = currentList.indexOfFirst { it.id == storyId }
+    if (index == -1) return null
+    val item = currentList[index]
+    if (!item.allowReactions) return null
+
+    val updatedReactions = item.reactions.toMutableList()
+    val existingIdx = updatedReactions.indexOfFirst { it.senderContactId == null && it.emoji == emoji }
+    val added = if (existingIdx != -1) {
+      updatedReactions.removeAt(existingIdx)
+      false
+    } else {
+      updatedReactions.add(StoryReaction(emoji = emoji, senderContactId = null, senderName = null))
+      true
+    }
+    currentList[index] = item.copy(reactions = updatedReactions)
+    _items.value = currentList.toList()
+    saveMetadataToDisk()
+    return added
+  }
+
+  /**
+   * Применяет входящую публичную реакцию от контакта.
+   */
+  fun applyRemoteReaction(
+    storyId: String,
+    senderContactId: Long,
+    senderName: String?,
+    emoji: String,
+    added: Boolean
+  ) {
+    val currentList = _items.value.toMutableList()
+    val index = currentList.indexOfFirst { it.id == storyId }
+    if (index == -1) return
+    val item = currentList[index]
+    if (!item.allowReactions) return
+
+    val updatedReactions = item.reactions.toMutableList()
+    updatedReactions.removeAll { it.senderContactId == senderContactId && it.emoji == emoji }
+    if (added) {
+      updatedReactions.add(
+        StoryReaction(
+          emoji = emoji,
+          senderContactId = senderContactId,
+          senderName = senderName
+        )
+      )
+    }
+    currentList[index] = item.copy(reactions = updatedReactions)
+    _items.value = currentList.toList()
+    saveMetadataToDisk()
   }
 
   fun removeContent(id: String) {
@@ -271,11 +340,8 @@ fun addContentFromFilePath(
     saveMetadataToDisk()
   }
 
-  // 100% РАБОЧИЙ МЕТОД ОЧИСТКИ 24-ЧАСОВОГО КОНТЕНТА
   fun purgeExpired() {
     val now = System.currentTimeMillis()
-    val ttlMillis = 24L * 60 * 60 * 1000 // 24 часа
-    
     val currentItems = _items.value.toMutableList()
     val expiredItems = currentItems.filter { now >= it.expiresAtMillis }
 
@@ -284,14 +350,12 @@ fun addContentFromFilePath(
         try {
           File(item.filePath).delete()
           File("${item.filePath}_thumb.jpg").delete()
-        } catch (e: Exception) {
-          // Игнорируем ошибки, если файл уже стерт
-        }
+        } catch (_: Exception) {}
       }
-      
+
       currentItems.removeAll(expiredItems)
       _items.value = currentItems
-      saveMetadataToDisk() // Сохраняем обновленный список историй
+      saveMetadataToDisk()
     }
   }
 
@@ -319,10 +383,9 @@ fun addContentFromFilePath(
     }
   }
 
-  // Принудительно очищает оперативную память и читает диск текущего профиля
   fun reload() {
     _items.value = emptyList()
     loadMetadataFromDisk()
     purgeExpired()
   }
-} // <--- САМАЯ ПОСЛЕДНЯЯ СКОБКА ФАЙЛА ДОЛЖНА БЫТЬ ЗДЕСЬ
+}
