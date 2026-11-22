@@ -8,6 +8,10 @@ import java.util.concurrent.ConcurrentHashMap
 
 object StorySyncManager {
   const val STORY_TAG_PREFIX = "[STORY:"
+  private const val DELETE_TAG_PREFIX = "[STORY:DELETE:"
+  private const val LEGACY_DELETE_TAG_PREFIX = "[STORY_DELETE:"
+  private const val REACT_TAG_PREFIX = "[STORY:REACT:"
+  private const val PUBLIC_REACT_TAG_PREFIX = "[STORY:PUBLIC_REACT:"
 
   private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
   private var observerJob: Job? = null
@@ -57,27 +61,110 @@ object StorySyncManager {
       }
 
       // 1. ОБРАБОТКА КОМАНД УДАЛЕНИЯ ОТ ОТПРАВИТЕЛЯ
-      val deleteItems = items.filter { it.content.text.startsWith("[STORY_DELETE:") }
+      val deleteItems = items.filter {
+        it.content.text.startsWith(DELETE_TAG_PREFIX) || it.content.text.startsWith(LEGACY_DELETE_TAG_PREFIX)
+      }
       for (delItem in deleteItems) {
         if (!delItem.chatDir.sent) {
-          val senderStoryId = delItem.content.text.substringAfter("[STORY_DELETE:").substringBefore("]")
+          val raw = delItem.content.text
+          val senderStoryId = if (raw.startsWith(DELETE_TAG_PREFIX)) {
+            raw.substringAfter(DELETE_TAG_PREFIX).substringBefore("]")
+          } else {
+            raw.substringAfter(LEGACY_DELETE_TAG_PREFIX).substringBefore("]")
+          }
           val storyIdToDelete = "story_${directContact.contactId}_$senderStoryId"
-          TemporaryContentManager.removeContent(storyIdToDelete) // Стираем с устройства получателя
+          TemporaryContentManager.removeContent(storyIdToDelete)
         }
-        removeStoryItemFromChat(chatModel, chat, delItem) // Прячем техническую команду из чата
+        removeStoryItemFromChat(chatModel, chat, delItem)
       }
 
-      // 2. ОБРАБОТКА НОВЫХ ИСТОРИЙ
+      // 2. ОБРАБОТКА ВХОДЯЩИХ РЕАКЦИЙ ОТ ЗРИТЕЛЕЙ (наши сторис)
+      val reactItems = items.filter { it.content.text.startsWith(REACT_TAG_PREFIX) }
+      for (reactItem in reactItems) {
+        if (!reactItem.chatDir.sent) {
+          val payload = reactItem.content.text.substringAfter(REACT_TAG_PREFIX).substringBefore("]")
+          val parts = payload.split("|")
+          if (parts.size >= 3) {
+            val originalStoryId = parts[0]
+            val emoji = parts[1]
+            val added = parts[2] == "1"
+            TemporaryContentManager.applyRemoteReaction(
+              storyId = originalStoryId,
+              senderContactId = directContact.contactId,
+              senderName = directContact.displayName,
+              emoji = emoji,
+              added = added
+            )
+            // Делаем реакцию публичной: рассылаем остальным контактам
+            broadcastPublicReaction(
+              chatModel = chatModel,
+              originalStoryId = originalStoryId,
+              reactorKey = directContact.contactId.toString(),
+              reactorName = directContact.displayName,
+              emoji = emoji,
+              added = added,
+              excludeContactId = directContact.contactId
+            )
+          }
+        }
+        removeStoryItemFromChat(chatModel, chat, reactItem)
+      }
+
+      // 3. ОБРАБОТКА ПУБЛИЧНЫХ РЕАКЦИЙ ОТ АВТОРА СТОРИС
+      val publicReactItems = items.filter { it.content.text.startsWith(PUBLIC_REACT_TAG_PREFIX) }
+      for (pubItem in publicReactItems) {
+        if (!pubItem.chatDir.sent) {
+          val payload = pubItem.content.text.substringAfter(PUBLIC_REACT_TAG_PREFIX).substringBefore("]")
+          val parts = payload.split("|")
+          if (parts.size >= 5) {
+            val originalStoryId = parts[0]
+            val reactorKey = parts[1]
+            val reactorName = parts[2]
+            val emoji = parts[3]
+            val added = parts[4] == "1"
+            val localStoryId = "story_${directContact.contactId}_$originalStoryId"
+
+            val localStory = TemporaryContentManager.items.value.firstOrNull { it.id == localStoryId }
+            val isOwnEcho = reactorKey != "owner" &&
+              reactorName == user.profile.displayName &&
+              localStory?.reactions?.any { it.senderContactId == null && it.emoji == emoji } == true
+
+            if (!isOwnEcho) {
+              val senderId = if (reactorKey == "owner") {
+                directContact.contactId
+              } else {
+                -(directContact.contactId * 100_000L + (reactorKey.toLongOrNull() ?: reactorName.hashCode().toLong()))
+              }
+              TemporaryContentManager.applyRemoteReaction(
+                storyId = localStoryId,
+                senderContactId = senderId,
+                senderName = reactorName,
+                emoji = emoji,
+                added = added
+              )
+            }
+          }
+        }
+        removeStoryItemFromChat(chatModel, chat, pubItem)
+      }
+
+      // 4. ОБРАБОТКА НОВЫХ ИСТОРИЙ
       val storyItems = items.filter { item ->
-        item.content.text.startsWith(STORY_TAG_PREFIX) && !importedItemIds.contains(item.id)
+        val txt = item.content.text
+        txt.startsWith(STORY_TAG_PREFIX) &&
+          !txt.startsWith(DELETE_TAG_PREFIX) &&
+          !txt.startsWith(REACT_TAG_PREFIX) &&
+          !txt.startsWith(PUBLIC_REACT_TAG_PREFIX) &&
+          !importedItemIds.contains(item.id)
       }
 
       for (item in storyItems) {
         val rawText = item.content.text
         val header = rawText.substringAfter(STORY_TAG_PREFIX).substringBefore("]")
-        val durationHours = header.substringBefore("|").toFloatOrNull() ?: 24f
-        // Обратная совместимость + уникальный ID для удаления
-        val senderStoryId = if (header.contains("|")) header.substringAfter("|") else item.id.toString()
+        val parts = header.split("|")
+        val durationHours = parts.getOrNull(0)?.toFloatOrNull() ?: 24f
+        val senderStoryId = parts.getOrNull(1)?.takeIf { it.isNotEmpty() } ?: item.id.toString()
+        val allowReactions = parts.getOrNull(2)?.let { it == "1" || it.equals("true", ignoreCase = true) } ?: true
         val storyId = "story_${directContact.contactId}_$senderStoryId"
 
         val existing = TemporaryContentManager.items.value.firstOrNull { it.id == storyId }
@@ -140,11 +227,88 @@ object StorySyncManager {
               mediaType = mediaType,
               durationHours = durationHours,
               caption = caption,
-              createdAtMillis = item.meta.createdAt.toEpochMilliseconds()
+              createdAtMillis = item.meta.createdAt.toEpochMilliseconds(),
+              allowReactions = allowReactions
             )
             removeStoryItemFromChat(chatModel, chat, item)
           }
         }
+      }
+    }
+  }
+
+  /**
+   * Отправляет публичную реакцию на сторис (автору, если сторис чужая, или всем зрителям, если наша).
+   */
+  fun sendStoryReaction(chatModel: ChatModel, item: TemporaryContentItem, emoji: String, added: Boolean) {
+    if (!item.allowReactions) return
+    scope.launch {
+      val addedFlag = if (added) "1" else "0"
+      val authorId = item.authorContactId
+      if (authorId == null) {
+        val myName = chatModel.currentUser.value?.profile?.displayName ?: "Author"
+        broadcastPublicReaction(
+          chatModel = chatModel,
+          originalStoryId = item.id,
+          reactorKey = "owner",
+          reactorName = myName,
+          emoji = emoji,
+          added = added
+        )
+      } else {
+        val originalStoryId = item.id.removePrefix("story_${authorId}_")
+        val targetChat = chatModel.chats.value.firstOrNull { chat ->
+          val ci = chat.chatInfo
+          ci is ChatInfo.Direct && ci.contact.contactId == authorId && ci.contact.active && ci.sendMsgEnabled
+        } ?: return@launch
+
+        val msgContent = MsgContent.MCText("$REACT_TAG_PREFIX$originalStoryId|$emoji|$addedFlag]")
+        try {
+          val cInfo = targetChat.chatInfo
+          chatModel.controller.apiSendMessages(
+            rh = targetChat.remoteHostId, type = cInfo.chatType, id = cInfo.apiId, scope = cInfo.groupChatScope(),
+            sendAsGroup = cInfo.sendAsGroup, live = false, ttl = null, sign = false,
+            composedMessages = listOf(ComposedMessage(fileSource = null, quotedItemId = null, msgContent = msgContent, mentions = emptyMap()))
+          )
+        } catch (e: Exception) {
+          Log.e(TAG, "Send story reaction error: ${e.message}")
+        }
+      }
+    }
+  }
+
+  private suspend fun broadcastPublicReaction(
+    chatModel: ChatModel,
+    originalStoryId: String,
+    reactorKey: String,
+    reactorName: String,
+    emoji: String,
+    added: Boolean,
+    excludeContactId: Long? = null
+  ) {
+    val safeName = reactorName.replace("|", " ").replace("]", "")
+    val addedFlag = if (added) "1" else "0"
+    val msgContent = MsgContent.MCText("$PUBLIC_REACT_TAG_PREFIX$originalStoryId|$reactorKey|$safeName|$emoji|$addedFlag]")
+
+    val recipients = chatModel.chats.value.filter { chat ->
+      val ci = chat.chatInfo
+      ci is ChatInfo.Direct &&
+        ci.contact.contactId != excludeContactId &&
+        ci.contact.active &&
+        ci.contact.ready &&
+        ci.sendMsgEnabled
+    }
+
+    recipients.forEach { chat ->
+      try {
+        val cInfo = chat.chatInfo
+        chatModel.controller.apiSendMessages(
+          rh = chat.remoteHostId, type = cInfo.chatType, id = cInfo.apiId, scope = cInfo.groupChatScope(),
+          sendAsGroup = cInfo.sendAsGroup, live = false, ttl = null, sign = false,
+          composedMessages = listOf(ComposedMessage(fileSource = null, quotedItemId = null, msgContent = msgContent, mentions = emptyMap()))
+        )
+      } catch (e: Exception) {
+        Log.e(TAG, "Broadcast public reaction error: ${e.message}")
       }
     }
   }
@@ -176,12 +340,10 @@ object StorySyncManager {
     }
   }
 
-// ИСПРАВЛЕНИЕ: Удаляем технические пакеты через встроенный менеджер чата
   private fun removeStoryItemFromChat(chatModel: ChatModel, chat: Chat, item: ChatItem) {
     scope.launch {
       withContext(Dispatchers.Main) {
         try {
-          // Используем существующий метод removeChatItem из вашего ChatModel.kt
           chatModel.chatsContext.removeChatItem(chat.remoteHostId, chat.chatInfo, item)
         } catch (e: Exception) {
           Log.e(TAG, "Failed to remove technical story item: ${e.message}")
@@ -189,7 +351,7 @@ object StorySyncManager {
       }
     }
   }
-  
+
   private fun getLoadedFilePath(ciFile: CIFile): String? {
     return try {
       val name = ciFile.fileName
@@ -202,15 +364,15 @@ object StorySyncManager {
     } catch (_: Exception) { null }
   }
 
-  // 3. ОТПРАВКА КОМАНДЫ НА ГЛОБАЛЬНОЕ УДАЛЕНИЕ
+  // 5. ОТПРАВКА КОМАНДЫ НА ГЛОБАЛЬНОЕ УДАЛЕНИЕ
   suspend fun broadcastStoryDeletion(chatModel: ChatModel, storyId: String) = withContext(Dispatchers.IO) {
     val recipients = chatModel.chats.value.filter { chat ->
       val ci = chat.chatInfo
       ci is ChatInfo.Direct && ci.contact.active && ci.contact.ready && ci.sendMsgEnabled
     }
-    
-    val msgContent = MsgContent.MCText("[STORY_DELETE:$storyId]")
-    
+
+    val msgContent = MsgContent.MCText("$DELETE_TAG_PREFIX$storyId]")
+
     recipients.forEach { chat ->
       try {
         val cInfo = chat.chatInfo
@@ -252,9 +414,9 @@ object StorySyncManager {
 
       onProgress(30, "Generating metadata...")
       val previewBase64 = generateSmallPreviewBase64(file, item.mediaType)
-      
-      // Вшиваем точный ID истории в тег, чтобы потом её можно было удалить
-      val taggedCaption = "${STORY_TAG_PREFIX}${item.durationHours}|${item.id}] ${item.caption}".trim()
+
+      val allowFlag = if (item.allowReactions) "1" else "0"
+      val taggedCaption = "${STORY_TAG_PREFIX}${item.durationHours}|${item.id}|$allowFlag] ${item.caption}".trim()
 
       val msgContent = if (item.mediaType == TemporaryMediaType.VIDEO) {
         MsgContent.MCVideo(text = taggedCaption, image = previewBase64, duration = 10)
