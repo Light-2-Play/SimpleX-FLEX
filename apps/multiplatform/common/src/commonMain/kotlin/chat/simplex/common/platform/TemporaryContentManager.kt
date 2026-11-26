@@ -1,6 +1,7 @@
 package chat.simplex.common.platform
 
 import chat.simplex.common.model.*
+import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -9,7 +10,6 @@ import kotlinx.serialization.Transient
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import java.io.File
-import kotlinx.coroutines.*
 
 enum class TemporaryMediaType {
   PHOTO, VIDEO
@@ -50,7 +50,8 @@ data class TemporaryContentItem(
   val caption: String = "",
   val audience: TemporaryAudience = TemporaryAudience.CONTACTS,
   val allowReactions: Boolean = true,
-  val reactions: List<StoryReaction> = emptyList()
+  val reactions: List<StoryReaction> = emptyList(),
+  val loadedByContactIds: Set<Long> = emptySet()
 ) {
   @Transient
   var linkedChatItem: ChatItem? = null
@@ -70,7 +71,7 @@ data class TemporaryContentItem(
     val totalMs = (durationHours * 3600_000f)
     if (totalMs <= 0f) return 0f
     val remainingMs = (expiresAtMillis - nowMillis).coerceIn(0L, totalMs.toLong()).toFloat()
-    return (remainingMs / totalMs).toFloat().coerceIn(0f, 1f)
+    return (remainingMs / totalMs).coerceIn(0f, 1f)
   }
 }
 
@@ -270,6 +271,20 @@ object TemporaryContentManager {
   }
 
   /**
+   * Помечает, что контакт реально скачал и загрузил фото/видео этой сторис.
+   */
+  fun markStoryLoadedBy(storyId: String, contactId: Long) {
+    val currentList = _items.value.toMutableList()
+    val index = currentList.indexOfFirst { it.id == storyId }
+    if (index == -1) return
+    val item = currentList[index]
+    if (contactId in item.loadedByContactIds) return
+    currentList[index] = item.copy(loadedByContactIds = item.loadedByContactIds + contactId)
+    _items.value = currentList.toList()
+    saveMetadataToDisk()
+  }
+
+  /**
    * Переключает реакцию текущего пользователя на сторис.
    * Возвращает true, если реакция добавлена, false — если снята, null — если реакции запрещены.
    */
@@ -297,6 +312,7 @@ object TemporaryContentManager {
 
   /**
    * Применяет входящую публичную реакцию от контакта.
+   * Возвращает true, только если список реакций реально изменился (защита от повторной рассылки).
    */
   fun applyRemoteReaction(
     storyId: String,
@@ -304,15 +320,18 @@ object TemporaryContentManager {
     senderName: String?,
     emoji: String,
     added: Boolean
-  ) {
+  ): Boolean {
     val currentList = _items.value.toMutableList()
     val index = currentList.indexOfFirst { it.id == storyId }
-    if (index == -1) return
+    if (index == -1) return false
     val item = currentList[index]
-    if (!item.allowReactions) return
+    if (!item.allowReactions) return false
 
     val updatedReactions = item.reactions.toMutableList()
-    updatedReactions.removeAll { it.senderContactId == senderContactId && it.emoji == emoji }
+    val alreadyExists = updatedReactions.any { it.senderContactId == senderContactId && it.emoji == emoji }
+    if (added && alreadyExists) return false
+    if (!added && !alreadyExists) return false
+
     if (added) {
       updatedReactions.add(
         StoryReaction(
@@ -321,10 +340,13 @@ object TemporaryContentManager {
           senderName = senderName
         )
       )
+    } else {
+      updatedReactions.removeAll { it.senderContactId == senderContactId && it.emoji == emoji }
     }
     currentList[index] = item.copy(reactions = updatedReactions)
     _items.value = currentList.toList()
     saveMetadataToDisk()
+    return true
   }
 
   fun removeContent(id: String) {
