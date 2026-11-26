@@ -1,7 +1,7 @@
 @file:UseSerializers(UriSerializer::class, ComposeMessageSerializer::class)
 package chat.simplex.common.views.chat
 
-import SectionItemView
+import SectionItemView 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -1391,19 +1391,15 @@ fun ComposeView(
           contactPreference.allow == FeatureAllowed.YES
     }
   }
-  LaunchedEffect(Unit) {
+ LaunchedEffect(Unit) {
     snapshotFlow { recState.value }
       .distinctUntilChanged()
       .collect {
         when (it) {
           is RecordingState.Started -> {
-            // Тактильная фиксация начала записи голосового сообщения:
-            RichHaptics.perform(HapticPattern.RECORD_START)
             onAudioAdded(it.filePath, it.progressMs, false)
           }
           is RecordingState.Finished -> {
-            // Чёткий отклик при отпускании микрофона:
-            RichHaptics.perform(HapticPattern.RECORD_STOP)
             if (it.durationMs > 300) {
               onAudioAdded(it.filePath, it.durationMs, true)
             } else {
