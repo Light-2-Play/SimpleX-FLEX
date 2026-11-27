@@ -52,7 +52,7 @@ fun rememberChatBackdropState(): ChatBackdropState {
 
 /**
  * Вешается на контейнер с обоями и списком сообщений (LazyColumn),
- * чтобы плавающие элементы поверх него могли размывать и преломлять реальный контент чата.
+ * чтобы плавающие элементы поверх него могли преломлять реальный контент чата.
  */
 fun Modifier.captureChatBackdrop(state: ChatBackdropState?): Modifier {
   if (state == null) return this
@@ -73,14 +73,14 @@ fun Modifier.captureChatBackdrop(state: ChatBackdropState?): Modifier {
 }
 
 /**
- * Плавающий контейнер с эффектом воды и живым размытием содержимого чата внутри элемента.
+ * Плавающий контейнер с живым эффектом прозрачной воды и лёгким размытием внутри элемента.
  */
 @Composable
 fun LiquidGlassSurface(
   modifier: Modifier = Modifier,
   shape: Shape = RoundedCornerShape(24.dp),
   cornerRadius: Dp = 24.dp,
-  blurRadius: Dp = 18.dp,
+  blurRadius: Dp = 6.dp,
   tintColor: Color? = null,
   contentColor: Color = MaterialTheme.colors.onSurface,
   contentAlignment: Alignment = Alignment.TopStart,
@@ -95,14 +95,14 @@ fun LiquidGlassSurface(
   var elementOffsetInWindow by remember { mutableStateOf(Offset.Zero) }
   var elementSize by remember { mutableStateOf(IntSize.Zero) }
 
-  // Плавный цикл движения воды для AGSL-шейдера (на Android 13+)
+  // Бесшовный цикл живого движения воды (20 * PI)
   val timeSec = if (shaderHolder.supportsWaterShader) {
-    val infiniteTransition = rememberInfiniteTransition(label = "WaterGlassTime")
+    val infiniteTransition = rememberInfiniteTransition(label = "WaterSurfaceTime")
     infiniteTransition.animateFloat(
       initialValue = 0f,
-      targetValue = 62.83185f, // 20 * PI для бесшовной синусоиды
+      targetValue = 62.831853f,
       animationSpec = infiniteRepeatable(
-        animation = tween(durationMillis = 36_000, easing = LinearEasing),
+        animation = tween(durationMillis = 28_000, easing = LinearEasing),
         repeatMode = RepeatMode.Restart
       ),
       label = "WaterRipplePhase"
@@ -116,43 +116,46 @@ fun LiquidGlassSurface(
 
   val hasLiveBackdrop = backdropState != null && shaderHolder.supportsRealBlur
 
+  // Прозрачная водная тонировка вместо «молочного» матового стекла
   val resolvedTint = tintColor ?: if (isLight) {
-    lerp(Color.White, primary, 0.08f).copy(alpha = if (hasLiveBackdrop) 0.42f else 0.86f)
+    lerp(Color(0xFFEAF7FF), primary, 0.14f).copy(alpha = if (hasLiveBackdrop) 0.24f else 0.84f)
   } else {
-    lerp(MaterialTheme.colors.surface, primary, 0.14f).copy(alpha = if (hasLiveBackdrop) 0.44f else 0.88f)
+    lerp(Color(0xFF0A1922), primary, 0.16f).copy(alpha = if (hasLiveBackdrop) 0.30f else 0.86f)
   }
 
-  val topSheenBrush = remember(isLight, primary) {
+  // Лёгкая водная глубина снизу без резкого белого пластикового глянца сверху
+  val waterDepthBrush = remember(isLight, primary) {
     Brush.verticalGradient(
       colors = if (isLight) {
         listOf(
-          Color.White.copy(alpha = 0.42f),
-          Color.White.copy(alpha = 0.06f),
-          primary.copy(alpha = 0.06f)
+          Color.White.copy(alpha = 0.12f),
+          Color.Transparent,
+          lerp(Color(0xFF007EA7), primary, 0.45f).copy(alpha = 0.09f)
         )
       } else {
         listOf(
-          Color.White.copy(alpha = 0.16f),
+          Color(0xFF8BE0FF).copy(alpha = 0.06f),
           Color.Transparent,
-          primary.copy(alpha = 0.10f)
+          Color.Black.copy(alpha = 0.16f)
         )
       }
     )
   }
 
-  val rimBorderBrush = remember(isLight, primary) {
+  // Тонкий «влажный» контур поверхностного натяжения
+  val wetEdgeBrush = remember(isLight, primary) {
     Brush.linearGradient(
       colors = if (isLight) {
         listOf(
-          Color.White.copy(alpha = 0.78f),
+          Color.White.copy(alpha = 0.45f),
           primary.copy(alpha = 0.18f),
-          Color.White.copy(alpha = 0.45f)
+          Color(0xFF7AD7F0).copy(alpha = 0.28f)
         )
       } else {
         listOf(
-          Color.White.copy(alpha = 0.34f),
-          primary.copy(alpha = 0.22f),
-          Color.White.copy(alpha = 0.14f)
+          Color(0xFFBCEEFF).copy(alpha = 0.22f),
+          primary.copy(alpha = 0.16f),
+          Color.White.copy(alpha = 0.08f)
         )
       }
     )
@@ -167,7 +170,7 @@ fun LiquidGlassSurface(
       },
     contentAlignment = contentAlignment
   ) {
-    // 1. Живой слой размытия и водного преломления фона (строго внутри границ элемента)
+    // 1. Слой преломления волн и мягкого размытия фона строго внутри элемента
     if (backdropState != null && shaderHolder.supportsRealBlur) {
       val renderEffect = if (elementSize.width > 1 && elementSize.height > 1) {
         shaderHolder.buildRenderEffect(
@@ -201,16 +204,16 @@ fun LiquidGlassSurface(
       )
     }
 
-    // 2. Водная тонировка, внутренний глянцевый блик и световая кромка
+    // 2. Прозрачный слой воды, глубина и влажная кромка
     Box(
       modifier = Modifier
         .matchParentSize()
         .background(resolvedTint)
-        .background(topSheenBrush)
-        .border(width = 1.dp, brush = rimBorderBrush, shape = shape)
+        .background(waterDepthBrush)
+        .border(width = 0.85.dp, brush = wetEdgeBrush, shape = shape)
     )
 
-    // 3. Чёткий контент (текст, иконки, кнопки) поверх стекла
+    // 3. Чёткий контент поверх воды
     CompositionLocalProvider(LocalContentColor provides contentColor) {
       content()
     }
