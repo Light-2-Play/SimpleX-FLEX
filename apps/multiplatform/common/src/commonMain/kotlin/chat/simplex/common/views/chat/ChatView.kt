@@ -1018,8 +1018,10 @@ val chatInfo = remember(chat) { derivedStateOf<ChatInfo?> { chat.value?.chatInfo
       sheetState = attachmentBottomSheetState,
       sheetShape = RoundedCornerShape(topStart = 18.dp, topEnd = 18.dp)
     ) {
-      val composeViewHeight = remember { mutableStateOf(0.dp) }
-      Box(Modifier.fillMaxSize().chatViewBackgroundModifier(MaterialTheme.colors, MaterialTheme.wallpaper, LocalAppBarHandler.current?.backgroundGraphicsLayerSize, LocalAppBarHandler.current?.backgroundGraphicsLayer, drawWallpaper = chatsCtx.secondaryContextFilter == null, drawWallpaperImage = !LocalTerminalLayout.current)) {
+     val composeViewHeight = remember { mutableStateOf(0.dp) }
+      val chatBackdropState = rememberChatBackdropState()
+      CompositionLocalProvider(LocalChatBackdrop provides chatBackdropState) {
+      Box(Modifier.fillMaxSize().background(MaterialTheme.colors.background)) {
         val remoteHostId = remember { remoteHostId }.value
         val chat = remember { chat }.value
         val chatInfo = chat?.chatInfo
@@ -1211,6 +1213,7 @@ val chatInfo = remember(chat) { derivedStateOf<ChatInfo?> { chat.value?.chatInfo
             }
           }
         }
+      }
       }
     }
   }
@@ -1486,7 +1489,6 @@ fun BoxScope.ChatInfoToolbar(
   // ---------------------------------------------------------------
 
   if (showSearch.value) {
-    // --- ШАГ 1: НОВЫЙ ДИЗАЙН ПЛАВАЮЩЕЙ КАПСУЛЫ ДЛЯ ПОИСКА (M3 Expressive SearchBar) ---
     val searchTextColor = androidx.compose.ui.graphics.lerp(
       MaterialTheme.colors.onSurface,
       MaterialTheme.colors.primary,
@@ -1500,19 +1502,16 @@ fun BoxScope.ChatInfoToolbar(
         .padding(horizontal = 8.dp, vertical = 6.dp)
         .then(if (oneHandUI.value && chatBottomBar.value) Modifier.navigationBarsPadding() else Modifier.statusBarsPadding())
     ) {
-      Surface(
+      LiquidGlassSurface(
         modifier = Modifier.fillMaxWidth().height(52.dp),
         shape = RoundedCornerShape(percent = 50),
-        color = islandContainerColor,
-        elevation = 0.dp
+        cornerRadius = 26.dp
       ) {
         Row(
           modifier = Modifier.fillMaxSize().padding(horizontal = 4.dp),
           verticalAlignment = Alignment.CenterVertically
         ) {
-          // Кнопка "Назад" слева
           NavigationButtonBack(onBackClicked)
-          // Поле ввода текста и плейсхолдер
           Box(
             modifier = Modifier.weight(1f).padding(horizontal = 4.dp),
             contentAlignment = Alignment.CenterStart
@@ -1527,9 +1526,9 @@ fun BoxScope.ChatInfoToolbar(
             }
             androidx.compose.foundation.text.BasicTextField(
               value = localSearchValue.value,
-              onValueChange = { 
-                  localSearchValue.value = it
-                  onSearchValueChanged(it) 
+              onValueChange = {
+                localSearchValue.value = it
+                onSearchValueChanged(it)
               },
               textStyle = MaterialTheme.typography.body1.copy(
                 color = searchTextColor,
@@ -1542,11 +1541,10 @@ fun BoxScope.ChatInfoToolbar(
             )
           }
 
-          // Кнопка очистки ИЛИ иконка фильтра справа
           if (localSearchValue.value.isNotEmpty()) {
-            IconButton(onClick = { 
-                localSearchValue.value = ""
-                onSearchValueChanged("") 
+            IconButton(onClick = {
+              localSearchValue.value = ""
+              onSearchValueChanged("")
             }) {
               Icon(
                 painter = painterResource(MR.images.ic_close),
@@ -1561,7 +1559,6 @@ fun BoxScope.ChatInfoToolbar(
       }
     }
   } else {
-    // НАШ НОВЫЙ ПЛАВАЮЩИЙ ДИЗАЙН ДЛЯ ВЕРХНЕГО/НИЖНЕГО РАСПОЛОЖЕНИЯ
     Box(
       modifier = Modifier
         .fillMaxWidth()
@@ -1575,26 +1572,24 @@ fun BoxScope.ChatInfoToolbar(
       ) {
         // 1. Остров «Назад»
         if (appPlatform.isAndroid) {
-          Surface(
+          LiquidGlassSurface(
             modifier = Modifier.size(48.dp),
             shape = RoundedCornerShape(percent = 50),
-            color = islandContainerColor,
-            elevation = 0.dp
+            cornerRadius = 24.dp,
+            contentAlignment = Alignment.Center
           ) {
-            Box(contentAlignment = Alignment.Center) {
-              NavigationButtonBack(onBackClicked)
-            }
+            NavigationButtonBack(onBackClicked)
           }
         }
 
         // 2. Остров «Информация о чате»
-        Surface(
+        LiquidGlassSurface(
           modifier = Modifier
             .weight(1f)
             .height(48.dp),
           shape = RoundedCornerShape(24.dp),
-          color = islandContainerColor,
-          elevation = 0.dp
+          cornerRadius = 24.dp,
+          contentAlignment = Alignment.Center
         ) {
           Box(
             modifier = Modifier
@@ -1608,15 +1603,13 @@ fun BoxScope.ChatInfoToolbar(
 
         // 3. Острова кнопок («Поиск», «Звонок», «Меню»)
         barButtons.forEach { actionButton ->
-          Surface(
+          LiquidGlassSurface(
             modifier = Modifier.size(48.dp),
             shape = RoundedCornerShape(percent = 50),
-            color = islandContainerColor,
-            elevation = 0.dp
+            cornerRadius = 24.dp,
+            contentAlignment = Alignment.Center
           ) {
-            Box(contentAlignment = Alignment.Center) {
-              Row { actionButton() }
-            }
+            Row { actionButton() }
           }
         }
       }
@@ -2607,7 +2600,21 @@ val terminal = LocalTerminalLayout.current
 
   val manager = LocalSelectionManager.current
   val modifier = if (appPlatform.isDesktop && manager != null) SelectionHandler(manager, listState, mergedItems, revealedItems, linkMode) else Modifier
+  val backdropState = LocalChatBackdrop.current
 
+  Box(
+    Modifier
+      .fillMaxSize()
+      .captureChatBackdrop(backdropState)
+      .chatViewBackgroundModifier(
+        MaterialTheme.colors,
+        MaterialTheme.wallpaper,
+        LocalAppBarHandler.current?.backgroundGraphicsLayerSize,
+        LocalAppBarHandler.current?.backgroundGraphicsLayer,
+        drawWallpaper = chatsCtx.secondaryContextFilter == null,
+        drawWallpaperImage = !LocalTerminalLayout.current
+      )
+  ) {
   LazyColumnWithScrollBar(
     modifier.align(Alignment.BottomCenter),
     state = listState.value,
@@ -2691,6 +2698,7 @@ val terminal = LocalTerminalLayout.current
         }
       }
     }
+  }
   }
   FloatingButtons(
     chatsCtx,
@@ -3089,19 +3097,15 @@ private fun TopEndFloatingButton(
   onLongClick: () -> Unit
 ) {
   if (remember { derivedStateOf { unreadCount.value > 0 && !animatedScrollingInProgress.value } }.value) {
-    val fabBgColor = if (MaterialTheme.colors.isLight) {
-      androidx.compose.ui.graphics.lerp(MaterialTheme.colors.surface, MaterialTheme.colors.primary, 0.07f)
-    } else {
-      androidx.compose.ui.graphics.lerp(MaterialTheme.colors.surface, MaterialTheme.colors.primary, 0.11f)
-    }
     val interactionSource = interactionSourceWithDetection(onClick, onLongClick)
-    FloatingActionButton(
-      {}, // no action here
-      modifier.size(48.dp).onRightClick(onLongClick),
-      backgroundColor = fabBgColor,
+    LiquidGlassSurface(
+      modifier = modifier
+        .size(48.dp)
+        .onRightClick(onLongClick)
+        .clickable(interactionSource = interactionSource, indication = null, onClick = {}),
       shape = RoundedCornerShape(percent = 50),
-      elevation = FloatingActionButtonDefaults.elevation(1.dp, 2.dp),
-      interactionSource = interactionSource,
+      cornerRadius = 24.dp,
+      contentAlignment = Alignment.Center
     ) {
       if (requestedTopScroll.value) {
         LoadingProgressIndicator()
@@ -3213,33 +3217,25 @@ private fun FloatingDate(
       }
   }
 
-  AnimatedVisibility(
+AnimatedVisibility(
     modifier = modifier,
     visible = showDate.value,
     enter = fadeIn(tween(durationMillis = 350)),
     exit = fadeOut(tween(durationMillis = 350))
   ) {
     val date = lastVisibleItemDate.value
-    val dateBgColor = if (MaterialTheme.colors.isLight) {
-      androidx.compose.ui.graphics.lerp(MaterialTheme.colors.surface, MaterialTheme.colors.primary, 0.07f)
-    } else {
-      androidx.compose.ui.graphics.lerp(MaterialTheme.colors.surface, MaterialTheme.colors.primary, 0.11f)
-    }
-
-    Column {
+    LiquidGlassSurface(
+      shape = RoundedCornerShape(percent = 50),
+      cornerRadius = 16.dp,
+      contentAlignment = Alignment.Center
+    ) {
       Text(
         text = if (date != null) getTimestampDateText(date) else "",
-        Modifier
-          .background(
-            color = dateBgColor,
-            RoundedCornerShape(percent = 50)
-          )
-          .padding(vertical = 4.dp, horizontal = 12.dp)
-          .clip(RoundedCornerShape(percent = 50)),
+        modifier = Modifier.padding(vertical = 5.dp, horizontal = 14.dp),
         fontSize = 13.sp,
-        fontWeight = FontWeight.Medium,
+        fontWeight = FontWeight.SemiBold,
         textAlign = TextAlign.Center,
-        color = MaterialTheme.colors.onSurface.copy(alpha = 0.85f)
+        color = MaterialTheme.colors.onSurface.copy(alpha = 0.9f)
       )
     }
   }
@@ -3518,17 +3514,10 @@ private fun BoxScope.BottomEndFloatingButton(
   onClickArrow: () -> Unit,
   onClickCounter: () -> Unit = onClickArrow
 ) {
-  val fabBgColor = if (MaterialTheme.colors.isLight) {
-    androidx.compose.ui.graphics.lerp(MaterialTheme.colors.surface, MaterialTheme.colors.primary, 0.07f)
-  } else {
-    androidx.compose.ui.graphics.lerp(MaterialTheme.colors.surface, MaterialTheme.colors.primary, 0.11f)
-  }
-
   val showCounter = showButtonWithCounter.value && !animatedScrollingInProgress.value
   val showArrow = showButtonWithArrow.value && !animatedScrollingInProgress.value
 
   if (showCounter || showArrow) {
-    // composeViewHeight уже содержит полную высоту нижней панели, поэтому добавляем только 8.dp зазора над ней
     Row(
       modifier = Modifier
         .padding(
@@ -3539,14 +3528,14 @@ private fun BoxScope.BottomEndFloatingButton(
       horizontalArrangement = Arrangement.spacedBy(10.dp),
       verticalAlignment = Alignment.CenterVertically
     ) {
-      // 1. Кнопка нового сообщения (левее стрелки, или на её месте если стрелки нет)
       if (showCounter) {
-        FloatingActionButton(
-          onClick = onClickCounter,
-          elevation = FloatingActionButtonDefaults.elevation(1.dp, 2.dp, 0.dp, 0.dp),
-          modifier = Modifier.size(48.dp),
-          backgroundColor = fabBgColor,
-          shape = RoundedCornerShape(percent = 50)
+        LiquidGlassSurface(
+          modifier = Modifier
+            .size(48.dp)
+            .clickable(onClick = onClickCounter),
+          shape = RoundedCornerShape(percent = 50),
+          cornerRadius = 24.dp,
+          contentAlignment = Alignment.Center
         ) {
           if (requestedBottomScroll.value && !showArrow) {
             LoadingProgressIndicator()
@@ -3561,14 +3550,14 @@ private fun BoxScope.BottomEndFloatingButton(
         }
       }
 
-      // 2. Кнопка прокрутки вниз (стрелка)
       if (showArrow) {
-        FloatingActionButton(
-          onClick = onClickArrow,
-          elevation = FloatingActionButtonDefaults.elevation(1.dp, 2.dp, 0.dp, 0.dp),
-          modifier = Modifier.size(48.dp),
-          backgroundColor = fabBgColor,
-          shape = RoundedCornerShape(percent = 50)
+        LiquidGlassSurface(
+          modifier = Modifier
+            .size(48.dp)
+            .clickable(onClick = onClickArrow),
+          shape = RoundedCornerShape(percent = 50),
+          cornerRadius = 24.dp,
+          contentAlignment = Alignment.Center
         ) {
           if (requestedBottomScroll.value) {
             LoadingProgressIndicator()
@@ -4446,140 +4435,122 @@ enum class ContentFilter(
 }
 
 // ====================================================================================
-// FLEX DESIGN: ПЛАВАЮЩАЯ ПАНЕЛЬ ВЫДЕЛЕНИЯ СООБЩЕНИЯ (MATERIAL 3 EXPRESSIVE)
+// FLEX DESIGN: ПЛАВАЮЩАЯ ПАНЕЛЬ ВЫДЕЛЕНИЯ СООБЩЕНИЯ (LIQUID GLASS)
 // ====================================================================================
 @Composable
 fun BoxScope.SelectedItemsCounterToolbar(
-    selectedChatItems: MutableState<Set<Long>?>,
-    onTop: Boolean
+  selectedChatItems: MutableState<Set<Long>?>,
+  onTop: Boolean
 ) {
-    val count = selectedChatItems.value?.size ?: 0
-    if (count == 0) return
+  val count = selectedChatItems.value?.size ?: 0
+  if (count == 0) return
 
-    val islandContainerColor = if (MaterialTheme.colors.isLight) {
-        androidx.compose.ui.graphics.lerp(MaterialTheme.colors.surface, MaterialTheme.colors.primary, 0.07f)
-    } else {
-        androidx.compose.ui.graphics.lerp(MaterialTheme.colors.surface, MaterialTheme.colors.primary, 0.11f)
-    }
-
-   // Плавающий контейнер (pill-shape) закреплен сверху
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 8.dp, vertical = 6.dp)
-            .align(Alignment.TopCenter)
-            .statusBarsPadding()
+  Box(
+    modifier = Modifier
+      .fillMaxWidth()
+      .padding(horizontal = 8.dp, vertical = 6.dp)
+      .align(Alignment.TopCenter)
+      .statusBarsPadding()
+  ) {
+    LiquidGlassSurface(
+      modifier = Modifier.fillMaxWidth().height(48.dp),
+      shape = RoundedCornerShape(percent = 50),
+      cornerRadius = 24.dp
     ) {
-        Surface(
-            modifier = Modifier.fillMaxWidth().height(48.dp),
-            shape = RoundedCornerShape(percent = 50),
-            color = islandContainerColor,
-            elevation = 4.dp
-        ) {
-            Row(
-                modifier = Modifier.fillMaxSize().padding(horizontal = 12.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                // Кнопка закрытия
-                IconButton(onClick = { selectedChatItems.value = null }) {
-                    Icon(
-                        painterResource(MR.images.ic_close),
-                        contentDescription = "Cancel",
-                        tint = MaterialTheme.colors.primary
-                    )
-                }
-
-                // Счетчик выбранных
-                Text(
-                    text = "$count selected",
-                    style = MaterialTheme.typography.subtitle1,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colors.onSurface
-                )
-
-                // Пустая коробка для баланса (вместо крестика с другой стороны)
-                Spacer(Modifier.size(48.dp))
-            }
+      Row(
+        modifier = Modifier.fillMaxSize().padding(horizontal = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween
+      ) {
+        IconButton(onClick = { selectedChatItems.value = null }) {
+          Icon(
+            painterResource(MR.images.ic_close),
+            contentDescription = "Cancel",
+            tint = MaterialTheme.colors.primary
+          )
         }
+
+        Text(
+          text = "$count selected",
+          style = MaterialTheme.typography.subtitle1,
+          fontWeight = FontWeight.Bold,
+          color = MaterialTheme.colors.onSurface
+        )
+
+        Spacer(Modifier.size(48.dp))
+      }
     }
+  }
 }
 
-// FLEX DESIGN: Раздельные плавающие кружки для действий над сообщениями
+// FLEX DESIGN: Раздельные плавающие кружки для действий над сообщениями (LIQUID GLASS)
 @Composable
 fun FlexSelectedItemsButtonsToolbar(
-    chatsCtx: ChatModel.ChatsContext,
-    selectedChatItems: MutableState<Set<Long>?>,
-    chatInfo: ChatInfo,
-    deleteItems: (Boolean) -> Unit,
-    archiveItems: () -> Unit,
-    moderateItems: () -> Unit,
-    forwardItems: () -> Unit
+  chatsCtx: ChatModel.ChatsContext,
+  selectedChatItems: MutableState<Set<Long>?>,
+  chatInfo: ChatInfo,
+  deleteItems: (Boolean) -> Unit,
+  archiveItems: () -> Unit,
+  moderateItems: () -> Unit,
+  forwardItems: () -> Unit
 ) {
-    val islandContainerColor = if (MaterialTheme.colors.isLight) {
-        androidx.compose.ui.graphics.lerp(MaterialTheme.colors.surface, MaterialTheme.colors.primary, 0.07f)
-    } else {
-        androidx.compose.ui.graphics.lerp(MaterialTheme.colors.surface, MaterialTheme.colors.primary, 0.11f)
-    }
-
-    // Вместо одной сплошной панели — ряд раздельных кружков (островов)
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 12.dp),
-        horizontalArrangement = Arrangement.SpaceEvenly,
-        verticalAlignment = Alignment.CenterVertically
+  Row(
+    modifier = Modifier
+      .fillMaxWidth()
+      .padding(horizontal = 16.dp, vertical = 12.dp),
+    horizontalArrangement = Arrangement.SpaceEvenly,
+    verticalAlignment = Alignment.CenterVertically
+  ) {
+    // 1. Архивация
+    LiquidGlassSurface(
+      modifier = Modifier.size(56.dp),
+      shape = RoundedCornerShape(percent = 50),
+      cornerRadius = 28.dp,
+      contentAlignment = Alignment.Center
     ) {
-        // 1. Архивация (Кружок)
-        Surface(
-            modifier = Modifier.size(56.dp),
-            shape = RoundedCornerShape(percent = 50),
-            color = islandContainerColor,
-            elevation = 4.dp
-        ) {
-            IconButton(onClick = archiveItems) {
-                Icon(painterResource(MR.images.ic_settings_backup_restore), null, tint = MaterialTheme.colors.primary)
-            }
-        }
-
-        // 2. Пересылка (Кружок)
-        if (chatInfo.sendMsgEnabled) {
-            Surface(
-                modifier = Modifier.size(56.dp),
-                shape = RoundedCornerShape(percent = 50),
-                color = islandContainerColor,
-                elevation = 4.dp
-            ) {
-                IconButton(onClick = forwardItems) {
-                    Icon(painterResource(MR.images.ic_forward), null, tint = MaterialTheme.colors.primary)
-                }
-            }
-        }
-
-        // 3. Модерация (Кружок - если админ)
-        if (chatInfo is ChatInfo.Group && chatInfo.groupInfo.membership.memberRole >= GroupMemberRole.Moderator) {
-            Surface(
-                modifier = Modifier.size(56.dp),
-                shape = RoundedCornerShape(percent = 50),
-                color = islandContainerColor,
-                elevation = 4.dp
-            ) {
-                IconButton(onClick = moderateItems) {
-                    Icon(painterResource(MR.images.ic_shield), null, tint = WarningOrange)
-                }
-            }
-        }
-
-        // 4. Удаление (Кружок)
-        Surface(
-            modifier = Modifier.size(56.dp),
-            shape = RoundedCornerShape(percent = 50),
-            color = islandContainerColor,
-            elevation = 4.dp
-        ) {
-            IconButton(onClick = { deleteItems(false) }) {
-                Icon(painterResource(MR.images.ic_delete), null, tint = Color.Red)
-            }
-        }
+      IconButton(onClick = archiveItems) {
+        Icon(painterResource(MR.images.ic_settings_backup_restore), null, tint = MaterialTheme.colors.primary)
+      }
     }
+
+    // 2. Пересылка
+    if (chatInfo.sendMsgEnabled) {
+      LiquidGlassSurface(
+        modifier = Modifier.size(56.dp),
+        shape = RoundedCornerShape(percent = 50),
+        cornerRadius = 28.dp,
+        contentAlignment = Alignment.Center
+      ) {
+        IconButton(onClick = forwardItems) {
+          Icon(painterResource(MR.images.ic_forward), null, tint = MaterialTheme.colors.primary)
+        }
+      }
+    }
+
+    // 3. Модерация (если админ)
+    if (chatInfo is ChatInfo.Group && chatInfo.groupInfo.membership.memberRole >= GroupMemberRole.Moderator) {
+      LiquidGlassSurface(
+        modifier = Modifier.size(56.dp),
+        shape = RoundedCornerShape(percent = 50),
+        cornerRadius = 28.dp,
+        contentAlignment = Alignment.Center
+      ) {
+        IconButton(onClick = moderateItems) {
+          Icon(painterResource(MR.images.ic_shield), null, tint = WarningOrange)
+        }
+      }
+    }
+
+    // 4. Удаление
+    LiquidGlassSurface(
+      modifier = Modifier.size(56.dp),
+      shape = RoundedCornerShape(percent = 50),
+      cornerRadius = 28.dp,
+      contentAlignment = Alignment.Center
+    ) {
+      IconButton(onClick = { deleteItems(false) }) {
+        Icon(painterResource(MR.images.ic_delete), null, tint = Color.Red)
+      }
+    }
+  }
 }
