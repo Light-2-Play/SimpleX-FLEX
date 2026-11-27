@@ -13,7 +13,7 @@ actual class WaterGlassShaderHolder {
 
   private val waterShader: RuntimeShader? = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
     try {
-      RuntimeShader(WATER_GLASS_AGSL)
+      RuntimeShader(WATER_SURFACE_AGSL)
     } catch (_: Throwable) {
       null
     }
@@ -63,7 +63,7 @@ actual class WaterGlassShaderHolder {
   }
 
   companion object {
-    private const val WATER_GLASS_AGSL = """
+    private const val WATER_SURFACE_AGSL = """
       uniform shader content;
       uniform float2 resolution;
       uniform float time;
@@ -74,52 +74,69 @@ actual class WaterGlassShaderHolder {
         return min(max(q.x, q.y), 0.0) + length(max(q, 0.0)) - r;
       }
 
+      // Многослойная карта высот водной поверхности в физическом масштабе пикселей
+      float waterHeight(float2 pos, float t) {
+        float2 p = pos * 0.032;
+        float h = 0.0;
+        h += sin(dot(p, float2(1.0, 0.35)) + t * 1.0) * 0.42;
+        h += sin(dot(p, float2(-0.65, 0.85)) - t * 0.8) * 0.32;
+        h += sin(dot(p, float2(0.45, -1.15)) + t * 1.3) * 0.16;
+        h += cos(dot(p, float2(-1.15, -0.55)) - t * 1.5) * 0.10;
+        return h;
+      }
+
       half4 main(float2 fragCoord) {
         float2 halfSize = max(resolution * 0.5, float2(1.0));
         float2 p = fragCoord - halfSize;
         float r = min(cornerRadius, min(halfSize.x, halfSize.y));
 
-        // Расстояние до края капсулы для эффекта водного мениска
+        // 1. Градиент волн (реальная нормаль водной ряби по всей площади элемента)
+        float stepPx = 2.0;
+        float hC = waterHeight(fragCoord, time);
+        float hX = waterHeight(fragCoord + float2(stepPx, 0.0), time);
+        float hY = waterHeight(fragCoord + float2(0.0, stepPx), time);
+        float2 waveGrad = float2(hX - hC, hY - hC) / stepPx;
+
+        // 2. Мягкое поверхностное натяжение (мениск) у краёв капсулы
         float d = sdRoundedBox(p, halfSize, r);
-        float edgeBand = min(24.0, min(halfSize.x, halfSize.y) * 0.7);
+        float edgeBand = min(16.0, min(halfSize.x, halfSize.y) * 0.55);
         float edgeFactor = smoothstep(-edgeBand, 0.0, d);
 
-        // Нормаль к изогнутому краю
-        float eps = 1.5;
-        float dx = sdRoundedBox(p + float2(eps, 0.0), halfSize, r) - sdRoundedBox(p - float2(eps, 0.0), halfSize, r);
-        float dy = sdRoundedBox(p + float2(0.0, eps), halfSize, r) - sdRoundedBox(p - float2(0.0, eps), halfSize, r);
-        float2 normal = normalize(float2(dx, dy) + float2(0.0001));
+        float edgeEps = 1.5;
+        float ex = sdRoundedBox(p + float2(edgeEps, 0.0), halfSize, r) - sdRoundedBox(p - float2(edgeEps, 0.0), halfSize, r);
+        float ey = sdRoundedBox(p + float2(0.0, edgeEps), halfSize, r) - sdRoundedBox(p - float2(0.0, edgeEps), halfSize, r);
+        float2 edgeNormal = normalize(float2(ex, ey) + float2(0.0001));
 
-        // Плавная органическая рябь воды внутри элемента
-        float2 uv = fragCoord / max(resolution, float2(1.0));
-        float waveX = sin(uv.y * 9.0 + time * 1.1) * cos(uv.x * 5.0 - time * 0.7);
-        float waveY = cos(uv.x * 9.0 - time * 0.9) * sin(uv.y * 5.0 + time * 0.8);
-        float2 waterRipple = float2(waveX, waveY) * (2.0 + edgeFactor * 3.0);
-
-        // Оптическое преломление линзы по краям (как капля воды / жидкое стекло)
-        float edgeSq = edgeFactor * edgeFactor;
-        float2 lensOffset = -normal * (edgeSq * 15.0);
-        float2 totalOffset = lensOffset + waterRipple;
-
-        // Лёгкая хроматическая дисперсия у кромки
-        float chroma = edgeFactor * 1.5;
+        // 3. Преломление фона сквозь толщу воды (рябь + мягкий мениск)
+        float2 rippleRefraction = waveGrad * 34.0;
+        float2 meniscusRefraction = -edgeNormal * (edgeFactor * edgeFactor * 7.5);
         float2 maxCoord = max(resolution - float2(1.0), float2(0.0));
-        float2 coordR = clamp(fragCoord + totalOffset + normal * chroma, float2(0.0), maxCoord);
-        float2 coordG = clamp(fragCoord + totalOffset, float2(0.0), maxCoord);
-        float2 coordB = clamp(fragCoord + totalOffset - normal * chroma, float2(0.0), maxCoord);
+        float2 refractedCoord = clamp(fragCoord + rippleRefraction + meniscusRefraction, float2(0.0), maxCoord);
 
-        half rCh = content.eval(coordR).r;
-        half gCh = content.eval(coordG).g;
-        half bCh = content.eval(coordB).b;
-        half aCh = content.eval(coordG).a;
+        half4 baseSample = content.eval(refractedCoord);
 
-        // Мягкий световой блик и каустика воды
-        float lightDir = dot(normal, normalize(float2(-0.6, -0.8)));
-        float rimGlow = edgeSq * max(lightDir, 0.0) * 0.22;
-        float waterCaustic = max(0.0, waveX * waveY) * 0.05;
+        // 4. Живые блики на гребнях волн и мягкая водная каустика
+        float3 surfNormal = normalize(float3(-waveGrad.x * 2.6, -waveGrad.y * 2.6, 1.0));
+        float3 lightDir = normalize(float3(-0.35, -0.75, 1.0));
+        float specular = pow(max(0.0, dot(surfNormal, lightDir)), 12.0);
 
-        half3 rgb = clamp(half3(rCh, gCh, bCh) + half3(rimGlow + waterCaustic), half3(0.0), half3(1.0));
-        return half4(rgb, aCh);
+        float curvature = (hX + hY - 2.0 * hC);
+        float caustic = clamp(-curvature * 2.2, 0.0, 1.0);
+
+        // Лёгкая тень в ложбинах и свет на гребнях для объёма воды
+        float waveShade = hC * 0.035;
+        float lightBoost = specular * 0.14 + caustic * 0.08 + waveShade;
+
+        // Деликатный влажный блик по кромке мениска
+        float meniscusLight = max(0.0, dot(edgeNormal, normalize(float2(-0.45, -0.9))));
+        float meniscusGlow = edgeFactor * edgeFactor * meniscusLight * 0.10;
+
+        half3 rgb = clamp(
+          baseSample.rgb + half3(lightBoost + meniscusGlow),
+          half3(0.0),
+          half3(1.0)
+        );
+        return half4(rgb, baseSample.a);
       }
     """
   }
