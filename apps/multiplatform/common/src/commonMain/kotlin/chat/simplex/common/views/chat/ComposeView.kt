@@ -1240,19 +1240,13 @@ fun ComposeView(
       is ReportReason.Unknown -> null
     }
 
-    if (reportText != null) {
-      val tonalBg = if (MaterialTheme.colors.isLight) {
-        androidx.compose.ui.graphics.lerp(MaterialTheme.colors.surface, MaterialTheme.colors.primary, 0.07f)
-      } else {
-        androidx.compose.ui.graphics.lerp(MaterialTheme.colors.surface, MaterialTheme.colors.primary, 0.11f)
-      }
-      Surface(
+   if (reportText != null) {
+      LiquidGlassSurface(
         modifier = Modifier
           .fillMaxWidth()
-          .padding(horizontal = 8.dp, vertical = 3.dp)
-          .clip(RoundedCornerShape(18.dp)),
-        color = tonalBg,
-        elevation = 0.dp
+          .padding(horizontal = 8.dp, vertical = 3.dp),
+        shape = RoundedCornerShape(18.dp),
+        cornerRadius = 18.dp
       ) {
         Row(
           Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 8.dp),
@@ -1761,21 +1755,15 @@ fun ComposeView(
     val fileProhibited = chatsCtx.secondaryContextFilter == null && composeState.value.attachmentPreview && !chat.groupFeatureEnabled(GroupFeature.Files)
     val voiceProhibited = composeState.value.preview is ComposePreview.VoicePreview && !chat.chatInfo.featureEnabled(ChatFeature.Voice)
     val disableSendButton = simplexLinkProhibited || fileProhibited || voiceProhibited
-    val hasContextOrPreview = composeState.value.contextItem !is ComposeContextItem.NoContextItem || 
+   val hasContextOrPreview = composeState.value.contextItem !is ComposeContextItem.NoContextItem ||
                               composeState.value.preview !is ComposePreview.NoPreview
-    val tonalColor = if (MaterialTheme.colors.isLight) {
-      androidx.compose.ui.graphics.lerp(MaterialTheme.colors.surface, MaterialTheme.colors.primary, 0.07f)
-    } else {
-      androidx.compose.ui.graphics.lerp(MaterialTheme.colors.surface, MaterialTheme.colors.primary, 0.11f)
-    }
     if (hasContextOrPreview) {
-      Surface(
+      LiquidGlassSurface(
         modifier = Modifier
           .fillMaxWidth()
-          .padding(horizontal = 8.dp, vertical = 3.dp)
-          .clip(RoundedCornerShape(24.dp)),
-        color = tonalColor,
-        elevation = 0.dp
+          .padding(horizontal = 8.dp, vertical = 3.dp),
+        shape = RoundedCornerShape(24.dp),
+        cornerRadius = 24.dp
       ) {
         Column {
           if (simplexLinkProhibited) {
@@ -1791,14 +1779,13 @@ fun ComposeView(
       }
     }
 
-    Surface(
+    LiquidGlassSurface(
       modifier = Modifier
         .fillMaxWidth()
-        .padding(horizontal = 8.dp, vertical = 3.dp)
-        .clip(RoundedCornerShape(28.dp)),
-      color = tonalColor,
-      contentColor = MaterialTheme.colors.onSurface,
-      elevation = 0.dp
+        .padding(horizontal = 8.dp, vertical = 3.dp),
+      shape = RoundedCornerShape(28.dp),
+      cornerRadius = 28.dp,
+      contentColor = MaterialTheme.colors.onSurface
     ) {
       if (chat.chatInfo is ChatInfo.Group && chat.chatInfo.groupInfo.nextConnectPrepared) {
         if (chat.chatInfo.groupInfo.businessChat == null) {
